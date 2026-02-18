@@ -1,16 +1,6 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
 
-export default async function LandingPage() {
-  const supabase = createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-
-  // Redirect to app if already logged in
-  if (session) {
-    redirect('/my-day');
-  }
-
+export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-accent-dark p-8">
       <div className="max-w-4xl mx-auto text-center space-y-8 animate-fade-up">

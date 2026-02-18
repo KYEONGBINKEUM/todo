@@ -55,3 +55,12 @@ export type {
   ActivityActionType,
   ActivityEntityType,
 } from './activity';
+
+// Note types
+export type {
+  Note,
+  NoteBlock,
+  NoteBlockType,
+  CreateNoteInput,
+  UpdateNoteInput,
+} from './note';

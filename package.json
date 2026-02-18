@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "build:web": "cd apps/web && npx next build",
+    "pages:deploy": "cd apps/web && npx next build && npx wrangler pages deploy out --project-name ai-todo",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",

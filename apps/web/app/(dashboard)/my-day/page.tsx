@@ -1,133 +1,318 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client';
 
-export default async function MyDayPage() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import {
+  getTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
+  getLists, seedDefaultData,
+  type TaskData, type ListData,
+} from '@/lib/firestore';
 
-  if (!user) {
-    redirect('/login');
+const DEFAULT_LISTS: ListData[] = [
+  { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
+  { id: 'work', label: '업무', color: '#8b5cf6' },
+  { id: 'personal', label: '개인', color: '#06b6d4' },
+];
+
+const priorityColors = {
+  urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30', label: '긴급' },
+  high: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30', label: '높음' },
+  medium: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', label: '보통' },
+  low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', label: '낮음' },
+};
+
+export default function MyDayPage() {
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState<TaskData[]>([]);
+  const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskList, setNewTaskList] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
+  const [filterList, setFilterList] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    try {
+      await seedDefaultData(user.uid);
+      const [fetchedTasks, fetchedLists] = await Promise.all([
+        getTasks(user.uid),
+        getLists(user.uid),
+      ]);
+      setTasks(fetchedTasks.filter((t) => t.myDay));
+      if (fetchedLists.length > 0) {
+        setLists(fetchedLists);
+        if (!newTaskList) setNewTaskList(fetchedLists[0].id!);
+      }
+    } catch (err) {
+      console.error('Failed to load data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const today = new Date().toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  });
+
+  const filteredTasks = filterList
+    ? tasks.filter((t) => t.listId === filterList)
+    : tasks;
+
+  const completedCount = filteredTasks.filter((t) => t.status === 'completed').length;
+  const totalCount = filteredTasks.length;
+
+  const handleToggleTask = async (task: TaskData) => {
+    if (!user || !task.id) return;
+    const newStatus = task.status === 'completed' ? 'todo' : 'completed';
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)));
+    await updateTask(user.uid, task.id, { status: newStatus });
+  };
+
+  const handleToggleStar = async (task: TaskData) => {
+    if (!user || !task.id) return;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, starred: !t.starred } : t)));
+    await updateTask(user.uid, task.id, { starred: !task.starred });
+  };
+
+  const handleAddTask = async () => {
+    if (!newTaskTitle.trim() || !user || adding) return;
+    setAdding(true);
+    const tempId = `temp-${Date.now()}`;
+    const newTask: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'> = {
+      title: newTaskTitle.trim(),
+      status: 'todo',
+      priority: newTaskPriority,
+      starred: false,
+      listId: newTaskList || lists[0]?.id || '',
+      myDay: true,
+    };
+    // Optimistic: show immediately
+    setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
+    setNewTaskTitle('');
+    try {
+      const id = await addTaskDB(user.uid, newTask);
+      setTasks((prev) => prev.map((t) => t.id === tempId ? { ...t, id } : t));
+    } catch (err) {
+      console.error('Failed to add task:', err);
+      setTasks((prev) => prev.filter((t) => t.id !== tempId));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDeleteTask = async (task: TaskData) => {
+    if (!user || !task.id) return;
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    await deleteTaskDB(user.uid, task.id);
+  };
+
+  const getListInfo = (listId: string) =>
+    lists.find((l) => l.id === listId) || lists[0] || DEFAULT_LISTS[0];
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[50vh]">
+        <div className="w-6 h-6 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
-  // Get user profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single();
-
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="p-8">
+      <div className="max-w-3xl mx-auto">
         {/* Header */}
-        <div className="space-y-4 animate-fade-up">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-extrabold bg-gradient-to-r from-text-primary to-primary bg-clip-text text-transparent">
-                My Day
-              </h1>
-              <p className="text-text-secondary mt-2">
-                {new Date().toLocaleDateString('ko-KR', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                  weekday: 'long',
-                })}
-              </p>
-            </div>
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-3xl">☀️</span>
+            <h2 className="text-3xl font-extrabold">My Day</h2>
+          </div>
+          <p className="text-[#94a3b8] text-sm">{today}</p>
+        </div>
 
-            {/* User info */}
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-semibold">{profile?.full_name || user.email}</p>
-                <p className="text-xs text-text-muted capitalize">
-                  {profile?.subscription_tier || 'free'} plan
-                </p>
-              </div>
-              {user.user_metadata?.avatar_url && (
-                <img
-                  src={user.user_metadata.avatar_url}
-                  alt="Profile"
-                  className="w-10 h-10 rounded-full border border-border"
-                />
-              )}
-            </div>
+        {/* Progress Bar */}
+        <div className="mb-6 p-4 bg-[#111128] border border-[#1e1e3a] rounded-xl">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-[#94a3b8]">오늘의 진행률</span>
+            <span className="text-sm font-bold text-[#e94560]">
+              {completedCount}/{totalCount}
+            </span>
+          </div>
+          <div className="w-full h-2.5 bg-[#1e1e3a] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-[#e94560] to-[#533483] rounded-full transition-all duration-500"
+              style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
+            />
           </div>
         </div>
 
-        {/* Welcome Message */}
-        <div className="bg-background-card border border-border rounded-card p-8 text-center space-y-4 animate-fade-up" style={{ animationDelay: '0.1s' }}>
-          <div className="text-6xl">👋</div>
-          <h2 className="text-2xl font-bold">환영합니다!</h2>
-          <p className="text-text-secondary max-w-md mx-auto">
-            AI Todo의 Phase 1 MVP가 성공적으로 설정되었습니다.
-            이제 작업 관리, 협업, 그리고 더 많은 기능들을 구현할 준비가 되었습니다!
-          </p>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-4 pt-6">
-            <div className="bg-background p-4 rounded-button border border-border">
-              <div className="text-2xl font-bold text-primary">0</div>
-              <div className="text-xs text-text-muted mt-1">오늘의 작업</div>
-            </div>
-            <div className="bg-background p-4 rounded-button border border-border">
-              <div className="text-2xl font-bold text-accent-purple">0</div>
-              <div className="text-xs text-text-muted mt-1">완료됨</div>
-            </div>
-            <div className="bg-background p-4 rounded-button border border-border">
-              <div className="text-2xl font-bold text-accent-blue">0</div>
-              <div className="text-xs text-text-muted mt-1">진행 중</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Next Steps */}
-        <div className="bg-background-card border border-border rounded-card p-8 animate-fade-up" style={{ animationDelay: '0.2s' }}>
-          <h3 className="text-xl font-bold mb-4">다음 단계</h3>
-          <ul className="space-y-3 text-text-secondary">
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold">1.</span>
-              <span>환경 변수 설정 (.env.local 파일 생성)</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold">2.</span>
-              <span>Supabase 프로젝트 생성 및 마이그레이션 실행</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold">3.</span>
-              <span>Google OAuth 설정 (Supabase 대시보드)</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold">4.</span>
-              <span>Polar 계정 설정 및 제품 생성</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold">5.</span>
-              <span>Task 관리 UI 컴포넌트 구현</span>
-            </li>
-          </ul>
-        </div>
-
-        {/* Sign Out Button */}
-        <form
-          action={async () => {
-            'use server';
-            const supabase = createClient();
-            await supabase.auth.signOut();
-            redirect('/login');
-          }}
-          className="text-center animate-fade-up"
-          style={{ animationDelay: '0.3s' }}
-        >
+        {/* List Filter Chips */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
           <button
-            type="submit"
-            className="px-6 py-2 bg-background-hover border border-border hover:border-primary text-text-secondary hover:text-text-primary rounded-button transition-all duration-200 text-sm"
+            onClick={() => setFilterList(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              filterList === null
+                ? 'bg-[#e94560]/20 text-[#e94560] border border-[#e94560]/30'
+                : 'bg-[#111128] text-[#94a3b8] border border-[#1e1e3a] hover:border-[#333]'
+            }`}
           >
-            로그아웃
+            전체
           </button>
-        </form>
+          {lists.map((list) => (
+            <button
+              key={list.id}
+              onClick={() => setFilterList(filterList === list.id! ? null : list.id!)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                filterList === list.id
+                  ? 'bg-[#111128] border text-[#e2e8f0]'
+                  : 'bg-[#111128] text-[#94a3b8] border border-[#1e1e3a] hover:border-[#333]'
+              }`}
+              style={filterList === list.id ? { borderColor: list.color, color: list.color } : undefined}
+            >
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+              {list.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Add Task Input */}
+        <div className="mb-6 flex gap-2">
+          <div className="flex-1 flex bg-[#111128] border border-[#1e1e3a] rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
+            <input
+              type="text"
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+              placeholder="+ 새 작업 추가..."
+              className="flex-1 px-4 py-3 bg-transparent text-[#e2e8f0] placeholder-[#64748b] text-sm focus:outline-none"
+            />
+            <select
+              value={newTaskPriority}
+              onChange={(e) => setNewTaskPriority(e.target.value as TaskData['priority'])}
+              className="px-2 bg-transparent text-xs border-l border-[#1e1e3a] focus:outline-none cursor-pointer"
+              style={{ color: priorityColors[newTaskPriority].text.replace('text-', '').includes('red') ? '#f87171' : priorityColors[newTaskPriority].text.replace('text-', '').includes('orange') ? '#fb923c' : priorityColors[newTaskPriority].text.replace('text-', '').includes('yellow') ? '#facc15' : '#60a5fa' }}
+            >
+              <option value="urgent" className="bg-[#111128]">긴급</option>
+              <option value="high" className="bg-[#111128]">높음</option>
+              <option value="medium" className="bg-[#111128]">보통</option>
+              <option value="low" className="bg-[#111128]">낮음</option>
+            </select>
+            <select
+              value={newTaskList}
+              onChange={(e) => setNewTaskList(e.target.value)}
+              className="px-2 bg-transparent text-[#94a3b8] text-xs border-l border-[#1e1e3a] focus:outline-none cursor-pointer"
+            >
+              {lists.map((list) => (
+                <option key={list.id} value={list.id!} className="bg-[#111128]">
+                  {list.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={handleAddTask}
+            disabled={adding}
+            className="px-5 py-3 bg-[#e94560] hover:bg-[#ff5a7a] text-white font-semibold rounded-xl text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {adding ? '...' : '추가'}
+          </button>
+        </div>
+
+        {/* Task List */}
+        <div className="space-y-2">
+          {filteredTasks.map((task, index) => {
+            const priority = priorityColors[task.priority];
+            const list = getListInfo(task.listId);
+            const isCompleted = task.status === 'completed';
+            return (
+              <div
+                key={task.id}
+                className={`group flex items-center gap-3 p-4 bg-[#111128] border rounded-xl hover:border-[#333] transition-all ${
+                  isCompleted ? 'border-[#1e1e3a]/50 opacity-70' : 'border-[#1e1e3a]'
+                }`}
+                style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
+              >
+                <button
+                  onClick={() => handleToggleTask(task)}
+                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
+                    isCompleted
+                      ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent scale-110'
+                      : 'border-[#4a4a6a] hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'
+                  }`}
+                >
+                  {isCompleted && (
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="animate-[checkPop_0.3s_ease-out]">
+                      <path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+                <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                <span className={`flex-1 text-sm transition-all duration-300 ${isCompleted ? 'line-through text-[#4a4a6a]' : 'text-[#e2e8f0]'}`}>
+                  {task.title}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>
+                  {list.label}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priority.bg} ${priority.text} ${priority.border}`}>
+                  {priority.label}
+                </span>
+                <button
+                  onClick={() => handleToggleStar(task)}
+                  className={`text-lg transition-all duration-200 flex-shrink-0 ${
+                    task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-[#3a3a5a] hover:text-amber-400/60'
+                  }`}
+                >
+                  {task.starred ? '★' : '☆'}
+                </button>
+                <button
+                  onClick={() => handleDeleteTask(task)}
+                  className="opacity-0 group-hover:opacity-100 text-[#4a4a6a] hover:text-[#e94560] transition-all text-lg flex-shrink-0"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {filteredTasks.length === 0 && (
+          <div className="text-center py-16">
+            <div className="text-5xl mb-4">{tasks.length === 0 ? '☀️' : '🎉'}</div>
+            <p className="text-[#94a3b8] font-semibold">
+              {tasks.length === 0 ? '오늘의 작업을 추가해보세요' : filterList ? '이 목록에 작업이 없습니다' : '모든 작업을 완료했습니다!'}
+            </p>
+            <p className="text-[#64748b] text-sm mt-1">위 입력란에서 새 작업을 추가할 수 있습니다</p>
+          </div>
+        )}
+
+        {/* AI Suggestions (Mock) */}
+        <div className="mt-8 p-5 bg-gradient-to-r from-[#111128] to-[#0a0a23] border border-[#1e1e3a] rounded-xl">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">🧠</span>
+            <span className="text-xs font-bold text-[#8b5cf6] uppercase tracking-wider">AI Suggestions</span>
+            <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-gradient-to-r from-amber-500 to-red-500 text-white">PREMIUM</span>
+          </div>
+          <div className="space-y-2">
+            {[
+              '📊 작업을 하위 작업으로 분해하시겠습니까?',
+              '⏰ 집중 시간대 분석: 오전 10시-12시가 가장 생산적입니다',
+              '🔄 반복 작업을 자동 설정하시겠습니까?',
+            ].map((suggestion, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 bg-[#1e1e3a]/50 rounded-lg text-xs text-[#94a3b8]">
+                <span className="flex-1">{suggestion}</span>
+                <button className="text-[#8b5cf6] hover:text-[#a78bfa] text-[10px] font-semibold flex-shrink-0">적용</button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

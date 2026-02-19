@@ -7,6 +7,7 @@ import {
   getLists, seedDefaultData,
   type TaskData, type ListData,
 } from '@/lib/firestore';
+import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
   { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
@@ -39,6 +40,10 @@ export default function MyDayPage() {
   const [editList, setEditList] = useState('');
   const [editPriority, setEditPriority] = useState<TaskData['priority']>('medium');
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // 상세 패널
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -128,8 +133,15 @@ export default function MyDayPage() {
 
   const handleDeleteTask = async (task: TaskData) => {
     if (!user || !task.id) return;
+    if (selectedTaskId === task.id) setSelectedTaskId(null);
     setTasks((prev) => prev.filter((t) => t.id !== task.id));
     await deleteTaskDB(user.uid, task.id);
+  };
+
+  const handlePanelUpdate = async (updates: Partial<TaskData>) => {
+    if (!user || !selectedTaskId) return;
+    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...updates } : t));
+    await updateTask(user.uid, selectedTaskId, updates);
   };
 
   const startEdit = (task: TaskData) => {
@@ -283,18 +295,26 @@ export default function MyDayPage() {
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
             const isEditing = editingId === task.id;
+            const isSelected = selectedTaskId === task.id;
 
             return (
               <div
                 key={task.id}
-                className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all ${
-                  isCompleted ? 'border-border/50 opacity-70' : 'border-border hover:border-border-hover'
+                onClick={() => {
+                  if (!isEditing) setSelectedTaskId(isSelected ? null : task.id!);
+                }}
+                className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer ${
+                  isSelected
+                    ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]'
+                    : isCompleted
+                    ? 'border-border/50 opacity-70'
+                    : 'border-border hover:border-border-hover'
                 }`}
                 style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
               >
-                {/* 체크박스 - 테두리 가시성 개선 */}
+                {/* 체크박스 */}
                 <button
-                  onClick={() => !isEditing && handleToggleTask(task)}
+                  onClick={(e) => { e.stopPropagation(); if (!isEditing) handleToggleTask(task); }}
                   className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
                     isCompleted
                       ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent scale-110'
@@ -312,7 +332,7 @@ export default function MyDayPage() {
 
                 {isEditing ? (
                   /* 편집 모드 */
-                  <div className="flex-1 flex items-center gap-2 flex-wrap">
+                  <div className="flex-1 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                     <input
                       ref={editInputRef}
                       value={editTitle}
@@ -358,14 +378,20 @@ export default function MyDayPage() {
                     <span className={`flex-1 text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
                       {task.title}
                     </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>
+                    {/* sub-task progress indicator */}
+                    {(task.subTasks?.length ?? 0) > 0 && (
+                      <span className="text-[10px] text-text-muted flex-shrink-0">
+                        📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}
+                      </span>
+                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>
                       {list.label}
                     </span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priority.bg} ${priority.text} ${priority.border}`}>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>
                       {priority.label}
                     </span>
                     <button
-                      onClick={() => handleToggleStar(task)}
+                      onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }}
                       className={`text-lg transition-all duration-200 flex-shrink-0 ${
                         task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'
                       }`}
@@ -373,7 +399,7 @@ export default function MyDayPage() {
                       {task.starred ? '★' : '☆'}
                     </button>
                     <button
-                      onClick={() => startEdit(task)}
+                      onClick={(e) => { e.stopPropagation(); startEdit(task); }}
                       className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-text-secondary transition-all flex-shrink-0"
                       title="편집"
                     >
@@ -383,7 +409,7 @@ export default function MyDayPage() {
                       </svg>
                     </button>
                     <button
-                      onClick={() => handleDeleteTask(task)}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }}
                       className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0"
                     >
                       ×
@@ -426,6 +452,16 @@ export default function MyDayPage() {
           </div>
         </div>
       </div>
+
+      {/* Task Detail Panel */}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdate={handlePanelUpdate}
+          onDelete={() => handleDeleteTask(selectedTask)}
+        />
+      )}
     </div>
   );
 }

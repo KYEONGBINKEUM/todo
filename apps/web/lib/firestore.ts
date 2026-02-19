@@ -44,6 +44,20 @@ export function invalidateCache(uid: string, type?: string) {
 // Types
 // ============================================================================
 
+export interface SubTask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface TaskAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  addedAt: string;
+}
+
 export interface TaskData {
   id?: string;
   title: string;
@@ -53,6 +67,10 @@ export interface TaskData {
   listId: string;
   dueDate?: string | null;
   myDay: boolean;
+  subTasks?: SubTask[];
+  reminder?: string | null;
+  memo?: string;
+  attachments?: TaskAttachment[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }

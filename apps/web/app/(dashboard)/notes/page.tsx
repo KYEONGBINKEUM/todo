@@ -466,7 +466,7 @@ export default function NotesPage() {
     folders.find((f) => f.id === folderId);
 
   const renderBlock = (block: NoteBlock) => {
-    const baseClass = 'w-full bg-transparent outline-none resize-none text-[#e2e8f0] placeholder-[#4a4a6a]';
+    const baseClass = 'w-full bg-transparent outline-none resize-none text-text-primary placeholder-text-inactive';
 
     switch (block.type) {
       case 'heading1':
@@ -544,7 +544,7 @@ export default function NotesPage() {
               className={`w-5 h-5 mt-0.5 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
                 block.checked
                   ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent'
-                  : 'border-[#4a4a6a] hover:border-[#e94560] hover:shadow-[0_0_6px_rgba(233,69,96,0.3)]'
+                  : 'border-text-secondary/50 hover:border-[#e94560] hover:shadow-[0_0_6px_rgba(233,69,96,0.3)]'
               }`}
             >
               {block.checked && (
@@ -559,7 +559,7 @@ export default function NotesPage() {
               onChange={(e) => updateBlock(block.id, e.target.value)}
               onKeyDown={(e) => handleBlockKeyDown(e, block)}
               placeholder="할 일"
-              className={`${baseClass} text-sm flex-1 ${block.checked ? 'line-through text-[#4a4a6a]' : ''}`}
+              className={`${baseClass} text-sm flex-1 ${block.checked ? 'line-through text-text-inactive' : ''}`}
             />
           </div>
         );
@@ -573,20 +573,20 @@ export default function NotesPage() {
               onChange={(e) => updateBlock(block.id, e.target.value)}
               onKeyDown={(e) => handleBlockKeyDown(e, block)}
               placeholder="인용문"
-              className={`${baseClass} text-sm italic text-[#94a3b8] flex-1 bg-transparent`}
+              className={`${baseClass} text-sm italic text-text-secondary flex-1 bg-transparent`}
             />
           </div>
         );
       case 'divider':
         return (
           <div className="py-2">
-            <div className="h-px bg-gradient-to-r from-transparent via-[#1e1e3a] to-transparent" />
+            <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
           </div>
         );
       case 'code':
         return (
-          <div className="bg-[#0a0a1f] border border-[#1e1e3a] rounded-lg p-3 relative">
-            <div className="absolute top-2 right-2 text-[9px] text-[#4a4a6a] font-mono">CODE</div>
+          <div className="bg-background border border-border rounded-lg p-3 relative">
+            <div className="absolute top-2 right-2 text-[9px] text-text-inactive font-mono">CODE</div>
             <textarea
               data-block-id={block.id}
               value={block.content}
@@ -623,7 +623,7 @@ export default function NotesPage() {
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-[#94a3b8] text-sm">노트 불러오는 중...</p>
+          <p className="text-text-secondary text-sm">노트 불러오는 중...</p>
         </div>
       </div>
     );
@@ -634,14 +634,14 @@ export default function NotesPage() {
       {/* ================================================================ */}
       {/* Note List Panel */}
       {/* ================================================================ */}
-      <div className="w-80 border-r border-[#1e1e3a] bg-[#0d0d20] flex flex-col flex-shrink-0">
+      <div className="w-80 border-r border-border bg-background flex flex-col flex-shrink-0">
         {/* Header */}
-        <div className="p-4 border-b border-[#1e1e3a]">
+        <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-lg">📝</span>
-              <h2 className="text-lg font-bold">노트</h2>
-              <span className="text-xs text-[#64748b] bg-[#1e1e3a] px-2 py-0.5 rounded-full">
+              <h2 className="text-lg font-bold text-text-primary">노트</h2>
+              <span className="text-xs text-text-muted bg-border px-2 py-0.5 rounded-full">
                 {filteredNotes.length}
               </span>
             </div>
@@ -655,7 +655,7 @@ export default function NotesPage() {
 
           {/* Search */}
           <div className="relative mb-3">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#64748b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
@@ -663,7 +663,7 @@ export default function NotesPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="노트 검색..."
-              className="w-full pl-9 pr-3 py-2 bg-[#111128] border border-[#1e1e3a] rounded-lg text-xs text-[#e2e8f0] placeholder-[#64748b] focus:outline-none focus:border-[#e94560] transition-colors"
+              className="w-full pl-9 pr-3 py-2 bg-background-card border border-border rounded-lg text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-[#e94560] transition-colors"
             />
           </div>
 
@@ -674,7 +674,7 @@ export default function NotesPage() {
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
                 activeFolderId === null
                   ? 'bg-[#e94560]/15 text-[#e94560] border border-[#e94560]/30'
-                  : 'text-[#94a3b8] hover:bg-[#111128] border border-transparent'
+                  : 'text-text-secondary hover:bg-background-card border border-transparent'
               }`}
             >
               전체
@@ -686,7 +686,7 @@ export default function NotesPage() {
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
                   activeFolderId === folder.id
                     ? 'border'
-                    : 'text-[#94a3b8] hover:bg-[#111128] border border-transparent'
+                    : 'text-text-secondary hover:bg-background-card border border-transparent'
                 }`}
                 style={
                   activeFolderId === folder.id
@@ -700,7 +700,7 @@ export default function NotesPage() {
             ))}
             <button
               onClick={() => setShowFolderCreator(!showFolderCreator)}
-              className="w-6 h-6 rounded-lg text-[#4a4a6a] hover:text-[#94a3b8] hover:bg-[#111128] flex items-center justify-center text-sm transition-all"
+              className="w-6 h-6 rounded-lg text-text-inactive hover:text-text-secondary hover:bg-background-card flex items-center justify-center text-sm transition-all"
               title="새 폴더"
             >
               +
@@ -717,7 +717,7 @@ export default function NotesPage() {
                 onKeyDown={(e) => e.key === 'Enter' && createFolder()}
                 placeholder="폴더 이름..."
                 autoFocus
-                className="flex-1 px-2.5 py-1.5 bg-[#111128] border border-[#1e1e3a] rounded-lg text-xs text-[#e2e8f0] placeholder-[#64748b] focus:outline-none focus:border-[#e94560]"
+                className="flex-1 px-2.5 py-1.5 bg-background-card border border-border rounded-lg text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-[#e94560]"
               />
               <button
                 onClick={createFolder}
@@ -733,7 +733,7 @@ export default function NotesPage() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {pinnedNotes.length > 0 && (
             <div className="mb-2">
-              <div className="text-[9px] text-[#64748b] uppercase tracking-widest font-semibold px-2 py-1">
+              <div className="text-[9px] text-text-muted uppercase tracking-widest font-semibold px-2 py-1">
                 📌 고정됨
               </div>
               {pinnedNotes.map((note) => (
@@ -752,7 +752,7 @@ export default function NotesPage() {
           )}
 
           {pinnedNotes.length > 0 && otherNotes.length > 0 && (
-            <div className="text-[9px] text-[#64748b] uppercase tracking-widest font-semibold px-2 py-1">
+            <div className="text-[9px] text-text-muted uppercase tracking-widest font-semibold px-2 py-1">
               노트
             </div>
           )}
@@ -770,7 +770,7 @@ export default function NotesPage() {
           ))}
 
           {filteredNotes.length === 0 && (
-            <div className="text-center py-12 text-[#64748b] text-sm">
+            <div className="text-center py-12 text-text-muted text-sm">
               {searchQuery ? '검색 결과가 없습니다' : '노트가 없습니다'}
             </div>
           )}
@@ -783,8 +783,8 @@ export default function NotesPage() {
       {activeNote ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Editor Toolbar */}
-          <div className="flex items-center justify-between px-6 py-2.5 border-b border-[#1e1e3a] bg-[#0a0a1a]/50">
-            <div className="flex items-center gap-3 text-xs text-[#64748b]">
+          <div className="flex items-center justify-between px-6 py-2.5 border-b border-border bg-background/50">
+            <div className="flex items-center gap-3 text-xs text-text-muted">
               <span>수정됨 {getRelativeTime(activeNote.updated_at)}</span>
               <span>·</span>
               <span>{activeNote.blocks.length} 블록</span>
@@ -808,7 +808,7 @@ export default function NotesPage() {
               <button
                 onClick={() => setShowAIPanel(!showAIPanel)}
                 title="AI 도우미"
-                className="h-7 px-2 flex items-center gap-1 text-[#64748b] hover:text-[#8b5cf6] hover:bg-[#8b5cf6]/10 rounded-lg transition-all text-xs"
+                className="h-7 px-2 flex items-center gap-1 text-text-muted hover:text-[#8b5cf6] hover:bg-[#8b5cf6]/10 rounded-lg transition-all text-xs"
               >
                 <span>🧠</span>
                 <span className="text-[10px]">AI</span>
@@ -817,7 +817,7 @@ export default function NotesPage() {
                 </span>
               </button>
 
-              <div className="w-px h-4 bg-[#1e1e3a] mx-1" />
+              <div className="w-px h-4 bg-border mx-1" />
 
               {/* Block type buttons */}
               {[
@@ -836,22 +836,22 @@ export default function NotesPage() {
                     addBlockAfter(lastBlock.id, item.type);
                   }}
                   title={item.title}
-                  className="w-7 h-7 flex items-center justify-center text-[#4a4a6a] hover:text-[#e2e8f0] hover:bg-[#1e1e3a] rounded transition-colors text-[11px] font-mono"
+                  className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors text-[11px] font-mono"
                 >
                   {item.label}
                 </button>
               ))}
 
               {/* Folder move */}
-              <div className="w-px h-4 bg-[#1e1e3a] mx-1" />
+              <div className="w-px h-4 bg-border mx-1" />
               <select
                 value={activeNote.folderId || ''}
                 onChange={(e) => moveToFolder(activeNote.id, e.target.value || null)}
-                className="h-7 px-2 bg-transparent text-[#64748b] text-[10px] border border-[#1e1e3a] rounded-lg focus:outline-none cursor-pointer"
+                className="h-7 px-2 bg-background-card text-text-muted text-[10px] border border-border rounded-lg focus:outline-none cursor-pointer"
               >
-                <option value="" className="bg-[#111128]">폴더 없음</option>
+                <option value="">폴더 없음</option>
                 {folders.map((f) => (
-                  <option key={f.id} value={f.id} className="bg-[#111128]">
+                  <option key={f.id} value={f.id}>
                     {f.icon} {f.name}
                   </option>
                 ))}
@@ -861,12 +861,12 @@ export default function NotesPage() {
 
           {/* AI Todo Guide Banner (Premium) */}
           {showAITodoGuide && (
-            <div className="px-6 py-3 border-b border-[#1e1e3a] bg-gradient-to-r from-[#8b5cf6]/5 to-[#e94560]/5">
+            <div className="px-6 py-3 border-b border-border bg-gradient-to-r from-[#8b5cf6]/5 to-[#e94560]/5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm">🤖</span>
-                  <span className="text-xs text-[#94a3b8]">
-                    노트 내용을 분석하여 <strong className="text-[#e2e8f0]">할일 목록에 추가해드릴까요?</strong>
+                  <span className="text-xs text-text-secondary">
+                    노트 내용을 분석하여 <strong className="text-text-primary">할일 목록에 추가해드릴까요?</strong>
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-gradient-to-r from-amber-500 to-red-500 text-white">PREMIUM</span>
                 </div>
@@ -876,7 +876,7 @@ export default function NotesPage() {
                   </button>
                   <button
                     onClick={() => setShowAITodoGuide(false)}
-                    className="text-[#4a4a6a] hover:text-[#94a3b8] text-sm"
+                    className="text-text-inactive hover:text-text-secondary text-sm"
                   >
                     ×
                   </button>
@@ -887,7 +887,7 @@ export default function NotesPage() {
 
           {/* AI Panel */}
           {showAIPanel && (
-            <div className="px-6 py-3 border-b border-[#1e1e3a] bg-[#8b5cf6]/5">
+            <div className="px-6 py-3 border-b border-border bg-[#8b5cf6]/5">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-sm">🧠</span>
                 <span className="text-xs font-bold text-[#8b5cf6]">AI 도우미</span>
@@ -906,17 +906,17 @@ export default function NotesPage() {
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={triggerAIGenerate}
-                    className="p-2.5 bg-[#111128] border border-[#1e1e3a] rounded-lg text-center hover:border-[#8b5cf6]/30 transition-all group"
+                    className="p-2.5 bg-background-card border border-border rounded-lg text-center hover:border-[#8b5cf6]/30 transition-all group"
                   >
                     <span className="text-lg block mb-1">✨</span>
-                    <span className="text-[10px] text-[#94a3b8] group-hover:text-[#e2e8f0]">자동 작성</span>
+                    <span className="text-[10px] text-text-secondary group-hover:text-text-primary">자동 작성</span>
                   </button>
                   <button
                     onClick={triggerAISummarize}
-                    className="p-2.5 bg-[#111128] border border-[#1e1e3a] rounded-lg text-center hover:border-[#8b5cf6]/30 transition-all group"
+                    className="p-2.5 bg-background-card border border-border rounded-lg text-center hover:border-[#8b5cf6]/30 transition-all group"
                   >
                     <span className="text-lg block mb-1">📊</span>
-                    <span className="text-[10px] text-[#94a3b8] group-hover:text-[#e2e8f0]">요약하기</span>
+                    <span className="text-[10px] text-text-secondary group-hover:text-text-primary">요약하기</span>
                   </button>
                   <button
                     onClick={() => {
@@ -943,10 +943,10 @@ export default function NotesPage() {
                         setShowAIPanel(false);
                       }, 1800);
                     }}
-                    className="p-2.5 bg-[#111128] border border-[#1e1e3a] rounded-lg text-center hover:border-[#8b5cf6]/30 transition-all group"
+                    className="p-2.5 bg-background-card border border-border rounded-lg text-center hover:border-[#8b5cf6]/30 transition-all group"
                   >
                     <span className="text-lg block mb-1">⚡</span>
-                    <span className="text-[10px] text-[#94a3b8] group-hover:text-[#e2e8f0]">액션 추출</span>
+                    <span className="text-[10px] text-text-secondary group-hover:text-text-primary">액션 추출</span>
                   </button>
                 </div>
               )}
@@ -966,14 +966,14 @@ export default function NotesPage() {
                     {activeNote.icon}
                   </button>
                   {showIconPicker && (
-                    <div className="absolute top-12 left-0 bg-[#111128] border border-[#1e1e3a] rounded-xl p-3 shadow-xl z-10 min-w-[240px]">
+                    <div className="absolute top-12 left-0 bg-background-card border border-border rounded-xl p-3 shadow-xl z-10 min-w-[240px]">
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 36px)', gap: '4px' }}>
                         {NOTE_ICONS.map((icon) => (
                           <button
                             key={icon}
                             onClick={() => updateNoteIcon(icon)}
                             style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', borderRadius: '8px' }}
-                            className="hover:bg-[#1e1e3a] transition-colors"
+                            className="hover:bg-border transition-colors"
                           >
                             {icon}
                           </button>
@@ -986,7 +986,7 @@ export default function NotesPage() {
                   value={activeNote.title}
                   onChange={(e) => updateNoteTitle(e.target.value)}
                   placeholder="제목 없음"
-                  className="w-full bg-transparent text-3xl font-extrabold text-[#e2e8f0] placeholder-[#4a4a6a] outline-none"
+                  className="w-full bg-transparent text-3xl font-extrabold text-text-primary placeholder-text-inactive outline-none"
                 />
 
                 {/* Tags + Linked Task */}
@@ -1012,10 +1012,10 @@ export default function NotesPage() {
                 {activeNote.blocks.map((block) => (
                   <div
                     key={block.id}
-                    className="group relative py-1.5 px-1 -mx-1 rounded hover:bg-[#ffffff04] transition-colors"
+                    className="group relative py-1.5 px-1 -mx-1 rounded hover:bg-white/[0.02] transition-colors"
                   >
                     <div className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[#3a3a5a] cursor-grab text-[10px]">⋮⋮</span>
+                      <span className="text-text-inactive cursor-grab text-[10px]">⋮⋮</span>
                     </div>
                     {renderBlock(block)}
                   </div>
@@ -1028,24 +1028,24 @@ export default function NotesPage() {
                   const lastBlock = activeNote.blocks[activeNote.blocks.length - 1];
                   addBlockAfter(lastBlock.id);
                 }}
-                className="mt-4 w-full py-2 text-[#3a3a5a] hover:text-[#94a3b8] text-sm text-left transition-colors"
+                className="mt-4 w-full py-2 text-text-inactive hover:text-text-secondary text-sm text-left transition-colors"
               >
                 + 새 블록 &nbsp; <span className="text-[10px] opacity-50">Enter로도 추가 가능</span>
               </button>
 
               {/* Shortcuts hint */}
-              <div className="mt-12 p-4 bg-[#0d0d20] border border-[#1e1e3a]/50 rounded-xl">
-                <div className="text-[10px] text-[#4a4a6a] uppercase tracking-wider font-semibold mb-3">
+              <div className="mt-12 p-4 bg-background border border-border/50 rounded-xl">
+                <div className="text-[10px] text-text-inactive uppercase tracking-wider font-semibold mb-3">
                   단축키
                 </div>
-                <div className="grid grid-cols-3 gap-x-4 gap-y-1.5 text-[11px] text-[#64748b]">
+                <div className="grid grid-cols-3 gap-x-4 gap-y-1.5 text-[11px] text-text-muted">
                   {[
                     { key: '#', desc: '제목 1' }, { key: '##', desc: '제목 2' }, { key: '###', desc: '제목 3' },
                     { key: '-', desc: '글머리' }, { key: '1.', desc: '번호' }, { key: '[]', desc: '체크리스트' },
                     { key: '>', desc: '인용문' }, { key: '---', desc: '구분선' }, { key: '```', desc: '코드' },
                   ].map((s) => (
                     <div key={s.key} className="flex items-center gap-1.5">
-                      <code className="px-1 py-0.5 bg-[#1e1e3a]/50 rounded text-[9px] text-[#e94560]/70 font-mono min-w-[2em] text-center">
+                      <code className="px-1 py-0.5 bg-border/50 rounded text-[9px] text-[#e94560]/70 font-mono min-w-[2em] text-center">
                         {s.key}
                       </code>
                       <span>{s.desc}</span>
@@ -1060,8 +1060,8 @@ export default function NotesPage() {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="text-6xl mb-4 animate-pulse-slow">📝</div>
-            <p className="text-[#94a3b8] font-semibold text-lg">노트를 선택하세요</p>
-            <p className="text-[#64748b] text-sm mt-1">또는 새 노트를 만들어보세요</p>
+            <p className="text-text-secondary font-semibold text-lg">노트를 선택하세요</p>
+            <p className="text-text-muted text-sm mt-1">또는 새 노트를 만들어보세요</p>
             <button
               onClick={createNote}
               className="mt-4 px-5 py-2.5 bg-[#e94560] hover:bg-[#ff5a7a] text-white font-semibold rounded-xl text-sm transition-colors"
@@ -1110,8 +1110,8 @@ function NoteListItem({
       onClick={onClick}
       className={`group relative p-3 rounded-xl cursor-pointer transition-all ${
         isActive
-          ? 'bg-[#111128] border border-[#e94560]/30 shadow-[0_0_12px_rgba(233,69,96,0.05)]'
-          : 'hover:bg-[#111128]/60 border border-transparent'
+          ? 'bg-background-card border border-[#e94560]/30 shadow-[0_0_12px_rgba(233,69,96,0.05)]'
+          : 'hover:bg-background-card/60 border border-transparent'
       }`}
     >
       {/* Actions */}
@@ -1119,14 +1119,14 @@ function NoteListItem({
         <button
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           className={`w-6 h-6 flex items-center justify-center rounded text-xs transition-colors ${
-            note.pinned ? 'text-[#e94560]' : 'text-[#64748b] hover:text-[#e94560]'
+            note.pinned ? 'text-[#e94560]' : 'text-text-muted hover:text-[#e94560]'
           }`}
         >
           📌
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="w-6 h-6 flex items-center justify-center rounded text-[#64748b] hover:text-[#e94560] text-xs"
+          className="w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-[#e94560] text-xs"
         >
           ×
         </button>
@@ -1135,10 +1135,10 @@ function NoteListItem({
       <div className="flex items-start gap-2.5">
         <span className="text-lg flex-shrink-0 mt-0.5">{note.icon}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate">{note.title}</p>
-          <p className="text-[11px] text-[#4a4a6a] truncate mt-0.5">{preview || '내용 없음'}</p>
+          <p className="text-sm font-semibold text-text-primary truncate">{note.title}</p>
+          <p className="text-[11px] text-text-inactive truncate mt-0.5">{preview || '내용 없음'}</p>
           <div className="flex items-center gap-2 mt-1.5">
-            <span className="text-[10px] text-[#3a3a5a]">
+            <span className="text-[10px] text-text-inactive">
               {getRelativeTime(note.updated_at)}
             </span>
             {folder && (
@@ -1147,7 +1147,7 @@ function NoteListItem({
               </span>
             )}
             {todoBlocks.length > 0 && (
-              <span className="text-[9px] text-[#64748b]">
+              <span className="text-[9px] text-text-muted">
                 ☑ {checkedTodos.length}/{todoBlocks.length}
               </span>
             )}

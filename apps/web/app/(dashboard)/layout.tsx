@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/layout/Sidebar';
+import AdBanner from '@/components/layout/AdBanner';
 
 export default function DashboardLayout({
   children,
@@ -38,7 +39,11 @@ export default function DashboardLayout({
       style={{ fontFamily: "'Pretendard Variable', -apple-system, sans-serif" }}
     >
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="flex-1 overflow-y-auto flex flex-col">
+        {/* 프리 플랜 광고 배너 */}
+        <AdBanner />
+        <div className="flex-1">{children}</div>
+      </main>
     </div>
   );
 }

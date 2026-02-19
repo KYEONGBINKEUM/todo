@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getTasks, getNotes, getLists, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
+import { deleteAttachments } from '@/lib/attachment-store';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -28,10 +29,6 @@ function parseTags(title: string): string[] {
   return [...title.matchAll(/@([\w가-힣]+)/g)].map((m) => m[1]);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inner component (uses useSearchParams — needs Suspense wrapper)
-// ─────────────────────────────────────────────────────────────────────────────
-
 function TasksContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -44,14 +41,17 @@ function TasksContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // 드래그 상태
+  const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const savingOrder = useRef(false);
+
   // 상세 패널
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
-  // 알림 스케줄링
   useTaskReminders(tasks);
 
-  // URL param → filterList 초기값
   useEffect(() => {
     const listParam = searchParams.get('list');
     if (listParam) setFilterList(listParam);
@@ -65,14 +65,15 @@ function TasksContent() {
         getLists(user.uid),
         getNotes(user.uid),
       ]);
-      setTasks(fetchedTasks);
+      const sorted = [...fetchedTasks].sort((a, b) => {
+        if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+        if (a.order !== undefined) return -1;
+        if (b.order !== undefined) return 1;
+        return 0;
+      });
+      setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
       if (fetchedLists.length > 0) setLists(fetchedLists);
-      setRelatedNotes(fetchedNotes.map((n) => ({
-        id: n.id!,
-        title: n.title,
-        icon: n.icon,
-        tags: n.tags,
-      })));
+      setRelatedNotes(fetchedNotes.map((n) => ({ id: n.id!, title: n.title, icon: n.icon, tags: n.tags })));
     } catch (err) {
       console.error('Failed to load tasks:', err);
     } finally {
@@ -82,37 +83,6 @@ function TasksContent() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleToggleTask = async (task: TaskData) => {
-    if (!user || !task.id) return;
-    const newStatus = task.status === 'completed' ? 'todo' : 'completed';
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)));
-    await updateTask(user.uid, task.id, { status: newStatus });
-  };
-
-  const handleToggleStar = async (task: TaskData) => {
-    if (!user || !task.id) return;
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, starred: !t.starred } : t)));
-    await updateTask(user.uid, task.id, { starred: !task.starred });
-  };
-
-  const handleDeleteTask = async (task: TaskData) => {
-    if (!user || !task.id) return;
-    if (selectedTaskId === task.id) setSelectedTaskId(null);
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
-    await deleteTaskDB(user.uid, task.id);
-  };
-
-  const handlePanelUpdate = async (updates: Partial<TaskData>) => {
-    if (!user || !selectedTaskId) return;
-    // 제목 변경 시 @태그 재파싱
-    const finalUpdates = { ...updates };
-    if (updates.title !== undefined) {
-      finalUpdates.tags = parseTags(updates.title);
-    }
-    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
-    await updateTask(user.uid, selectedTaskId, finalUpdates);
-  };
-
   // 필터 적용
   const filtered = tasks
     .filter((t) => !filterList || t.listId === filterList)
@@ -120,19 +90,85 @@ function TasksContent() {
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
     .filter((t) => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  // @태그 소그룹
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
+  const canDrag = !filterList && !filterStatus && !filterTag && !searchQuery;
 
-  // 관련 노트 (현재 filterTag 기준)
   const tagRelatedNotes = filterTag
-    ? relatedNotes.filter(
-        (n) =>
-          n.tags.includes(filterTag) ||
-          n.title.toLowerCase().includes(filterTag.toLowerCase())
-      )
+    ? relatedNotes.filter((n) => n.tags.includes(filterTag) || n.title.toLowerCase().includes(filterTag.toLowerCase()))
     : [];
 
   const getListInfo = (listId: string) => lists.find((l) => l.id === listId) || lists[0];
+
+  // ── 드래그 & 드롭 ─────────────────────────────────────────────────────────
+
+  const handleDragStart = (e: React.DragEvent, idx: number) => {
+    setDragSrcIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
+  };
+
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIdx(idx);
+  };
+
+  const handleDragEnd = () => { setDragSrcIdx(null); setDragOverIdx(null); };
+
+  const handleDrop = async (e: React.DragEvent, dstIdx: number) => {
+    e.preventDefault();
+    const srcIdx = dragSrcIdx;
+    handleDragEnd();
+    if (srcIdx === null || srcIdx === dstIdx || savingOrder.current) return;
+
+    const newTasks = [...filtered];
+    const [moved] = newTasks.splice(srcIdx, 1);
+    newTasks.splice(dstIdx, 0, moved);
+
+    const withOrder = newTasks.map((t, i) => ({ ...t, order: (i + 1) * 1000 }));
+    setTasks(withOrder);
+
+    if (user) {
+      savingOrder.current = true;
+      try {
+        await Promise.all(withOrder.map((t) => updateTask(user.uid, t.id!, { order: t.order! })));
+      } finally {
+        savingOrder.current = false;
+      }
+    }
+  };
+
+  // ── Task handlers ──────────────────────────────────────────────────────────
+
+  const handleToggleTask = async (task: TaskData) => {
+    if (!user || !task.id) return;
+    const newStatus = task.status === 'completed' ? 'todo' : 'completed';
+    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: newStatus } : t));
+    await updateTask(user.uid, task.id, { status: newStatus });
+  };
+
+  const handleToggleStar = async (task: TaskData) => {
+    if (!user || !task.id) return;
+    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, starred: !t.starred } : t));
+    await updateTask(user.uid, task.id, { starred: !task.starred });
+  };
+
+  const handleDeleteTask = async (task: TaskData) => {
+    if (!user || !task.id) return;
+    if (selectedTaskId === task.id) setSelectedTaskId(null);
+    const attIds = (task.attachments ?? []).map((a) => a.id);
+    if (attIds.length) await deleteAttachments(attIds);
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    await deleteTaskDB(user.uid, task.id);
+  };
+
+  const handlePanelUpdate = async (updates: Partial<TaskData>) => {
+    if (!user || !selectedTaskId) return;
+    const finalUpdates = { ...updates };
+    if (updates.title !== undefined) finalUpdates.tags = parseTags(updates.title);
+    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
+    await updateTask(user.uid, selectedTaskId, finalUpdates);
+  };
 
   if (loading) {
     return (
@@ -172,8 +208,7 @@ function TasksContent() {
             <button onClick={() => setFilterList(null)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${!filterList ? 'bg-[#e94560]/20 text-[#e94560]' : 'text-text-secondary hover:bg-background-card'}`}>전체</button>
             {lists.map((list) => (
               <button key={list.id} onClick={() => setFilterList(filterList === list.id! ? null : list.id!)} className={`px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 ${filterList === list.id ? '' : 'text-text-secondary hover:bg-background-card'}`} style={filterList === list.id ? { color: list.color } : undefined}>
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: list.color }} />
-                {list.label}
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: list.color }} />{list.label}
               </button>
             ))}
           </div>
@@ -191,24 +226,26 @@ function TasksContent() {
           <div className="mb-4 flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-text-muted uppercase tracking-wider">@태그</span>
             {filterTag && (
-              <button onClick={() => setFilterTag(null)} className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all">
-                전체
-              </button>
+              <button onClick={() => setFilterTag(null)} className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all">전체</button>
             )}
             {allTags.map((tag) => (
               <button
                 key={tag}
                 onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                  filterTag === tag
-                    ? 'bg-[#8b5cf6]/15 text-[#8b5cf6] border-[#8b5cf6]/30'
-                    : 'text-text-secondary border-border hover:border-border-hover hover:bg-background-card'
-                }`}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${filterTag === tag ? 'bg-[#8b5cf6]/15 text-[#8b5cf6] border-[#8b5cf6]/30' : 'text-text-secondary border-border hover:border-border-hover hover:bg-background-card'}`}
               >
                 @{tag}
               </button>
             ))}
           </div>
+        )}
+
+        {/* 드래그 안내 */}
+        {canDrag && filtered.length > 1 && (
+          <p className="text-[10px] text-text-inactive mb-2 flex items-center gap-1">
+            <span>⋮⋮</span>
+            <span>필터 미적용 시 아이콘 드래그로 순서 변경</span>
+          </p>
         )}
 
         {/* Task List */}
@@ -218,25 +255,42 @@ function TasksContent() {
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
             const isSelected = selectedTaskId === task.id;
+            const isDragging = dragSrcIdx === index;
+            const isDragOver = dragOverIdx === index;
             const taskTags = task.tags ?? [];
 
             return (
               <div
                 key={task.id}
+                draggable={canDrag}
+                onDragStart={canDrag ? (e) => handleDragStart(e, index) : undefined}
+                onDragOver={canDrag ? (e) => handleDragOver(e, index) : undefined}
+                onDrop={canDrag ? (e) => handleDrop(e, index) : undefined}
+                onDragEnd={handleDragEnd}
                 onClick={() => setSelectedTaskId(isSelected ? null : task.id!)}
-                className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer ${
-                  isSelected
-                    ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]'
-                    : isCompleted
-                    ? 'border-border/50 opacity-60'
-                    : 'border-border hover:border-border-hover'
+                className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer select-none ${
+                  isDragging ? 'opacity-40 scale-95' :
+                  isDragOver ? 'border-[#e94560] shadow-[0_0_12px_rgba(233,69,96,0.15)]' :
+                  isSelected ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]' :
+                  isCompleted ? 'border-border/50 opacity-60' :
+                  'border-border hover:border-border-hover'
                 }`}
-                style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}
+                style={{ animation: isDragOver ? undefined : 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}
               >
+                {/* 드래그 핸들 */}
+                {canDrag && (
+                  <span className="opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none" title="드래그하여 순서 변경">
+                    ⋮⋮
+                  </span>
+                )}
+
                 {/* 체크박스 */}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
-                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'border-text-secondary/50 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'}`}
+                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
+                    isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'
+                  }`}
+                  style={isCompleted ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
                 >
                   {isCompleted && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </button>
@@ -244,11 +298,9 @@ function TasksContent() {
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
 
                 <div className="flex-1 min-w-0">
-                  {/* 제목 — 클릭 시 패널 오픈 (인라인 편집 없음) */}
                   <span className={`block text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
                     {task.title}
                   </span>
-                  {/* @태그 표시 */}
                   {taskTags.length > 0 && (
                     <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                       {taskTags.map((tag) => (
@@ -270,7 +322,7 @@ function TasksContent() {
                 {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
                 <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
-                <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
+                <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
                 <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
               </div>
             );
@@ -285,7 +337,7 @@ function TasksContent() {
           </div>
         )}
 
-        {/* @태그 관련 노트 카드 */}
+        {/* @태그 관련 노트 */}
         {filterTag && tagRelatedNotes.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center gap-2 mb-3">
@@ -301,9 +353,7 @@ function TasksContent() {
                     <span className="text-xs font-semibold text-text-primary truncate">{note.title}</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {note.tags.map((t) => (
-                      <span key={t} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6]">@{t}</span>
-                    ))}
+                    {note.tags.map((t) => (<span key={t} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6]">@{t}</span>))}
                   </div>
                 </div>
               ))}
@@ -312,7 +362,6 @@ function TasksContent() {
         )}
       </div>
 
-      {/* Task Detail Panel */}
       {selectedTask && (
         <TaskDetailPanel
           task={selectedTask}
@@ -324,10 +373,6 @@ function TasksContent() {
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Export with Suspense (required for useSearchParams in static export)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export default function AllTasksPage() {
   return (

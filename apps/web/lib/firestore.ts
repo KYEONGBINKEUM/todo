@@ -56,7 +56,6 @@ export interface TaskAttachment {
   size: number;
   type: string;
   addedAt: string;
-  url?: string; // data URL (≤500 KB files only)
 }
 
 export interface TaskData {
@@ -73,6 +72,7 @@ export interface TaskData {
   memo?: string;
   attachments?: TaskAttachment[];
   tags?: string[];
+  order?: number;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }

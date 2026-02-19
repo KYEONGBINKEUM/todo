@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { TaskData, SubTask, TaskAttachment } from '@/lib/firestore';
 import { requestNotificationPermission } from '@/lib/use-reminders';
+import { saveAttachment, openAttachment, deleteAttachments } from '@/lib/attachment-store';
 
 interface TaskDetailPanelProps {
   task: TaskData;
@@ -18,7 +19,7 @@ const PRIORITY_OPTIONS = [
   { value: 'low', label: '낮음', color: '#22c55e' },
 ] as const;
 
-const MAX_FILE_SIZE = 500 * 1024; // 500 KB
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: TaskDetailPanelProps) {
   // ── Title ──────────────────────────────────────────────────────────────────
@@ -27,8 +28,14 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
   // ── Sub-tasks ──────────────────────────────────────────────────────────────
   const [subTaskInput, setSubTaskInput] = useState('');
+  const [editingSubId, setEditingSubId] = useState<string | null>(null);
+  const [editingSubTitle, setEditingSubTitle] = useState('');
+  const editingSubRef = useRef<HTMLInputElement>(null);
+
+  // ── Memo ───────────────────────────────────────────────────────────────────
   const [memoValue, setMemoValue] = useState(task.memo ?? '');
   const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const subTaskInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,7 +43,15 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   useEffect(() => {
     setTitleValue(task.title);
     setMemoValue(task.memo ?? '');
+    setEditingSubId(null);
   }, [task.id]);
+
+  useEffect(() => {
+    if (editingSubId && editingSubRef.current) {
+      editingSubRef.current.focus();
+      editingSubRef.current.select();
+    }
+  }, [editingSubId]);
 
   // ── Title editing ──────────────────────────────────────────────────────────
 
@@ -44,8 +59,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     setTitleValue(value);
     if (titleTimer.current) clearTimeout(titleTimer.current);
     titleTimer.current = setTimeout(() => {
-      const trimmed = value.trim() || '제목 없음';
-      onUpdate({ title: trimmed });
+      onUpdate({ title: value.trim() || '제목 없음' });
     }, 400);
   };
 
@@ -74,6 +88,19 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     onUpdate({ subTasks: subTasks.filter((s) => s.id !== id) });
   };
 
+  const startEditSubTask = (sub: SubTask) => {
+    setEditingSubId(sub.id);
+    setEditingSubTitle(sub.title);
+  };
+
+  const saveSubTaskEdit = (id: string) => {
+    const trimmed = editingSubTitle.trim();
+    if (trimmed) {
+      onUpdate({ subTasks: subTasks.map((s) => s.id === id ? { ...s, title: trimmed } : s) });
+    }
+    setEditingSubId(null);
+  };
+
   // ── Memo ───────────────────────────────────────────────────────────────────
 
   const handleMemoChange = (value: string) => {
@@ -82,64 +109,46 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     memoTimer.current = setTimeout(() => onUpdate({ memo: value }), 500);
   };
 
-  // ── Attachments ─────────────────────────────────────────────────────────────
+  // ── Attachments (IndexedDB) ─────────────────────────────────────────────────
 
   const attachments: TaskAttachment[] = task.attachments ?? [];
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const allFiles = Array.from(e.target.files ?? []);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (!allFiles.length) return;
 
     const files = allFiles.filter((f) => {
       if (f.size > MAX_FILE_SIZE) {
-        alert(`"${f.name}"은 500 KB를 초과하여 첨부할 수 없습니다.\n(대용량 파일은 Firebase Storage 연동 후 지원됩니다)`);
+        alert(`"${f.name}"은 2 MB를 초과하여 첨부할 수 없습니다.`);
         return false;
       }
       return true;
     });
     if (!files.length) return;
 
-    Promise.all(
-      files.map(
-        (file) =>
-          new Promise<TaskAttachment>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              resolve({
-                id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                addedAt: new Date().toISOString(),
-                url: reader.result as string,
-              });
-            };
-            reader.readAsDataURL(file);
-          })
-      )
-    ).then((newAtts) => {
-      onUpdate({ attachments: [...attachments, ...newAtts] });
-    });
+    const newAtts: TaskAttachment[] = [];
+    for (const file of files) {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      await saveAttachment(id, file);
+      newAtts.push({
+        id,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        addedAt: new Date().toISOString(),
+      });
+    }
+    onUpdate({ attachments: [...attachments, ...newAtts] });
   };
 
-  const deleteAttachment = (id: string) => {
+  const deleteAttachment = async (id: string) => {
+    await deleteAttachments([id]);
     onUpdate({ attachments: attachments.filter((a) => a.id !== id) });
   };
 
-  const openAttachment = (att: TaskAttachment) => {
-    if (!att.url) return;
-    const viewable = ['image/', 'text/', 'application/pdf', 'video/', 'audio/'];
-    if (viewable.some((t) => att.type.startsWith(t))) {
-      window.open(att.url, '_blank');
-    } else {
-      const a = document.createElement('a');
-      a.href = att.url;
-      a.download = att.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+  const handleOpenAttachment = (att: TaskAttachment) => {
+    openAttachment(att.id, att.name, att.type);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -256,25 +265,22 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               </div>
             </div>
 
-            {/* Notification permission hint */}
             {task.reminder && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied' && (
               <p className="text-[10px] text-amber-400 flex items-center gap-1">
                 <span>⚠️</span>
-                <span>브라우저 알림이 차단되어 있습니다. 브라우저 설정에서 알림을 허용해 주세요.</span>
+                <span>브라우저 알림이 차단되어 있습니다. 브라우저 설정에서 허용해 주세요.</span>
               </p>
             )}
           </div>
 
           {/* ── Sub-tasks ───────────────────────────────────────────────────── */}
           <div className="px-5 py-4 border-b border-border">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">📋</span>
-                <span className="text-xs font-bold text-text-primary">하위 할일</span>
-                {subTasks.length > 0 && (
-                  <span className="text-[10px] text-text-muted">{completedSubCount}/{subTasks.length}</span>
-                )}
-              </div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm">📋</span>
+              <span className="text-xs font-bold text-text-primary">하위 할일</span>
+              {subTasks.length > 0 && (
+                <span className="text-[10px] text-text-muted">{completedSubCount}/{subTasks.length}</span>
+              )}
             </div>
 
             {subTasks.length > 0 && (
@@ -289,13 +295,15 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             <div className="space-y-1 mb-3">
               {subTasks.map((sub) => (
                 <div key={sub.id} className="flex items-center gap-2.5 group py-1 px-2 -mx-2 rounded-lg hover:bg-border/30 transition-colors">
+                  {/* 체크박스 */}
                   <button
                     onClick={() => toggleSubTask(sub.id)}
                     className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 ${
                       sub.completed
                         ? 'bg-gradient-to-br from-[#e94560] to-[#8b5cf6] border-transparent'
-                        : 'border-text-secondary/40 hover:border-[#e94560]'
+                        : 'hover:border-[#e94560]'
                     }`}
+                    style={sub.completed ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
                   >
                     {sub.completed && (
                       <svg width="8" height="8" viewBox="0 0 14 14" fill="none">
@@ -303,7 +311,32 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                       </svg>
                     )}
                   </button>
-                  <span className={`flex-1 text-xs ${sub.completed ? 'line-through text-text-inactive' : 'text-text-primary'}`}>{sub.title}</span>
+
+                  {/* 제목 — 클릭 시 인라인 편집 */}
+                  {editingSubId === sub.id ? (
+                    <input
+                      ref={editingSubRef}
+                      value={editingSubTitle}
+                      onChange={(e) => setEditingSubTitle(e.target.value)}
+                      onBlur={() => saveSubTaskEdit(sub.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveSubTaskEdit(sub.id);
+                        if (e.key === 'Escape') setEditingSubId(null);
+                      }}
+                      className="flex-1 text-xs text-text-primary bg-background border border-[#e94560]/50 rounded px-1.5 py-0.5 focus:outline-none"
+                    />
+                  ) : (
+                    <span
+                      onClick={() => startEditSubTask(sub)}
+                      className={`flex-1 text-xs cursor-text ${
+                        sub.completed ? 'line-through text-text-inactive' : 'text-text-primary hover:text-[#e94560]'
+                      }`}
+                      title="클릭하여 수정"
+                    >
+                      {sub.title}
+                    </span>
+                  )}
+
                   <button
                     onClick={() => deleteSubTask(sub.id)}
                     className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-sm"
@@ -314,6 +347,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               ))}
             </div>
 
+            {/* Add sub-task input */}
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded border-2 border-dashed border-border flex-shrink-0" />
               <input
@@ -346,9 +380,9 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             />
           </div>
 
-          {/* ── Attachments ─────────────────────────────────────────────────── */}
+          {/* ── Attachments (IndexedDB) ──────────────────────────────────────── */}
           <div className="px-5 py-4 border-b border-border">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm">📎</span>
                 <span className="text-xs font-bold text-text-primary">파일 첨부</span>
@@ -362,31 +396,28 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               </button>
               <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
             </div>
-
-            <p className="text-[10px] text-text-muted mb-2">최대 500 KB · 클릭하면 파일을 열거나 다운로드합니다</p>
+            <p className="text-[10px] text-text-muted mb-3">최대 2 MB · 클릭하면 열기/다운로드</p>
 
             {attachments.length === 0 ? (
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full py-4 border-2 border-dashed border-border rounded-lg text-center text-text-inactive text-xs hover:border-[#e94560]/40 hover:text-text-muted transition-colors"
               >
-                파일을 끌어다 놓거나 클릭하여 추가
+                파일을 클릭하여 첨부
               </button>
             ) : (
               <div className="space-y-1.5">
                 {attachments.map((att) => (
                   <div
                     key={att.id}
-                    onClick={() => openAttachment(att)}
-                    className={`flex items-center gap-2.5 p-2 bg-background rounded-lg border border-border group transition-colors ${att.url ? 'cursor-pointer hover:border-[#e94560]/40' : 'opacity-60'}`}
-                    title={att.url ? '클릭하여 열기' : '이 파일은 저장되지 않아 열 수 없습니다'}
+                    onClick={() => handleOpenAttachment(att)}
+                    className="flex items-center gap-2.5 p-2 bg-background rounded-lg border border-border group transition-colors cursor-pointer hover:border-[#e94560]/40"
                   >
                     <span className="text-lg flex-shrink-0">{fileIcon(att.type)}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-text-primary truncate font-medium">{att.name}</p>
                       <p className="text-[10px] text-text-muted">
                         {formatFileSize(att.size)} · {formatDate(att.addedAt)}
-                        {att.url ? <span className="text-[#22c55e] ml-1">· 열기 가능</span> : <span className="text-text-inactive ml-1">· 미저장</span>}
                       </p>
                     </div>
                     <button

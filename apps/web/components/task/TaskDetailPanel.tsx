@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { TaskData, SubTask, TaskAttachment } from '@/lib/firestore';
+import { TaskData, SubTask, TaskAttachment, NoteData, getNotes } from '@/lib/firestore';
+import { useAuth } from '@/lib/auth-context';
 import { requestNotificationPermission } from '@/lib/use-reminders';
 import { saveAttachment, openAttachment, deleteAttachments } from '@/lib/attachment-store';
 
@@ -22,6 +23,8 @@ const PRIORITY_OPTIONS = [
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: TaskDetailPanelProps) {
+  const { user } = useAuth();
+
   // ── Title ──────────────────────────────────────────────────────────────────
   const [titleValue, setTitleValue] = useState(task.title);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -36,8 +39,18 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const [memoValue, setMemoValue] = useState(task.memo ?? '');
   const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Linked Notes ───────────────────────────────────────────────────────────
+  const [allNotes, setAllNotes] = useState<NoteData[]>([]);
+  const [showNoteSelector, setShowNoteSelector] = useState(false);
+
   const subTaskInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load notes for linking
+  useEffect(() => {
+    if (!user) return;
+    getNotes(user.uid).then(setAllNotes).catch(() => {});
+  }, [user]);
 
   // Sync when a different task is selected
   useEffect(() => {
@@ -433,7 +446,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
           </div>
 
           {/* ── Status ──────────────────────────────────────────────────────── */}
-          <div className="px-5 py-4">
+          <div className="px-5 py-4 border-b border-border">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm">⚙️</span>
               <span className="text-xs font-bold text-text-primary">상태</span>
@@ -459,6 +472,82 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 );
               })}
             </div>
+          </div>
+
+          {/* ── Linked Notes ─────────────────────────────────────────────────── */}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">📝</span>
+                <span className="text-xs font-bold text-text-primary">연결된 노트</span>
+                {(task.linkedNoteIds?.length ?? 0) > 0 && (
+                  <span className="text-[10px] text-text-muted">{task.linkedNoteIds!.length}개</span>
+                )}
+              </div>
+              <button
+                onClick={() => setShowNoteSelector(!showNoteSelector)}
+                className="text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-secondary hover:border-[#e94560] hover:text-[#e94560] transition-colors font-semibold"
+              >
+                + 노트 연결
+              </button>
+            </div>
+
+            {/* Linked notes list */}
+            {(task.linkedNoteIds ?? []).length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                {(task.linkedNoteIds ?? []).map((noteId) => {
+                  const note = allNotes.find((n) => n.id === noteId);
+                  if (!note) return null;
+                  return (
+                    <div key={noteId} className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border group">
+                      <span className="text-base">{note.icon || '📝'}</span>
+                      <span className="text-xs text-text-primary flex-1 truncate">{note.title}</span>
+                      <button
+                        onClick={() => {
+                          const updated = (task.linkedNoteIds ?? []).filter((id) => id !== noteId);
+                          onUpdate({ linkedNoteIds: updated });
+                        }}
+                        className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-sm"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Note selector dropdown */}
+            {showNoteSelector && (
+              <div className="border border-border rounded-lg bg-background overflow-hidden max-h-40 overflow-y-auto">
+                {allNotes
+                  .filter((n) => !(task.linkedNoteIds ?? []).includes(n.id!))
+                  .map((note) => (
+                    <button
+                      key={note.id}
+                      onClick={() => {
+                        const updated = [...(task.linkedNoteIds ?? []), note.id!];
+                        onUpdate({ linkedNoteIds: updated });
+                        setShowNoteSelector(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-background-hover transition-colors"
+                    >
+                      <span className="text-sm">{note.icon || '📝'}</span>
+                      <span className="text-xs text-text-primary truncate">{note.title}</span>
+                    </button>
+                  ))}
+                {allNotes.filter((n) => !(task.linkedNoteIds ?? []).includes(n.id!)).length === 0 && (
+                  <p className="text-xs text-text-muted text-center py-3">연결 가능한 노트가 없습니다</p>
+                )}
+              </div>
+            )}
+
+            {task.status === 'completed' && (task.linkedNoteIds?.length ?? 0) > 0 && (
+              <p className="text-[10px] text-amber-400 mt-2 flex items-center gap-1">
+                <span>⚠️</span>
+                <span>완료된 할일의 노트 연결은 자동으로 해제됩니다</span>
+              </p>
+            )}
           </div>
         </div>
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { useI18n } from '@/lib/i18n-context';
 import { getTasks, getNotes, getLists, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachments } from '@/lib/attachment-store';
@@ -12,18 +13,15 @@ const DEFAULT_LISTS: ListData[] = [
   { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
 ];
 
-const priorityColors = {
-  urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30', label: '긴급' },
-  high: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30', label: '높음' },
-  medium: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', label: '보통' },
-  low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', label: '낮음' },
-};
-
-const statusLabels: Record<string, { label: string; color: string }> = {
-  todo: { label: '할 일', color: '#94a3b8' },
-  in_progress: { label: '진행 중', color: '#8b5cf6' },
-  completed: { label: '완료', color: '#22c55e' },
-};
+function priorityStyle(p: string) {
+  const map: Record<string, { bg: string; text: string; border: string }> = {
+    urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+    high: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
+    medium: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
+    low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  };
+  return map[p] || map.medium;
+}
 
 function parseTags(title: string): string[] {
   return [...title.matchAll(/@([\w가-힣]+)/g)].map((m) => m[1]);
@@ -32,6 +30,7 @@ function parseTags(title: string): string[] {
 function TasksContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { t } = useI18n();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
   const [relatedNotes, setRelatedNotes] = useState<{ id: string; title: string; icon: string; tags: string[] }[]>([]);
@@ -41,16 +40,20 @@ function TasksContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // 드래그 상태
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const savingOrder = useRef(false);
 
-  // 상세 패널
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
   useTaskReminders(tasks);
+
+  const statusLabels: Record<string, { label: string; color: string }> = {
+    todo: { label: t('status.todo'), color: '#94a3b8' },
+    in_progress: { label: t('status.inProgress'), color: '#8b5cf6' },
+    completed: { label: t('status.completed'), color: '#22c55e' },
+  };
 
   useEffect(() => {
     const listParam = searchParams.get('list');
@@ -83,7 +86,6 @@ function TasksContent() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // 필터 적용
   const filtered = tasks
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterStatus || t.status === filterStatus)
@@ -98,8 +100,6 @@ function TasksContent() {
     : [];
 
   const getListInfo = (listId: string) => lists.find((l) => l.id === listId) || lists[0];
-
-  // ── 드래그 & 드롭 ─────────────────────────────────────────────────────────
 
   const handleDragStart = (e: React.DragEvent, idx: number) => {
     setDragSrcIdx(idx);
@@ -137,8 +137,6 @@ function TasksContent() {
       }
     }
   };
-
-  // ── Task handlers ──────────────────────────────────────────────────────────
 
   const handleToggleTask = async (task: TaskData) => {
     if (!user || !task.id) return;
@@ -184,10 +182,10 @@ function TasksContent() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">📋</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">모든 작업</h2>
-            <span className="text-sm text-text-muted ml-2">{filtered.length}개</span>
+            <h2 className="text-3xl font-extrabold text-text-primary">{t('tasks.title')}</h2>
+            <span className="text-sm text-text-muted ml-2">{filtered.length}</span>
           </div>
-          <p className="text-text-secondary text-sm">모든 목록의 작업을 한 곳에서 관리하세요</p>
+          <p className="text-text-secondary text-sm">{t('tasks.desc')}</p>
         </div>
 
         {/* Search */}
@@ -196,7 +194,7 @@ function TasksContent() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="작업 검색..."
+            placeholder={t('tasks.search')}
             className="w-full px-4 py-3 bg-background-card border border-border rounded-xl text-text-primary placeholder-text-muted text-sm focus:outline-none focus:border-[#e94560] transition-colors"
           />
         </div>
@@ -204,8 +202,8 @@ function TasksContent() {
         {/* Filters */}
         <div className="mb-4 flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">목록</span>
-            <button onClick={() => setFilterList(null)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${!filterList ? 'bg-[#e94560]/20 text-[#e94560]' : 'text-text-secondary hover:bg-background-card'}`}>전체</button>
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">{t('tasks.list')}</span>
+            <button onClick={() => setFilterList(null)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${!filterList ? 'bg-[#e94560]/20 text-[#e94560]' : 'text-text-secondary hover:bg-background-card'}`}>{t('common.all')}</button>
             {lists.map((list) => (
               <button key={list.id} onClick={() => setFilterList(filterList === list.id! ? null : list.id!)} className={`px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 ${filterList === list.id ? '' : 'text-text-secondary hover:bg-background-card'}`} style={filterList === list.id ? { color: list.color } : undefined}>
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: list.color }} />{list.label}
@@ -214,19 +212,19 @@ function TasksContent() {
           </div>
           <div className="w-px h-5 bg-border" />
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">상태</span>
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">{t('tasks.status')}</span>
             {Object.entries(statusLabels).map(([key, val]) => (
               <button key={key} onClick={() => setFilterStatus(filterStatus === key ? null : key)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${filterStatus === key ? '' : 'text-text-secondary hover:bg-background-card'}`} style={filterStatus === key ? { color: val.color } : undefined}>{val.label}</button>
             ))}
           </div>
         </div>
 
-        {/* @태그 칩 */}
+        {/* @Tags */}
         {allTags.length > 0 && (
           <div className="mb-4 flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">@태그</span>
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">{t('tasks.tags')}</span>
             {filterTag && (
-              <button onClick={() => setFilterTag(null)} className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all">전체</button>
+              <button onClick={() => setFilterTag(null)} className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all">{t('common.all')}</button>
             )}
             {allTags.map((tag) => (
               <button
@@ -240,18 +238,18 @@ function TasksContent() {
           </div>
         )}
 
-        {/* 드래그 안내 */}
+        {/* Drag hint */}
         {canDrag && filtered.length > 1 && (
           <p className="text-[10px] text-text-inactive mb-2 flex items-center gap-1">
             <span>⋮⋮</span>
-            <span>필터 미적용 시 아이콘 드래그로 순서 변경</span>
+            <span>{t('tasks.dragHint')}</span>
           </p>
         )}
 
         {/* Task List */}
         <div className="space-y-2">
           {filtered.map((task, index) => {
-            const priority = priorityColors[task.priority];
+            const ps = priorityStyle(task.priority);
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
             const isSelected = selectedTaskId === task.id;
@@ -277,14 +275,12 @@ function TasksContent() {
                 }`}
                 style={{ animation: isDragOver ? undefined : 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}
               >
-                {/* 드래그 핸들 */}
                 {canDrag && (
-                  <span className="opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none" title="드래그하여 순서 변경">
+                  <span className="opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none" title={t('tasks.dragReorder')}>
                     ⋮⋮
                   </span>
                 )}
 
-                {/* 체크박스 */}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
                   className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
@@ -321,9 +317,9 @@ function TasksContent() {
                 )}
                 {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
                 <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
                 <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
-                <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
+                <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0" title={t('common.delete')}>×</button>
               </div>
             );
           })}
@@ -332,18 +328,18 @@ function TasksContent() {
         {filtered.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📭</div>
-            <p className="text-text-secondary font-semibold">{filterTag ? `@${filterTag} 태그의 작업이 없습니다` : '작업이 없습니다'}</p>
-            <p className="text-text-muted text-sm mt-1">My Day에서 작업을 추가해보세요</p>
+            <p className="text-text-secondary font-semibold">{filterTag ? `@${filterTag} ${t('tasks.emptyTag')}` : t('tasks.empty')}</p>
+            <p className="text-text-muted text-sm mt-1">{t('tasks.emptyHint')}</p>
           </div>
         )}
 
-        {/* @태그 관련 노트 */}
+        {/* Tag related notes */}
         {filterTag && tagRelatedNotes.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm">📝</span>
-              <span className="text-xs font-bold text-text-primary">@{filterTag} 관련 노트</span>
-              <span className="text-[10px] text-text-muted">{tagRelatedNotes.length}개</span>
+              <span className="text-xs font-bold text-text-primary">@{filterTag} {t('tasks.relatedNotes')}</span>
+              <span className="text-[10px] text-text-muted">{tagRelatedNotes.length}</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               {tagRelatedNotes.map((note) => (

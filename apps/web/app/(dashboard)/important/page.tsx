@@ -2,17 +2,22 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { useI18n } from '@/lib/i18n-context';
 import { getTasks, getLists, updateTask, type TaskData, type ListData } from '@/lib/firestore';
 
-const priorityColors = {
-  urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30', label: '긴급' },
-  high: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30', label: '높음' },
-  medium: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', label: '보통' },
-  low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', label: '낮음' },
-};
+function priorityStyle(p: string) {
+  const map: Record<string, { bg: string; text: string; border: string }> = {
+    urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+    high: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
+    medium: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
+    low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  };
+  return map[p] || map.medium;
+}
 
 export default function ImportantPage() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,15 +66,15 @@ export default function ImportantPage() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">⭐</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">중요</h2>
-            <span className="text-sm text-text-muted ml-2">{tasks.length}개</span>
+            <h2 className="text-3xl font-extrabold text-text-primary">{t('important.title')}</h2>
+            <span className="text-sm text-text-muted ml-2">{tasks.length}</span>
           </div>
-          <p className="text-text-secondary text-sm">별표로 표시한 중요 작업 모음</p>
+          <p className="text-text-secondary text-sm">{t('important.desc')}</p>
         </div>
 
         <div className="space-y-2">
           {tasks.map((task, index) => {
-            const priority = priorityColors[task.priority];
+            const ps = priorityStyle(task.priority);
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
             return (
@@ -85,8 +90,8 @@ export default function ImportantPage() {
                 <span className={`flex-1 text-sm transition-all ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>{task.title}</span>
                 {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
                 <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
-                <button onClick={() => handleUnstar(task)} className="text-lg text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] hover:text-amber-300 transition-all flex-shrink-0" title="중요 해제">★</button>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
+                <button onClick={() => handleUnstar(task)} className="text-lg text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] hover:text-amber-300 transition-all flex-shrink-0" title={t('important.unstar')}>★</button>
               </div>
             );
           })}
@@ -95,8 +100,8 @@ export default function ImportantPage() {
         {tasks.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">⭐</div>
-            <p className="text-text-secondary font-semibold">중요 작업이 없습니다</p>
-            <p className="text-text-muted text-sm mt-1">작업에서 ☆를 클릭하여 중요 표시를 추가해보세요</p>
+            <p className="text-text-secondary font-semibold">{t('important.empty')}</p>
+            <p className="text-text-muted text-sm mt-1">{t('important.emptyHint')}</p>
           </div>
         )}
       </div>

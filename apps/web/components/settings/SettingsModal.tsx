@@ -3,31 +3,51 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
-import { updateUserSettings, getUserSettings, type FontSize } from '@/lib/firestore';
+import { useI18n } from '@/lib/i18n-context';
+import { updateUserSettings, getUserSettings, type FontSize, type Plan, type Language } from '@/lib/firestore';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
-type Tab = 'account' | 'display' | 'info';
+type Tab = 'account' | 'display' | 'language' | 'info';
 
 function applyFontSize(size: FontSize) {
   document.documentElement.setAttribute('data-font', size);
 }
 
+const LANGUAGES: { code: Language; name: string; flag: string }[] = [
+  { code: 'ko', name: '한국어', flag: '🇰🇷' },
+  { code: 'en', name: 'English', flag: '🇺🇸' },
+  { code: 'ja', name: '日本語', flag: '🇯🇵' },
+  { code: 'es', name: 'Español', flag: '🇪🇸' },
+  { code: 'pt', name: 'Português', flag: '🇧🇷' },
+  { code: 'fr', name: 'Français', flag: '🇫🇷' },
+];
+
+const PLANS: { value: Plan; label: string; desc: string; color: string }[] = [
+  { value: 'free', label: 'Free', desc: '기본 기능 무제한', color: '#64748b' },
+  { value: 'pro', label: 'Pro', desc: 'AI + 광고 제거 + 10GB', color: '#e94560' },
+  { value: 'team', label: 'Team', desc: '무제한 협업 + 관리자 기능', color: '#8b5cf6' },
+];
+
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { t, language, setLanguage } = useI18n();
   const [activeTab, setActiveTab] = useState<Tab>('account');
   const [fontSize, setFontSizeState] = useState<FontSize>('medium');
+  const [userPlan, setUserPlan] = useState<Plan>('free');
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // 초기 폰트 크기 로드
   useEffect(() => {
     if (!user) return;
     getUserSettings(user.uid).then((s) => {
       const fs = s.fontSize ?? 'medium';
       setFontSizeState(fs);
       applyFontSize(fs);
+      setUserPlan(s.plan || 'free');
+      setIsAdmin(s.isAdmin || false);
     });
   }, [user]);
 
@@ -37,10 +57,20 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     if (user) updateUserSettings(user.uid, { fontSize: size });
   };
 
+  const handleLanguageChange = (lang: Language) => {
+    setLanguage(lang);
+  };
+
+  const handlePlanChange = (plan: Plan) => {
+    setUserPlan(plan);
+    if (user) updateUserSettings(user.uid, { plan });
+  };
+
   const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'account', label: '계정', icon: '👤' },
-    { id: 'display', label: '표시', icon: '🎨' },
-    { id: 'info', label: '정보', icon: 'ℹ️' },
+    { id: 'account', label: t('settings.account'), icon: '👤' },
+    { id: 'display', label: t('settings.display'), icon: '🎨' },
+    { id: 'language', label: t('settings.language'), icon: '🌐' },
+    { id: 'info', label: t('settings.info'), icon: 'ℹ️' },
   ];
 
   return (
@@ -59,7 +89,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           <div className="flex items-center justify-between px-6 py-4 border-b border-border">
             <div className="flex items-center gap-2">
               <span className="text-lg">⚙️</span>
-              <h2 className="text-base font-bold text-text-primary">설정</h2>
+              <h2 className="text-base font-bold text-text-primary">{t('settings.title')}</h2>
             </div>
             <button
               onClick={onClose}
@@ -96,9 +126,9 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               {/* ── 계정 탭 ── */}
               {activeTab === 'account' && (
                 <div className="space-y-5">
-                  {/* 프로필 */}
+                  {/* Profile */}
                   <div>
-                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">프로필</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.profile')}</p>
                     <div className="flex items-center gap-3 p-3 bg-background rounded-xl border border-border">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#e94560] to-[#533483] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                         {user?.email?.[0]?.toUpperCase() ?? '?'}
@@ -112,17 +142,21 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
                   </div>
 
-                  {/* 요금제 */}
+                  {/* Plan */}
                   <div>
-                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">요금제</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.plan')}</p>
                     <div className="p-4 bg-background rounded-xl border border-border">
                       <div className="flex items-center justify-between mb-3">
                         <div>
-                          <span className="text-xs font-bold text-text-primary">Free 플랜</span>
-                          <p className="text-[11px] text-text-muted mt-0.5">기본 기능 무제한 사용</p>
+                          <span className="text-xs font-bold text-text-primary">
+                            {userPlan === 'free' ? 'Free' : userPlan === 'pro' ? 'Pro' : 'Team'} 플랜
+                          </span>
+                          <p className="text-[11px] text-text-muted mt-0.5">
+                            {PLANS.find(p => p.value === userPlan)?.desc}
+                          </p>
                         </div>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-border text-text-secondary">
-                          현재 플랜
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ color: PLANS.find(p => p.value === userPlan)?.color, backgroundColor: `${PLANS.find(p => p.value === userPlan)?.color}20` }}>
+                          {t('settings.currentPlan')}
                         </span>
                       </div>
                       <div className="space-y-1.5 mb-4">
@@ -130,9 +164,10 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           { label: '할일 목록 관리', included: true },
                           { label: '노트 작성', included: true },
                           { label: '기기 동기화', included: true },
-                          { label: 'AI 자동 작성/요약', included: false },
-                          { label: '무제한 공유 협업', included: false },
-                          { label: '파일 스토리지 10GB', included: false },
+                          { label: 'AI 자동 작성/요약', included: userPlan !== 'free' },
+                          { label: '광고 제거', included: userPlan !== 'free' },
+                          { label: '무제한 공유 협업', included: userPlan === 'team' },
+                          { label: '파일 스토리지 10GB', included: userPlan !== 'free' },
                         ].map((item) => (
                           <div key={item.label} className="flex items-center gap-2 text-[11px]">
                             <span className={item.included ? 'text-[#22c55e]' : 'text-text-inactive'}>
@@ -144,12 +179,41 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           </div>
                         ))}
                       </div>
-                      <button
-                        className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-red-500 opacity-70 cursor-not-allowed"
-                        disabled
-                      >
-                        Pro로 업그레이드 (준비 중)
-                      </button>
+
+                      {/* Admin: Plan selector */}
+                      {isAdmin && (
+                        <div className="mb-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs">🔧</span>
+                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">관리자 전용</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {PLANS.map((plan) => (
+                              <button
+                                key={plan.value}
+                                onClick={() => handlePlanChange(plan.value)}
+                                className={`p-2 rounded-lg border text-center transition-all ${
+                                  userPlan === plan.value
+                                    ? 'border-[#e94560] bg-[#e94560]/10'
+                                    : 'border-border hover:border-border-hover'
+                                }`}
+                              >
+                                <span className="text-xs font-bold block" style={{ color: plan.color }}>{plan.label}</span>
+                                <span className="text-[9px] text-text-muted">{plan.desc}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {!isAdmin && (
+                        <button
+                          className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-red-500 opacity-70 cursor-not-allowed"
+                          disabled
+                        >
+                          {t('settings.upgrade')} (준비 중)
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -158,39 +222,39 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               {/* ── 표시 탭 ── */}
               {activeTab === 'display' && (
                 <div className="space-y-6">
-                  {/* 테마 */}
+                  {/* Theme */}
                   <div>
-                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">테마</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('nav.theme')}</p>
                     <div className="grid grid-cols-3 gap-2">
                       {[
-                        { value: 'system' as const, label: 'OS 기본', icon: '🖥' },
-                        { value: 'light' as const, label: '라이트', icon: '☀️' },
-                        { value: 'dark' as const, label: '다크', icon: '🌙' },
-                      ].map((t) => (
+                        { value: 'system' as const, label: t('nav.themeSystem'), icon: '🖥' },
+                        { value: 'light' as const, label: t('nav.themeLight'), icon: '☀️' },
+                        { value: 'dark' as const, label: t('nav.themeDark'), icon: '🌙' },
+                      ].map((thm) => (
                         <button
-                          key={t.value}
-                          onClick={() => setTheme(t.value)}
+                          key={thm.value}
+                          onClick={() => setTheme(thm.value)}
                           className={`p-3 rounded-xl border text-center transition-all ${
-                            theme === t.value
+                            theme === thm.value
                               ? 'border-[#e94560] bg-[#e94560]/10 text-[#e94560]'
                               : 'border-border text-text-secondary hover:border-border-hover'
                           }`}
                         >
-                          <span className="text-xl block mb-1">{t.icon}</span>
-                          <span className="text-[11px] font-semibold">{t.label}</span>
+                          <span className="text-xl block mb-1">{thm.icon}</span>
+                          <span className="text-[11px] font-semibold">{thm.label}</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* 폰트 크기 */}
+                  {/* Font size */}
                   <div>
-                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">폰트 크기</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.fontSize')}</p>
                     <div className="grid grid-cols-3 gap-2">
                       {[
-                        { value: 'small' as FontSize, label: '작게', preview: 'Aa', size: 'text-xs' },
-                        { value: 'medium' as FontSize, label: '보통', preview: 'Aa', size: 'text-sm' },
-                        { value: 'large' as FontSize, label: '크게', preview: 'Aa', size: 'text-base' },
+                        { value: 'small' as FontSize, label: t('settings.fontSmall'), preview: 'Aa', size: 'text-xs' },
+                        { value: 'medium' as FontSize, label: t('settings.fontMedium'), preview: 'Aa', size: 'text-sm' },
+                        { value: 'large' as FontSize, label: t('settings.fontLarge'), preview: 'Aa', size: 'text-base' },
                       ].map((f) => (
                         <button
                           key={f.value}
@@ -207,8 +271,41 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       ))}
                     </div>
                     <p className="text-[11px] text-text-muted mt-2">
-                      현재: {fontSize === 'small' ? '12px' : fontSize === 'large' ? '16px' : '14px'} (기본)
+                      현재: {fontSize === 'small' ? '12px' : fontSize === 'large' ? '16px' : '14px'}
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 언어 탭 ── */}
+              {activeTab === 'language' && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.language')}</p>
+                    <p className="text-[11px] text-text-muted mb-4">
+                      접속 지역 및 IP 주소에 따라 자동으로 언어가 감지됩니다. 수동으로 변경할 수도 있습니다.
+                    </p>
+                    <div className="space-y-2">
+                      {LANGUAGES.map((lang) => (
+                        <button
+                          key={lang.code}
+                          onClick={() => handleLanguageChange(lang.code)}
+                          className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                            language === lang.code
+                              ? 'border-[#e94560] bg-[#e94560]/10'
+                              : 'border-border hover:border-border-hover'
+                          }`}
+                        >
+                          <span className="text-xl">{lang.flag}</span>
+                          <span className={`text-sm font-semibold ${language === lang.code ? 'text-[#e94560]' : 'text-text-primary'}`}>
+                            {lang.name}
+                          </span>
+                          {language === lang.code && (
+                            <span className="ml-auto text-[#e94560] text-sm">✓</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

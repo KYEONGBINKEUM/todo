@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { TaskData, SubTask, TaskAttachment } from '@/lib/firestore';
+import { requestNotificationPermission } from '@/lib/use-reminders';
 
 interface TaskDetailPanelProps {
   task: TaskData;
@@ -17,17 +18,36 @@ const PRIORITY_OPTIONS = [
   { value: 'low', label: '낮음', color: '#22c55e' },
 ] as const;
 
+const MAX_FILE_SIZE = 500 * 1024; // 500 KB
+
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: TaskDetailPanelProps) {
+  // ── Title ──────────────────────────────────────────────────────────────────
+  const [titleValue, setTitleValue] = useState(task.title);
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Sub-tasks ──────────────────────────────────────────────────────────────
   const [subTaskInput, setSubTaskInput] = useState('');
   const [memoValue, setMemoValue] = useState(task.memo ?? '');
-  const [memoTimer, setMemoTimer] = useState<NodeJS.Timeout | null>(null);
+  const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subTaskInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync memo when task changes
+  // Sync when a different task is selected
   useEffect(() => {
+    setTitleValue(task.title);
     setMemoValue(task.memo ?? '');
   }, [task.id]);
+
+  // ── Title editing ──────────────────────────────────────────────────────────
+
+  const handleTitleChange = (value: string) => {
+    setTitleValue(value);
+    if (titleTimer.current) clearTimeout(titleTimer.current);
+    titleTimer.current = setTimeout(() => {
+      const trimmed = value.trim() || '제목 없음';
+      onUpdate({ title: trimmed });
+    }, 400);
+  };
 
   // ── Sub-tasks ──────────────────────────────────────────────────────────────
 
@@ -47,11 +67,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   };
 
   const toggleSubTask = (id: string) => {
-    onUpdate({
-      subTasks: subTasks.map((s) =>
-        s.id === id ? { ...s, completed: !s.completed } : s
-      ),
-    });
+    onUpdate({ subTasks: subTasks.map((s) => s.id === id ? { ...s, completed: !s.completed } : s) });
   };
 
   const deleteSubTask = (id: string) => {
@@ -62,35 +78,68 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
   const handleMemoChange = (value: string) => {
     setMemoValue(value);
-    if (memoTimer) clearTimeout(memoTimer);
-    setMemoTimer(
-      setTimeout(() => {
-        onUpdate({ memo: value });
-      }, 500)
-    );
+    if (memoTimer.current) clearTimeout(memoTimer.current);
+    memoTimer.current = setTimeout(() => onUpdate({ memo: value }), 500);
   };
 
-  // ── Attachments (metadata only) ────────────────────────────────────────────
+  // ── Attachments ─────────────────────────────────────────────────────────────
 
   const attachments: TaskAttachment[] = task.attachments ?? [];
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    const newAttachments: TaskAttachment[] = files.map((f) => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      name: f.name,
-      size: f.size,
-      type: f.type,
-      addedAt: new Date().toISOString(),
-    }));
-    onUpdate({ attachments: [...attachments, ...newAttachments] });
-    // Reset input so same file can be re-added
+    const allFiles = Array.from(e.target.files ?? []);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!allFiles.length) return;
+
+    const files = allFiles.filter((f) => {
+      if (f.size > MAX_FILE_SIZE) {
+        alert(`"${f.name}"은 500 KB를 초과하여 첨부할 수 없습니다.\n(대용량 파일은 Firebase Storage 연동 후 지원됩니다)`);
+        return false;
+      }
+      return true;
+    });
+    if (!files.length) return;
+
+    Promise.all(
+      files.map(
+        (file) =>
+          new Promise<TaskAttachment>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              resolve({
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                addedAt: new Date().toISOString(),
+                url: reader.result as string,
+              });
+            };
+            reader.readAsDataURL(file);
+          })
+      )
+    ).then((newAtts) => {
+      onUpdate({ attachments: [...attachments, ...newAtts] });
+    });
   };
 
   const deleteAttachment = (id: string) => {
     onUpdate({ attachments: attachments.filter((a) => a.id !== id) });
+  };
+
+  const openAttachment = (att: TaskAttachment) => {
+    if (!att.url) return;
+    const viewable = ['image/', 'text/', 'application/pdf', 'video/', 'audio/'];
+    if (viewable.some((t) => att.type.startsWith(t))) {
+      window.open(att.url, '_blank');
+    } else {
+      const a = document.createElement('a');
+      a.href = att.url;
+      a.download = att.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -104,25 +153,40 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
   const completedSubCount = subTasks.filter((s) => s.completed).length;
 
+  const fileIcon = (type: string) => {
+    if (type.startsWith('image/')) return '🖼️';
+    if (type.includes('pdf')) return '📄';
+    if (type.includes('word') || type.includes('document')) return '📝';
+    if (type.includes('sheet') || type.includes('excel')) return '📊';
+    if (type.startsWith('video/')) return '🎬';
+    if (type.startsWith('audio/')) return '🎵';
+    return '📎';
+  };
+
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 z-40" onClick={onClose} />
 
       {/* Panel */}
       <div className="fixed top-0 right-0 h-full w-[380px] z-50 flex flex-col bg-background-card border-l border-border shadow-2xl animate-slide-in-right overflow-hidden">
-        {/* Header */}
+
+        {/* Header — editable title */}
         <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-border flex-shrink-0">
           <div className="flex-1 pr-3">
             <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-1">할일 상세</p>
-            <h3 className="text-base font-bold text-text-primary leading-snug">{task.title}</h3>
+            <textarea
+              value={titleValue}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } }}
+              rows={2}
+              placeholder="할일 제목..."
+              className="w-full bg-transparent text-base font-bold text-text-primary leading-snug resize-none focus:outline-none border-b border-transparent hover:border-border focus:border-[#e94560]/50 transition-colors placeholder-text-muted"
+            />
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border transition-colors flex-shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border transition-colors flex-shrink-0 mt-5"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -133,7 +197,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* ── Priority & Due Date ─────────────────────────────────────────── */}
+          {/* ── Priority & Due Date & Reminder ─────────────────────────────── */}
           <div className="px-5 py-4 border-b border-border space-y-3">
             {/* Priority */}
             <div className="flex items-center gap-3">
@@ -167,13 +231,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                   className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
                 />
                 {task.dueDate && (
-                  <button
-                    onClick={() => onUpdate({ dueDate: null })}
-                    className="text-text-muted hover:text-[#e94560] text-sm transition-colors"
-                    title="마감일 제거"
-                  >
-                    ×
-                  </button>
+                  <button onClick={() => onUpdate({ dueDate: null })} className="text-text-muted hover:text-[#e94560] text-sm transition-colors" title="마감일 제거">×</button>
                 )}
               </div>
             </div>
@@ -185,20 +243,26 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 <input
                   type="datetime-local"
                   value={task.reminder ?? ''}
-                  onChange={(e) => onUpdate({ reminder: e.target.value || null })}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    if (val) await requestNotificationPermission();
+                    onUpdate({ reminder: val || null });
+                  }}
                   className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
                 />
                 {task.reminder && (
-                  <button
-                    onClick={() => onUpdate({ reminder: null })}
-                    className="text-text-muted hover:text-[#e94560] text-sm transition-colors"
-                    title="알림 제거"
-                  >
-                    ×
-                  </button>
+                  <button onClick={() => onUpdate({ reminder: null })} className="text-text-muted hover:text-[#e94560] text-sm transition-colors" title="알림 제거">×</button>
                 )}
               </div>
             </div>
+
+            {/* Notification permission hint */}
+            {task.reminder && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied' && (
+              <p className="text-[10px] text-amber-400 flex items-center gap-1">
+                <span>⚠️</span>
+                <span>브라우저 알림이 차단되어 있습니다. 브라우저 설정에서 알림을 허용해 주세요.</span>
+              </p>
+            )}
           </div>
 
           {/* ── Sub-tasks ───────────────────────────────────────────────────── */}
@@ -208,14 +272,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 <span className="text-sm">📋</span>
                 <span className="text-xs font-bold text-text-primary">하위 할일</span>
                 {subTasks.length > 0 && (
-                  <span className="text-[10px] text-text-muted">
-                    {completedSubCount}/{subTasks.length}
-                  </span>
+                  <span className="text-[10px] text-text-muted">{completedSubCount}/{subTasks.length}</span>
                 )}
               </div>
             </div>
 
-            {/* Progress bar */}
             {subTasks.length > 0 && (
               <div className="h-1 bg-border rounded-full overflow-hidden mb-3">
                 <div
@@ -225,13 +286,9 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               </div>
             )}
 
-            {/* Sub-task list */}
             <div className="space-y-1 mb-3">
               {subTasks.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="flex items-center gap-2.5 group py-1 px-2 -mx-2 rounded-lg hover:bg-border/30 transition-colors"
-                >
+                <div key={sub.id} className="flex items-center gap-2.5 group py-1 px-2 -mx-2 rounded-lg hover:bg-border/30 transition-colors">
                   <button
                     onClick={() => toggleSubTask(sub.id)}
                     className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 ${
@@ -246,13 +303,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                       </svg>
                     )}
                   </button>
-                  <span
-                    className={`flex-1 text-xs ${
-                      sub.completed ? 'line-through text-text-inactive' : 'text-text-primary'
-                    }`}
-                  >
-                    {sub.title}
-                  </span>
+                  <span className={`flex-1 text-xs ${sub.completed ? 'line-through text-text-inactive' : 'text-text-primary'}`}>{sub.title}</span>
                   <button
                     onClick={() => deleteSubTask(sub.id)}
                     className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-sm"
@@ -263,7 +314,6 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               ))}
             </div>
 
-            {/* Add sub-task input */}
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded border-2 border-dashed border-border flex-shrink-0" />
               <input
@@ -271,20 +321,12 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 type="text"
                 value={subTaskInput}
                 onChange={(e) => setSubTaskInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') addSubTask();
-                  if (e.key === 'Escape') setSubTaskInput('');
-                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') addSubTask(); if (e.key === 'Escape') setSubTaskInput(''); }}
                 placeholder="하위 할일 추가..."
                 className="flex-1 bg-transparent text-xs text-text-primary placeholder-text-inactive outline-none"
               />
               {subTaskInput.trim() && (
-                <button
-                  onClick={addSubTask}
-                  className="text-[10px] px-2 py-0.5 bg-[#e94560] text-white rounded font-semibold"
-                >
-                  추가
-                </button>
+                <button onClick={addSubTask} className="text-[10px] px-2 py-0.5 bg-[#e94560] text-white rounded font-semibold">추가</button>
               )}
             </div>
           </div>
@@ -310,9 +352,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               <div className="flex items-center gap-2">
                 <span className="text-sm">📎</span>
                 <span className="text-xs font-bold text-text-primary">파일 첨부</span>
-                {attachments.length > 0 && (
-                  <span className="text-[10px] text-text-muted">{attachments.length}개</span>
-                )}
+                {attachments.length > 0 && <span className="text-[10px] text-text-muted">{attachments.length}개</span>}
               </div>
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -320,14 +360,10 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               >
                 + 파일 추가
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                onChange={handleFileSelect}
-                className="hidden"
-              />
+              <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
             </div>
+
+            <p className="text-[10px] text-text-muted mb-2">최대 500 KB · 클릭하면 파일을 열거나 다운로드합니다</p>
 
             {attachments.length === 0 ? (
               <button
@@ -341,24 +377,21 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 {attachments.map((att) => (
                   <div
                     key={att.id}
-                    className="flex items-center gap-2.5 p-2 bg-background rounded-lg border border-border group"
+                    onClick={() => openAttachment(att)}
+                    className={`flex items-center gap-2.5 p-2 bg-background rounded-lg border border-border group transition-colors ${att.url ? 'cursor-pointer hover:border-[#e94560]/40' : 'opacity-60'}`}
+                    title={att.url ? '클릭하여 열기' : '이 파일은 저장되지 않아 열 수 없습니다'}
                   >
-                    <span className="text-lg flex-shrink-0">
-                      {att.type.startsWith('image/') ? '🖼️' :
-                       att.type.includes('pdf') ? '📄' :
-                       att.type.includes('word') || att.type.includes('document') ? '📝' :
-                       att.type.includes('sheet') || att.type.includes('excel') ? '📊' :
-                       '📎'}
-                    </span>
+                    <span className="text-lg flex-shrink-0">{fileIcon(att.type)}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-text-primary truncate font-medium">{att.name}</p>
                       <p className="text-[10px] text-text-muted">
                         {formatFileSize(att.size)} · {formatDate(att.addedAt)}
+                        {att.url ? <span className="text-[#22c55e] ml-1">· 열기 가능</span> : <span className="text-text-inactive ml-1">· 미저장</span>}
                       </p>
                     </div>
                     <button
-                      onClick={() => deleteAttachment(att.id)}
-                      className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all"
+                      onClick={(e) => { e.stopPropagation(); deleteAttachment(att.id); }}
+                      className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all flex-shrink-0"
                     >
                       ×
                     </button>

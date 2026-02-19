@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getTasks, getNotes, getLists, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
+import { useTaskReminders } from '@/lib/use-reminders';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -43,16 +44,12 @@ function TasksContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // 인라인 편집 상태
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editList, setEditList] = useState('');
-  const [editPriority, setEditPriority] = useState<TaskData['priority']>('medium');
-  const editInputRef = useRef<HTMLInputElement>(null);
-
   // 상세 패널
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
+
+  // 알림 스케줄링
+  useTaskReminders(tasks);
 
   // URL param → filterList 초기값
   useEffect(() => {
@@ -85,10 +82,6 @@ function TasksContent() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  useEffect(() => {
-    if (editingId && editInputRef.current) editInputRef.current.focus();
-  }, [editingId]);
-
   const handleToggleTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     const newStatus = task.status === 'completed' ? 'todo' : 'completed';
@@ -111,33 +104,14 @@ function TasksContent() {
 
   const handlePanelUpdate = async (updates: Partial<TaskData>) => {
     if (!user || !selectedTaskId) return;
-    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...updates } : t));
-    await updateTask(user.uid, selectedTaskId, updates);
+    // 제목 변경 시 @태그 재파싱
+    const finalUpdates = { ...updates };
+    if (updates.title !== undefined) {
+      finalUpdates.tags = parseTags(updates.title);
+    }
+    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
+    await updateTask(user.uid, selectedTaskId, finalUpdates);
   };
-
-  const startEdit = (task: TaskData) => {
-    setSelectedTaskId(null); // 패널 닫기
-    setEditingId(task.id!);
-    setEditTitle(task.title);
-    setEditList(task.listId);
-    setEditPriority(task.priority);
-  };
-
-  const saveEdit = async () => {
-    if (!user || !editingId) return;
-    const tags = parseTags(editTitle);
-    const updates: Partial<TaskData> = {
-      title: editTitle.trim() || '제목 없음',
-      listId: editList,
-      priority: editPriority,
-      tags,
-    };
-    setTasks((prev) => prev.map((t) => t.id === editingId ? { ...t, ...updates } : t));
-    setEditingId(null);
-    await updateTask(user.uid, editingId, updates);
-  };
-
-  const cancelEdit = () => setEditingId(null);
 
   // 필터 적용
   const filtered = tasks
@@ -146,7 +120,7 @@ function TasksContent() {
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
     .filter((t) => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  // @태그 소그룹 빌드
+  // @태그 소그룹
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
 
   // 관련 노트 (현재 filterTag 기준)
@@ -154,7 +128,6 @@ function TasksContent() {
     ? relatedNotes.filter(
         (n) =>
           n.tags.includes(filterTag) ||
-          // 블록 내용 검색은 client에서만 할 수 있으므로 tags로만 매칭
           n.title.toLowerCase().includes(filterTag.toLowerCase())
       )
     : [];
@@ -218,10 +191,7 @@ function TasksContent() {
           <div className="mb-4 flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-text-muted uppercase tracking-wider">@태그</span>
             {filterTag && (
-              <button
-                onClick={() => setFilterTag(null)}
-                className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all"
-              >
+              <button onClick={() => setFilterTag(null)} className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all">
                 전체
               </button>
             )}
@@ -248,13 +218,12 @@ function TasksContent() {
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
             const isSelected = selectedTaskId === task.id;
-            const isEditing = editingId === task.id;
             const taskTags = task.tags ?? [];
 
             return (
               <div
                 key={task.id}
-                onClick={() => { if (!isEditing) setSelectedTaskId(isSelected ? null : task.id!); }}
+                onClick={() => setSelectedTaskId(isSelected ? null : task.id!)}
                 className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer ${
                   isSelected
                     ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]'
@@ -274,65 +243,35 @@ function TasksContent() {
 
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
 
-                {isEditing ? (
-                  /* 편집 모드 */
-                  <div className="flex-1 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      ref={editInputRef}
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                      className="flex-1 min-w-[120px] bg-background border border-[#e94560] rounded-lg px-2 py-1 text-sm text-text-primary focus:outline-none"
-                    />
-                    <select value={editList} onChange={(e) => setEditList(e.target.value)} className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer">
-                      {lists.map((l) => (<option key={l.id} value={l.id!} className="bg-background-card">{l.label}</option>))}
-                    </select>
-                    <select value={editPriority} onChange={(e) => setEditPriority(e.target.value as TaskData['priority'])} className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer">
-                      <option value="urgent" className="bg-background-card">긴급</option>
-                      <option value="high" className="bg-background-card">높음</option>
-                      <option value="medium" className="bg-background-card">보통</option>
-                      <option value="low" className="bg-background-card">낮음</option>
-                    </select>
-                    <button onClick={saveEdit} className="px-3 py-1 bg-[#e94560] text-white text-xs rounded-lg hover:bg-[#ff5a7a] transition-colors">저장</button>
-                    <button onClick={cancelEdit} className="px-3 py-1 bg-background border border-border text-text-secondary text-xs rounded-lg hover:border-border-hover transition-colors">취소</button>
-                  </div>
-                ) : (
-                  /* 보기 모드 */
-                  <>
-                    <div className="flex-1 min-w-0">
-                      {/* 제목 클릭 → 편집 */}
-                      <span
-                        onClick={(e) => { e.stopPropagation(); startEdit(task); }}
-                        className={`block text-sm cursor-text transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary hover:text-[#e94560]'}`}
-                        title="클릭하여 편집"
-                      >
-                        {task.title}
-                      </span>
-                      {/* @태그 표시 */}
-                      {taskTags.length > 0 && (
-                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                          {taskTags.map((tag) => (
-                            <button
-                              key={tag}
-                              onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === tag ? null : tag); }}
-                              className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-semibold hover:bg-[#8b5cf6]/20 transition-colors"
-                            >
-                              @{tag}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                <div className="flex-1 min-w-0">
+                  {/* 제목 — 클릭 시 패널 오픈 (인라인 편집 없음) */}
+                  <span className={`block text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
+                    {task.title}
+                  </span>
+                  {/* @태그 표시 */}
+                  {taskTags.length > 0 && (
+                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                      {taskTags.map((tag) => (
+                        <button
+                          key={tag}
+                          onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === tag ? null : tag); }}
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-semibold hover:bg-[#8b5cf6]/20 transition-colors"
+                        >
+                          @{tag}
+                        </button>
+                      ))}
                     </div>
-                    {(task.subTasks?.length ?? 0) > 0 && (
-                      <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
-                    )}
-                    {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
-                    <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
-                    <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
-                  </>
+                  )}
+                </div>
+
+                {(task.subTasks?.length ?? 0) > 0 && (
+                  <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
                 )}
+                {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
+                <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
+                <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
+                <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
               </div>
             );
           })}
@@ -356,10 +295,7 @@ function TasksContent() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               {tagRelatedNotes.map((note) => (
-                <div
-                  key={note.id}
-                  className="p-3 bg-background-card border border-border rounded-xl hover:border-[#8b5cf6]/40 transition-colors cursor-pointer"
-                >
+                <div key={note.id} className="p-3 bg-background-card border border-border rounded-xl hover:border-[#8b5cf6]/40 transition-colors cursor-pointer">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-base">{note.icon}</span>
                     <span className="text-xs font-semibold text-text-primary truncate">{note.title}</span>

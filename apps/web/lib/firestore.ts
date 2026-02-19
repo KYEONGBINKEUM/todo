@@ -56,6 +56,7 @@ export interface TaskAttachment {
   size: number;
   type: string;
   addedAt: string;
+  url?: string; // data URL (≤500 KB files only)
 }
 
 export interface TaskData {

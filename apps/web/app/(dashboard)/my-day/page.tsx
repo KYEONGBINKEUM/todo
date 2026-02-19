@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getMyDayTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
   getLists, seedDefaultData,
   type TaskData, type ListData,
 } from '@/lib/firestore';
+import { useTaskReminders } from '@/lib/use-reminders';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -22,6 +23,10 @@ const priorityColors = {
   low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', label: '낮음' },
 };
 
+function parseTags(title: string): string[] {
+  return [...title.matchAll(/@([\w가-힣]+)/g)].map((m) => m[1]);
+}
+
 export default function MyDayPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<TaskData[]>([]);
@@ -34,16 +39,12 @@ export default function MyDayPage() {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 인라인 편집 상태
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editList, setEditList] = useState('');
-  const [editPriority, setEditPriority] = useState<TaskData['priority']>('medium');
-  const editInputRef = useRef<HTMLInputElement>(null);
-
   // 상세 패널
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
+
+  // 알림 스케줄링
+  useTaskReminders(tasks);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -79,12 +80,6 @@ export default function MyDayPage() {
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (editingId && editInputRef.current) {
-      editInputRef.current.focus();
-    }
-  }, [editingId]);
-
   const today = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
   });
@@ -109,14 +104,17 @@ export default function MyDayPage() {
   const handleAddTask = async () => {
     if (!newTaskTitle.trim() || !user || adding) return;
     setAdding(true);
+    const title = newTaskTitle.trim();
+    const tags = parseTags(title);
     const tempId = `temp-${Date.now()}`;
     const newTask: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'> = {
-      title: newTaskTitle.trim(),
+      title,
       status: 'todo',
       priority: newTaskPriority,
       starred: false,
       listId: newTaskList || lists[0]?.id || '',
       myDay: true,
+      tags,
     };
     setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
     setNewTaskTitle('');
@@ -140,26 +138,14 @@ export default function MyDayPage() {
 
   const handlePanelUpdate = async (updates: Partial<TaskData>) => {
     if (!user || !selectedTaskId) return;
-    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...updates } : t));
-    await updateTask(user.uid, selectedTaskId, updates);
+    // 제목 변경 시 @태그 재파싱
+    const finalUpdates = { ...updates };
+    if (updates.title !== undefined) {
+      finalUpdates.tags = parseTags(updates.title);
+    }
+    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
+    await updateTask(user.uid, selectedTaskId, finalUpdates);
   };
-
-  const startEdit = (task: TaskData) => {
-    setEditingId(task.id!);
-    setEditTitle(task.title);
-    setEditList(task.listId);
-    setEditPriority(task.priority);
-  };
-
-  const saveEdit = async () => {
-    if (!user || !editingId) return;
-    const updates = { title: editTitle.trim() || '제목 없음', listId: editList, priority: editPriority };
-    setTasks((prev) => prev.map((t) => t.id === editingId ? { ...t, ...updates } : t));
-    setEditingId(null);
-    await updateTask(user.uid, editingId, updates);
-  };
-
-  const cancelEdit = () => setEditingId(null);
 
   const getListInfo = (listId: string) =>
     lists.find((l) => l.id === listId) || lists[0] || DEFAULT_LISTS[0];
@@ -254,7 +240,7 @@ export default function MyDayPage() {
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-              placeholder="+ 새 작업 추가..."
+              placeholder="+ 새 작업 추가... (@태그 입력 가능)"
               className="flex-1 px-4 py-3 bg-transparent text-text-primary placeholder-text-muted text-sm focus:outline-none"
             />
             <select
@@ -294,15 +280,13 @@ export default function MyDayPage() {
             const priority = priorityColors[task.priority];
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
-            const isEditing = editingId === task.id;
             const isSelected = selectedTaskId === task.id;
+            const taskTags = task.tags ?? [];
 
             return (
               <div
                 key={task.id}
-                onClick={() => {
-                  if (!isEditing) setSelectedTaskId(isSelected ? null : task.id!);
-                }}
+                onClick={() => setSelectedTaskId(isSelected ? null : task.id!)}
                 className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer ${
                   isSelected
                     ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]'
@@ -314,7 +298,7 @@ export default function MyDayPage() {
               >
                 {/* 체크박스 */}
                 <button
-                  onClick={(e) => { e.stopPropagation(); if (!isEditing) handleToggleTask(task); }}
+                  onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
                   className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
                     isCompleted
                       ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent scale-110'
@@ -330,100 +314,58 @@ export default function MyDayPage() {
 
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
 
-                {isEditing ? (
-                  /* 편집 모드 */
-                  <div className="flex-1 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      ref={editInputRef}
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                      className="flex-1 min-w-[120px] bg-background border border-[#e94560] rounded-lg px-2 py-1 text-sm text-text-primary focus:outline-none"
-                    />
-                    <select
-                      value={editList}
-                      onChange={(e) => setEditList(e.target.value)}
-                      className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer"
-                    >
-                      {lists.map((l) => (
-                        <option key={l.id} value={l.id!} className="bg-background-card">{l.label}</option>
+                {/* 제목 + @태그 — 클릭 시 패널 오픈 (인라인 편집 없음) */}
+                <div className="flex-1 min-w-0">
+                  <span className={`block text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
+                    {task.title}
+                  </span>
+                  {taskTags.length > 0 && (
+                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                      {taskTags.map((tag) => (
+                        <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-semibold">
+                          @{tag}
+                        </span>
                       ))}
-                    </select>
-                    <select
-                      value={editPriority}
-                      onChange={(e) => setEditPriority(e.target.value as TaskData['priority'])}
-                      className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer"
-                    >
-                      <option value="urgent" className="bg-background-card">긴급</option>
-                      <option value="high" className="bg-background-card">높음</option>
-                      <option value="medium" className="bg-background-card">보통</option>
-                      <option value="low" className="bg-background-card">낮음</option>
-                    </select>
-                    <button
-                      onClick={saveEdit}
-                      className="px-3 py-1 bg-[#e94560] text-white text-xs rounded-lg hover:bg-[#ff5a7a] transition-colors"
-                    >
-                      저장
-                    </button>
-                    <button
-                      onClick={cancelEdit}
-                      className="px-3 py-1 bg-background border border-border text-text-secondary text-xs rounded-lg hover:border-border-hover transition-colors"
-                    >
-                      취소
-                    </button>
-                  </div>
-                ) : (
-                  /* 보기 모드 */
-                  <>
-                    <span
-                      onClick={(e) => { e.stopPropagation(); if (!isCompleted) startEdit(task); }}
-                      className={`flex-1 text-sm transition-all duration-300 ${
-                        isCompleted
-                          ? 'line-through text-text-inactive cursor-default'
-                          : 'text-text-primary cursor-text hover:text-[#e94560]'
-                      }`}
-                      title={isCompleted ? undefined : '클릭하여 편집'}
-                    >
-                      {task.title}
-                    </span>
-                    {/* sub-task progress indicator */}
-                    {(task.subTasks?.length ?? 0) > 0 && (
-                      <span className="text-[10px] text-text-muted flex-shrink-0">
-                        📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}
-                      </span>
-                    )}
-                    <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>
-                      {list.label}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>
-                      {priority.label}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }}
-                      className={`text-lg transition-all duration-200 flex-shrink-0 ${
-                        task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'
-                      }`}
-                    >
-                      {task.starred ? '★' : '☆'}
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); startEdit(task); }}
-                      className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-text-secondary transition-all flex-shrink-0"
-                      title="편집"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }}
-                      className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0"
-                    >
-                      ×
-                    </button>
-                  </>
+                    </div>
+                  )}
+                </div>
+
+                {(task.subTasks?.length ?? 0) > 0 && (
+                  <span className="text-[10px] text-text-muted flex-shrink-0">
+                    📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}
+                  </span>
                 )}
+                <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>
+                  {list.label}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>
+                  {priority.label}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }}
+                  className={`text-lg transition-all duration-200 flex-shrink-0 ${
+                    task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'
+                  }`}
+                >
+                  {task.starred ? '★' : '☆'}
+                </button>
+                {/* 상세 보기 버튼 */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setSelectedTaskId(task.id!); }}
+                  className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-text-secondary transition-all flex-shrink-0"
+                  title="상세 보기 / 편집"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }}
+                  className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0"
+                >
+                  ×
+                </button>
               </div>
             );
           })}

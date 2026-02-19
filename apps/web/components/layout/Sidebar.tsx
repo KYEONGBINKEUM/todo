@@ -5,43 +5,48 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
-import { getLists, addList, updateList, type ListData } from '@/lib/firestore';
+import { useI18n } from '@/lib/i18n-context';
+import { getLists, addList, updateList, deleteList, getUserSettings, type ListData, type Plan } from '@/lib/firestore';
 import SettingsModal from '@/components/settings/SettingsModal';
 
-const NAV_ITEMS = [
-  { icon: '☀️', label: 'My Day', href: '/my-day' },
-  { icon: '📋', label: '모든 작업', href: '/tasks' },
-  { icon: '📅', label: '예정된 작업', href: '/upcoming' },
-  { icon: '📝', label: '노트', href: '/notes' },
-  { icon: '👥', label: '공유됨', href: '/shared' },
-  { icon: '⭐', label: '중요', href: '/important' },
-];
-
 const LIST_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
-
-const THEME_OPTIONS = [
-  { value: 'system', icon: '🖥', label: 'OS 기본' },
-  { value: 'light',  icon: '☀️', label: '라이트' },
-  { value: 'dark',   icon: '🌙', label: '다크' },
-] as const;
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
   const [lists, setLists] = useState<ListData[]>([]);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [showAddList, setShowAddList] = useState(false);
   const [newListLabel, setNewListLabel] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [userPlan, setUserPlan] = useState<Plan>('free');
+
+  const NAV_ITEMS = [
+    { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
+    { icon: '📋', labelKey: 'nav.allTasks', href: '/tasks' },
+    { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
+    { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
+    { icon: '👥', labelKey: 'nav.shared', href: '/shared' },
+    { icon: '⭐', labelKey: 'nav.important', href: '/important' },
+  ];
+
+  const THEME_OPTIONS = [
+    { value: 'system' as const, icon: '🖥', labelKey: 'nav.themeSystem' },
+    { value: 'light' as const, icon: '☀️', labelKey: 'nav.themeLight' },
+    { value: 'dark' as const, icon: '🌙', labelKey: 'nav.themeDark' },
+  ];
 
   const loadLists = useCallback(async () => {
     if (!user) return;
     try {
       const fetched = await getLists(user.uid);
       setLists(fetched);
+      const settings = await getUserSettings(user.uid);
+      setUserPlan(settings.plan || 'free');
     } catch (err) {
       console.error('Failed to load lists:', err);
     }
@@ -54,6 +59,15 @@ export default function Sidebar() {
   const handleSignOut = async () => {
     await signOut();
     router.push('/login');
+  };
+
+  const handleDeleteList = async (listId: string) => {
+    setLists((prev) => prev.filter((l) => l.id !== listId));
+    try {
+      await deleteList(user!.uid, listId);
+    } catch (err) {
+      console.error('Failed to delete list:', err);
+    }
   };
 
   const handleRenameList = async (listId: string) => {
@@ -86,6 +100,7 @@ export default function Sidebar() {
   const displayName = user?.displayName || '사용자';
   const photoURL = user?.photoURL;
   const initials = displayName.charAt(0).toUpperCase();
+  const planLabel = userPlan === 'free' ? t('freePlan') : userPlan === 'pro' ? 'Pro Plan' : 'Team Plan';
 
   return (
     <>
@@ -117,7 +132,7 @@ export default function Sidebar() {
                 }`}
               >
                 <span className="text-base">{item.icon}</span>
-                <span className="flex-1 text-left">{item.label}</span>
+                <span className="flex-1 text-left">{t(item.labelKey)}</span>
               </Link>
             );
           })}
@@ -127,12 +142,12 @@ export default function Sidebar() {
         <div className="mt-8">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">
-              목록
+              {t('nav.lists')}
             </span>
             <button
               onClick={() => setShowAddList(!showAddList)}
               className="text-text-inactive hover:text-[#e94560] transition-colors text-sm"
-              title="목록 추가"
+              title={t('common.add')}
             >
               +
             </button>
@@ -157,14 +172,30 @@ export default function Sidebar() {
                     className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
                   />
                 ) : (
-                  <Link
-                    href={`/tasks?list=${list.id}`}
-                    className="flex-1 cursor-pointer"
-                    onDoubleClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); }}
-                    title="클릭: 목록 필터 / 더블클릭: 이름 변경"
-                  >
-                    {list.label}
-                  </Link>
+                  <>
+                    <Link
+                      href={`/tasks?list=${list.id}`}
+                      className="flex-1 cursor-pointer truncate"
+                    >
+                      {list.label}
+                    </Link>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <button
+                        onClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); }}
+                        className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-text-secondary transition-colors text-[11px]"
+                        title="이름 변경"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={(e) => { e.preventDefault(); handleDeleteList(list.id!); }}
+                        className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-[#e94560] transition-colors text-sm"
+                        title="목록 삭제"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             ))}
@@ -187,13 +218,13 @@ export default function Sidebar() {
 
         {/* Theme Toggle */}
         <div className="mt-6 pt-4 border-t border-border">
-          <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">테마</p>
+          <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">{t('nav.theme')}</p>
           <div className="flex gap-1">
             {THEME_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setTheme(opt.value)}
-                title={opt.label}
+                title={t(opt.labelKey)}
                 className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-xs transition-all ${
                   theme === opt.value
                     ? 'bg-[#e94560]/15 text-[#e94560] font-semibold'
@@ -201,7 +232,7 @@ export default function Sidebar() {
                 }`}
               >
                 <span>{opt.icon}</span>
-                <span className="text-[9px]">{opt.label}</span>
+                <span className="text-[9px]">{t(opt.labelKey)}</span>
               </button>
             ))}
           </div>
@@ -224,13 +255,13 @@ export default function Sidebar() {
             )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-text-primary truncate">{displayName}</p>
-              <p className="text-[10px] text-text-muted">Free Plan</p>
+              <p className="text-[10px] text-text-muted">{planLabel}</p>
             </div>
             {/* Settings button */}
             <button
               onClick={() => setShowSettings(true)}
               className="text-text-inactive hover:text-text-secondary transition-colors flex-shrink-0"
-              title="설정"
+              title={t('settings.title')}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />

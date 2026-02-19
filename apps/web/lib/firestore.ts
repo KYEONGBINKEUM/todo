@@ -73,6 +73,8 @@ export interface TaskData {
   attachments?: TaskAttachment[];
   tags?: string[];
   order?: number;
+  completedDate?: string | null;
+  linkedNoteIds?: string[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -86,6 +88,7 @@ export interface NoteData {
   tags: string[];
   folderId: string | null;
   linkedTaskId?: string | null;
+  linkedTaskIds?: string[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -111,6 +114,9 @@ export interface FolderData {
   name: string;
   color: string;
   icon: string;
+  parentId?: string | null;
+  deleted?: boolean;
+  deletedAt?: string | null;
   createdAt?: Timestamp;
 }
 
@@ -247,6 +253,7 @@ export async function addList(uid: string, list: Omit<ListData, 'id' | 'createdA
 }
 
 export async function deleteList(uid: string, listId: string): Promise<void> {
+  invalidateCache(uid, 'lists');
   await deleteDoc(doc(db, 'users', uid, 'lists', listId));
 }
 
@@ -268,6 +275,7 @@ export async function getFolders(uid: string): Promise<FolderData[]> {
 }
 
 export async function addFolder(uid: string, folder: Omit<FolderData, 'id' | 'createdAt'>): Promise<string> {
+  invalidateCache(uid, 'folders');
   const docRef = await addDoc(foldersRef(uid), {
     ...folder,
     createdAt: serverTimestamp(),
@@ -275,8 +283,131 @@ export async function addFolder(uid: string, folder: Omit<FolderData, 'id' | 'cr
   return docRef.id;
 }
 
+export async function updateFolder(uid: string, folderId: string, updates: Partial<FolderData>): Promise<void> {
+  invalidateCache(uid, 'folders');
+  await updateDoc(doc(db, 'users', uid, 'folders', folderId), { ...updates });
+}
+
+/** 소프트 삭제 — 휴지통으로 이동 */
 export async function deleteFolder(uid: string, folderId: string): Promise<void> {
+  invalidateCache(uid, 'folders');
+  await updateDoc(doc(db, 'users', uid, 'folders', folderId), {
+    deleted: true,
+    deletedAt: new Date().toISOString(),
+  });
+}
+
+/** 휴지통에서 복원 */
+export async function restoreFolder(uid: string, folderId: string): Promise<void> {
+  invalidateCache(uid, 'folders');
+  await updateDoc(doc(db, 'users', uid, 'folders', folderId), {
+    deleted: false,
+    deletedAt: null,
+  });
+}
+
+/** 영구 삭제 */
+export async function permanentDeleteFolder(uid: string, folderId: string): Promise<void> {
+  invalidateCache(uid, 'folders');
   await deleteDoc(doc(db, 'users', uid, 'folders', folderId));
+}
+
+// ============================================================================
+// Shared Lists
+// ============================================================================
+
+export interface SharedListData {
+  id?: string;
+  name: string;
+  color: string;
+  icon: string;
+  ownerUid: string;
+  ownerName: string;
+  ownerEmail: string;
+  members: SharedMember[];
+  createdAt?: Timestamp;
+}
+
+export interface SharedMember {
+  uid: string;
+  email: string;
+  name: string;
+  permission: 'view' | 'edit' | 'admin';
+  joinedAt?: string;
+}
+
+function sharedListsRef() {
+  return collection(db, 'sharedLists');
+}
+
+export async function getSharedLists(uid: string): Promise<SharedListData[]> {
+  const cached = getCached<SharedListData[]>(`${uid}:sharedLists`);
+  if (cached) return cached;
+  // ownerUid는 항상 memberUids에 포함되므로 단일 쿼리로 소유+멤버 목록 모두 조회
+  const q = query(sharedListsRef(), where('memberUids', 'array-contains', uid));
+  const snap = await getDocs(q);
+  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as SharedListData));
+  setCache(`${uid}:sharedLists`, all);
+  return all;
+}
+
+export async function createSharedList(uid: string, data: { name: string; color: string; icon: string; ownerName: string; ownerEmail: string }): Promise<string> {
+  invalidateCache(uid, 'sharedLists');
+  const docRef = await addDoc(sharedListsRef(), {
+    name: data.name,
+    color: data.color,
+    icon: data.icon,
+    ownerUid: uid,
+    ownerName: data.ownerName,
+    ownerEmail: data.ownerEmail,
+    members: [],
+    memberUids: [uid],
+    createdAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateSharedList(listId: string, updates: Partial<SharedListData>): Promise<void> {
+  Object.keys(cache).forEach((k) => { if (k.includes('sharedLists')) delete cache[k]; });
+  await updateDoc(doc(db, 'sharedLists', listId), { ...updates });
+}
+
+export async function deleteSharedList(listId: string): Promise<void> {
+  Object.keys(cache).forEach((k) => { if (k.includes('sharedLists')) delete cache[k]; });
+  await deleteDoc(doc(db, 'sharedLists', listId));
+}
+
+export async function inviteToSharedList(listId: string, member: SharedMember): Promise<void> {
+  Object.keys(cache).forEach((k) => { if (k.includes('sharedLists')) delete cache[k]; });
+  const ref = doc(db, 'sharedLists', listId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data() as SharedListData & { memberUids: string[] };
+  const members = [...(data.members || []), member];
+  const memberUids = [...(data.memberUids || []), member.uid];
+  await updateDoc(ref, { members, memberUids });
+}
+
+// Shared Tasks (within shared lists)
+export async function getSharedTasks(listId: string): Promise<TaskData[]> {
+  const ref = collection(db, 'sharedLists', listId, 'tasks');
+  const q = query(ref, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TaskData));
+}
+
+export async function addSharedTask(listId: string, task: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  const ref = collection(db, 'sharedLists', listId, 'tasks');
+  const docRef = await addDoc(ref, { ...task, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return docRef.id;
+}
+
+export async function updateSharedTask(listId: string, taskId: string, updates: Partial<TaskData>): Promise<void> {
+  await updateDoc(doc(db, 'sharedLists', listId, 'tasks', taskId), { ...updates, updatedAt: serverTimestamp() });
+}
+
+export async function deleteSharedTask(listId: string, taskId: string): Promise<void> {
+  await deleteDoc(doc(db, 'sharedLists', listId, 'tasks', taskId));
 }
 
 // ============================================================================
@@ -287,9 +418,16 @@ export type Theme = 'system' | 'light' | 'dark';
 
 export type FontSize = 'small' | 'medium' | 'large';
 
+export type Language = 'ko' | 'en' | 'ja' | 'es' | 'pt' | 'fr';
+
+export type Plan = 'free' | 'pro' | 'team';
+
 export interface UserSettings {
   theme: Theme;
   fontSize?: FontSize;
+  language?: Language;
+  plan?: Plan;
+  isAdmin?: boolean;
 }
 
 export async function getUserSettings(uid: string): Promise<UserSettings> {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import {
   getMyDayTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
@@ -33,17 +33,22 @@ export default function MyDayPage() {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 인라인 편집 상태
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editList, setEditList] = useState('');
+  const [editPriority, setEditPriority] = useState<TaskData['priority']>('medium');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
-      // tasks와 lists를 병렬로 fetch (seedDefaultData 제거)
       const [fetchedTasks, fetchedLists] = await Promise.all([
         getMyDayTasks(user.uid),
         getLists(user.uid),
       ]);
       setTasks(fetchedTasks);
       if (fetchedLists.length === 0) {
-        // 신규 사용자일 때만 seed 실행
         await seedDefaultData(user.uid);
         const seededLists = await getLists(user.uid);
         setLists(seededLists);
@@ -69,17 +74,17 @@ export default function MyDayPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+    }
+  }, [editingId]);
+
   const today = new Date().toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
   });
 
-  const filteredTasks = filterList
-    ? tasks.filter((t) => t.listId === filterList)
-    : tasks;
-
+  const filteredTasks = filterList ? tasks.filter((t) => t.listId === filterList) : tasks;
   const completedCount = filteredTasks.filter((t) => t.status === 'completed').length;
   const totalCount = filteredTasks.length;
 
@@ -108,7 +113,6 @@ export default function MyDayPage() {
       listId: newTaskList || lists[0]?.id || '',
       myDay: true,
     };
-    // Optimistic: show immediately
     setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
     setNewTaskTitle('');
     try {
@@ -128,6 +132,23 @@ export default function MyDayPage() {
     await deleteTaskDB(user.uid, task.id);
   };
 
+  const startEdit = (task: TaskData) => {
+    setEditingId(task.id!);
+    setEditTitle(task.title);
+    setEditList(task.listId);
+    setEditPriority(task.priority);
+  };
+
+  const saveEdit = async () => {
+    if (!user || !editingId) return;
+    const updates = { title: editTitle.trim() || '제목 없음', listId: editList, priority: editPriority };
+    setTasks((prev) => prev.map((t) => t.id === editingId ? { ...t, ...updates } : t));
+    setEditingId(null);
+    await updateTask(user.uid, editingId, updates);
+  };
+
+  const cancelEdit = () => setEditingId(null);
+
   const getListInfo = (listId: string) =>
     lists.find((l) => l.id === listId) || lists[0] || DEFAULT_LISTS[0];
 
@@ -144,7 +165,7 @@ export default function MyDayPage() {
       <div className="p-8 flex items-center justify-center min-h-[50vh]">
         <div className="max-w-md text-center p-6 bg-red-500/10 border border-red-500/30 rounded-xl">
           <p className="text-red-400 font-semibold mb-2">오류 발생</p>
-          <p className="text-[#94a3b8] text-sm">{error}</p>
+          <p className="text-text-secondary text-sm">{error}</p>
           <button
             onClick={() => { setError(null); setLoading(true); loadData(); }}
             className="mt-4 px-4 py-2 bg-[#e94560] text-white text-sm rounded-lg hover:bg-[#ff5a7a]"
@@ -163,20 +184,20 @@ export default function MyDayPage() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">☀️</span>
-            <h2 className="text-3xl font-extrabold">My Day</h2>
+            <h2 className="text-3xl font-extrabold text-text-primary">My Day</h2>
           </div>
-          <p className="text-[#94a3b8] text-sm">{today}</p>
+          <p className="text-text-secondary text-sm">{today}</p>
         </div>
 
         {/* Progress Bar */}
-        <div className="mb-6 p-4 bg-[#111128] border border-[#1e1e3a] rounded-xl">
+        <div className="mb-6 p-4 bg-background-card border border-border rounded-xl">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-[#94a3b8]">오늘의 진행률</span>
+            <span className="text-sm text-text-secondary">오늘의 진행률</span>
             <span className="text-sm font-bold text-[#e94560]">
               {completedCount}/{totalCount}
             </span>
           </div>
-          <div className="w-full h-2.5 bg-[#1e1e3a] rounded-full overflow-hidden">
+          <div className="w-full h-2.5 bg-border rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-[#e94560] to-[#533483] rounded-full transition-all duration-500"
               style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
@@ -191,7 +212,7 @@ export default function MyDayPage() {
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               filterList === null
                 ? 'bg-[#e94560]/20 text-[#e94560] border border-[#e94560]/30'
-                : 'bg-[#111128] text-[#94a3b8] border border-[#1e1e3a] hover:border-[#333]'
+                : 'bg-background-card text-text-secondary border border-border hover:border-border-hover'
             }`}
           >
             전체
@@ -202,8 +223,8 @@ export default function MyDayPage() {
               onClick={() => setFilterList(filterList === list.id! ? null : list.id!)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                 filterList === list.id
-                  ? 'bg-[#111128] border text-[#e2e8f0]'
-                  : 'bg-[#111128] text-[#94a3b8] border border-[#1e1e3a] hover:border-[#333]'
+                  ? 'bg-background-card border text-text-primary'
+                  : 'bg-background-card text-text-secondary border border-border hover:border-border-hover'
               }`}
               style={filterList === list.id ? { borderColor: list.color, color: list.color } : undefined}
             >
@@ -215,33 +236,32 @@ export default function MyDayPage() {
 
         {/* Add Task Input */}
         <div className="mb-6 flex gap-2">
-          <div className="flex-1 flex bg-[#111128] border border-[#1e1e3a] rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
+          <div className="flex-1 flex bg-background-card border border-border rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
             <input
               type="text"
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
               placeholder="+ 새 작업 추가..."
-              className="flex-1 px-4 py-3 bg-transparent text-[#e2e8f0] placeholder-[#64748b] text-sm focus:outline-none"
+              className="flex-1 px-4 py-3 bg-transparent text-text-primary placeholder-text-muted text-sm focus:outline-none"
             />
             <select
               value={newTaskPriority}
               onChange={(e) => setNewTaskPriority(e.target.value as TaskData['priority'])}
-              className="px-2 bg-transparent text-xs border-l border-[#1e1e3a] focus:outline-none cursor-pointer"
-              style={{ color: priorityColors[newTaskPriority].text.replace('text-', '').includes('red') ? '#f87171' : priorityColors[newTaskPriority].text.replace('text-', '').includes('orange') ? '#fb923c' : priorityColors[newTaskPriority].text.replace('text-', '').includes('yellow') ? '#facc15' : '#60a5fa' }}
+              className="px-2 bg-transparent text-xs border-l border-border focus:outline-none cursor-pointer text-text-secondary"
             >
-              <option value="urgent" className="bg-[#111128]">긴급</option>
-              <option value="high" className="bg-[#111128]">높음</option>
-              <option value="medium" className="bg-[#111128]">보통</option>
-              <option value="low" className="bg-[#111128]">낮음</option>
+              <option value="urgent" className="bg-background-card">긴급</option>
+              <option value="high" className="bg-background-card">높음</option>
+              <option value="medium" className="bg-background-card">보통</option>
+              <option value="low" className="bg-background-card">낮음</option>
             </select>
             <select
               value={newTaskList}
               onChange={(e) => setNewTaskList(e.target.value)}
-              className="px-2 bg-transparent text-[#94a3b8] text-xs border-l border-[#1e1e3a] focus:outline-none cursor-pointer"
+              className="px-2 bg-transparent text-text-secondary text-xs border-l border-border focus:outline-none cursor-pointer"
             >
               {lists.map((list) => (
-                <option key={list.id} value={list.id!} className="bg-[#111128]">
+                <option key={list.id} value={list.id!} className="bg-background-card">
                   {list.label}
                 </option>
               ))}
@@ -262,20 +282,23 @@ export default function MyDayPage() {
             const priority = priorityColors[task.priority];
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
+            const isEditing = editingId === task.id;
+
             return (
               <div
                 key={task.id}
-                className={`group flex items-center gap-3 p-4 bg-[#111128] border rounded-xl hover:border-[#333] transition-all ${
-                  isCompleted ? 'border-[#1e1e3a]/50 opacity-70' : 'border-[#1e1e3a]'
+                className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all ${
+                  isCompleted ? 'border-border/50 opacity-70' : 'border-border hover:border-border-hover'
                 }`}
                 style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
               >
+                {/* 체크박스 - 테두리 가시성 개선 */}
                 <button
-                  onClick={() => handleToggleTask(task)}
+                  onClick={() => !isEditing && handleToggleTask(task)}
                   className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
                     isCompleted
                       ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent scale-110'
-                      : 'border-[#4a4a6a] hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'
+                      : 'border-text-secondary/50 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'
                   }`}
                 >
                   {isCompleted && (
@@ -284,30 +307,89 @@ export default function MyDayPage() {
                     </svg>
                   )}
                 </button>
+
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-                <span className={`flex-1 text-sm transition-all duration-300 ${isCompleted ? 'line-through text-[#4a4a6a]' : 'text-[#e2e8f0]'}`}>
-                  {task.title}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>
-                  {list.label}
-                </span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priority.bg} ${priority.text} ${priority.border}`}>
-                  {priority.label}
-                </span>
-                <button
-                  onClick={() => handleToggleStar(task)}
-                  className={`text-lg transition-all duration-200 flex-shrink-0 ${
-                    task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-[#3a3a5a] hover:text-amber-400/60'
-                  }`}
-                >
-                  {task.starred ? '★' : '☆'}
-                </button>
-                <button
-                  onClick={() => handleDeleteTask(task)}
-                  className="opacity-0 group-hover:opacity-100 text-[#4a4a6a] hover:text-[#e94560] transition-all text-lg flex-shrink-0"
-                >
-                  ×
-                </button>
+
+                {isEditing ? (
+                  /* 편집 모드 */
+                  <div className="flex-1 flex items-center gap-2 flex-wrap">
+                    <input
+                      ref={editInputRef}
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                      className="flex-1 min-w-[120px] bg-background border border-[#e94560] rounded-lg px-2 py-1 text-sm text-text-primary focus:outline-none"
+                    />
+                    <select
+                      value={editList}
+                      onChange={(e) => setEditList(e.target.value)}
+                      className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer"
+                    >
+                      {lists.map((l) => (
+                        <option key={l.id} value={l.id!} className="bg-background-card">{l.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={editPriority}
+                      onChange={(e) => setEditPriority(e.target.value as TaskData['priority'])}
+                      className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer"
+                    >
+                      <option value="urgent" className="bg-background-card">긴급</option>
+                      <option value="high" className="bg-background-card">높음</option>
+                      <option value="medium" className="bg-background-card">보통</option>
+                      <option value="low" className="bg-background-card">낮음</option>
+                    </select>
+                    <button
+                      onClick={saveEdit}
+                      className="px-3 py-1 bg-[#e94560] text-white text-xs rounded-lg hover:bg-[#ff5a7a] transition-colors"
+                    >
+                      저장
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="px-3 py-1 bg-background border border-border text-text-secondary text-xs rounded-lg hover:border-border-hover transition-colors"
+                    >
+                      취소
+                    </button>
+                  </div>
+                ) : (
+                  /* 보기 모드 */
+                  <>
+                    <span className={`flex-1 text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
+                      {task.title}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>
+                      {list.label}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priority.bg} ${priority.text} ${priority.border}`}>
+                      {priority.label}
+                    </span>
+                    <button
+                      onClick={() => handleToggleStar(task)}
+                      className={`text-lg transition-all duration-200 flex-shrink-0 ${
+                        task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'
+                      }`}
+                    >
+                      {task.starred ? '★' : '☆'}
+                    </button>
+                    <button
+                      onClick={() => startEdit(task)}
+                      className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-text-secondary transition-all flex-shrink-0"
+                      title="편집"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTask(task)}
+                      className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0"
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}
@@ -316,15 +398,15 @@ export default function MyDayPage() {
         {filteredTasks.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">{tasks.length === 0 ? '☀️' : '🎉'}</div>
-            <p className="text-[#94a3b8] font-semibold">
+            <p className="text-text-secondary font-semibold">
               {tasks.length === 0 ? '오늘의 작업을 추가해보세요' : filterList ? '이 목록에 작업이 없습니다' : '모든 작업을 완료했습니다!'}
             </p>
-            <p className="text-[#64748b] text-sm mt-1">위 입력란에서 새 작업을 추가할 수 있습니다</p>
+            <p className="text-text-muted text-sm mt-1">위 입력란에서 새 작업을 추가할 수 있습니다</p>
           </div>
         )}
 
         {/* AI Suggestions (Mock) */}
-        <div className="mt-8 p-5 bg-gradient-to-r from-[#111128] to-[#0a0a23] border border-[#1e1e3a] rounded-xl">
+        <div className="mt-8 p-5 bg-gradient-to-r from-background-card to-background border border-border rounded-xl">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-base">🧠</span>
             <span className="text-xs font-bold text-[#8b5cf6] uppercase tracking-wider">AI Suggestions</span>
@@ -336,7 +418,7 @@ export default function MyDayPage() {
               '⏰ 집중 시간대 분석: 오전 10시-12시가 가장 생산적입니다',
               '🔄 반복 작업을 자동 설정하시겠습니까?',
             ].map((suggestion, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-2 bg-[#1e1e3a]/50 rounded-lg text-xs text-[#94a3b8]">
+              <div key={i} className="flex items-center gap-2 px-3 py-2 bg-border/30 rounded-lg text-xs text-text-secondary">
                 <span className="flex-1">{suggestion}</span>
                 <button className="text-[#8b5cf6] hover:text-[#a78bfa] text-[10px] font-semibold flex-shrink-0">적용</button>
               </div>

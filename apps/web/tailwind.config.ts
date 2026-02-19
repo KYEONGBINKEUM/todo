@@ -6,22 +6,25 @@ const config: Config = {
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         background: {
-          DEFAULT: '#08081a',
-          card: '#111128',
-          hover: '#1a1a40',
+          DEFAULT: 'var(--color-bg-base)',
+          card: 'var(--color-bg-card)',
+          hover: 'var(--color-bg-hover)',
         },
         border: {
-          DEFAULT: '#1e1e3a',
+          DEFAULT: 'var(--color-border)',
+          hover: 'var(--color-border-hover)',
           focus: '#e94560',
         },
         text: {
-          primary: '#e2e8f0',
-          secondary: '#94a3b8',
-          muted: '#64748b',
+          primary: 'var(--color-text-primary)',
+          secondary: 'var(--color-text-secondary)',
+          muted: 'var(--color-text-muted)',
+          inactive: 'var(--color-text-inactive)',
         },
         primary: {
           DEFAULT: '#e94560',

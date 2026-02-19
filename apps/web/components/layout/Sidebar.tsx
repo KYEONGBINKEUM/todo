@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { useTheme } from '@/lib/theme-context';
 import { getLists, addList, updateList, type ListData } from '@/lib/firestore';
 
 const NAV_ITEMS = [
@@ -17,10 +18,17 @@ const NAV_ITEMS = [
 
 const LIST_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
 
+const THEME_OPTIONS = [
+  { value: 'system', icon: '🖥', label: 'OS 기본' },
+  { value: 'light',  icon: '☀️', label: '라이트' },
+  { value: 'dark',   icon: '🌙', label: '다크' },
+] as const;
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [lists, setLists] = useState<ListData[]>([]);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -78,15 +86,15 @@ export default function Sidebar() {
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <aside className="w-64 border-r border-[#1e1e3a] bg-[#0a0a1f] p-6 flex flex-col flex-shrink-0">
+    <aside className="w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0">
       {/* Logo */}
       <div className="mb-8">
         <Link href="/my-day">
-          <h1 className="text-xl font-extrabold bg-gradient-to-r from-[#e2e8f0] to-[#e94560] bg-clip-text text-transparent">
+          <h1 className="text-xl font-extrabold bg-gradient-to-r from-text-primary to-[#e94560] bg-clip-text text-transparent">
             AI Todo
           </h1>
         </Link>
-        <p className="text-[10px] text-[#64748b] mt-1 uppercase tracking-widest">
+        <p className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">
           Digital Assistant
         </p>
       </div>
@@ -102,7 +110,7 @@ export default function Sidebar() {
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
                 isActive
                   ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
-                  : 'text-[#94a3b8] hover:bg-[#111128] hover:text-[#e2e8f0]'
+                  : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
               }`}
             >
               <span className="text-base">{item.icon}</span>
@@ -115,12 +123,12 @@ export default function Sidebar() {
       {/* Lists */}
       <div className="mt-8">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[10px] text-[#64748b] uppercase tracking-widest font-semibold">
+          <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">
             목록
           </span>
           <button
             onClick={() => setShowAddList(!showAddList)}
-            className="text-[#4a4a6a] hover:text-[#e94560] transition-colors text-sm"
+            className="text-text-inactive hover:text-[#e94560] transition-colors text-sm"
             title="목록 추가"
           >
             +
@@ -130,7 +138,7 @@ export default function Sidebar() {
           {lists.map((list) => (
             <div
               key={list.id}
-              className="group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#94a3b8] hover:bg-[#111128] hover:text-[#e2e8f0] transition-all"
+              className="group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-background-card hover:text-text-primary transition-all"
             >
               <span
                 className="w-3 h-3 rounded-full flex-shrink-0"
@@ -143,7 +151,7 @@ export default function Sidebar() {
                   onBlur={() => handleRenameList(list.id!)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
                   autoFocus
-                  className="flex-1 bg-transparent text-[#e2e8f0] text-sm outline-none border-b border-[#e94560]"
+                  className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
                 />
               ) : (
                 <span
@@ -166,15 +174,37 @@ export default function Sidebar() {
                 onBlur={handleAddList}
                 placeholder="목록 이름..."
                 autoFocus
-                className="flex-1 bg-transparent text-[#e2e8f0] text-sm placeholder-[#64748b] outline-none border-b border-[#e94560]"
+                className="flex-1 bg-transparent text-text-primary text-sm placeholder-text-muted outline-none border-b border-[#e94560]"
               />
             </div>
           )}
         </div>
       </div>
 
+      {/* Theme Toggle */}
+      <div className="mt-6 pt-4 border-t border-border">
+        <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">테마</p>
+        <div className="flex gap-1">
+          {THEME_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTheme(opt.value)}
+              title={opt.label}
+              className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-xs transition-all ${
+                theme === opt.value
+                  ? 'bg-[#e94560]/15 text-[#e94560] font-semibold'
+                  : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
+              }`}
+            >
+              <span>{opt.icon}</span>
+              <span className="text-[9px]">{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* User / Settings */}
-      <div className="mt-auto pt-6 border-t border-[#1e1e3a]">
+      <div className="mt-4 pt-4 border-t border-border">
         <div className="flex items-center gap-3 px-2">
           {photoURL ? (
             <img
@@ -189,12 +219,12 @@ export default function Sidebar() {
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#e2e8f0] truncate">{displayName}</p>
-            <p className="text-[10px] text-[#64748b]">Free Plan</p>
+            <p className="text-sm font-semibold text-text-primary truncate">{displayName}</p>
+            <p className="text-[10px] text-text-muted">Free Plan</p>
           </div>
           <button
             onClick={handleSignOut}
-            className="text-[#4a4a6a] hover:text-[#e94560] transition-colors text-xs flex-shrink-0"
+            className="text-text-inactive hover:text-[#e94560] transition-colors text-xs flex-shrink-0"
             title="로그아웃"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

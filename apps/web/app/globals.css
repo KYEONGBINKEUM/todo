@@ -2,8 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   CSS Variables — Dark (default) & Light overrides
+   ============================================================ */
 :root {
   --font-pretendard: 'Pretendard Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Background */
+  --color-bg-base:  #08081a;
+  --color-bg-card:  #111128;
+  --color-bg-hover: #1a1a40;
+
+  /* Border */
+  --color-border:       #1e1e3a;
+  --color-border-hover: #333355;
+
+  /* Text */
+  --color-text-primary:   #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted:     #64748b;
+  --color-text-inactive:  #4a4a6a;
+
+  /* Scrollbar */
+  --color-scrollbar: #333;
+  --color-scrollbar-hover: #444;
+}
+
+html.light {
+  --color-bg-base:  #f1f5f9;
+  --color-bg-card:  #ffffff;
+  --color-bg-hover: #e2e8f0;
+
+  --color-border:       #cbd5e1;
+  --color-border-hover: #94a3b8;
+
+  --color-text-primary:   #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted:     #94a3b8;
+  --color-text-inactive:  #cbd5e1;
+
+  --color-scrollbar: #cbd5e1;
+  --color-scrollbar-hover: #94a3b8;
 }
 
 * {
@@ -28,12 +67,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--color-scrollbar);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #444;
+  background: var(--color-scrollbar-hover);
 }
 
 /* Animation utilities */

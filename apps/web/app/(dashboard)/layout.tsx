@@ -21,10 +21,10 @@ export default function DashboardLayout({
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#08081a]">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-[#94a3b8] text-sm">로딩 중...</p>
+          <p className="text-text-secondary text-sm">로딩 중...</p>
         </div>
       </div>
     );
@@ -34,7 +34,7 @@ export default function DashboardLayout({
 
   return (
     <div
-      className="flex min-h-screen bg-[#08081a] text-[#e2e8f0]"
+      className="flex min-h-screen bg-background text-text-primary"
       style={{ fontFamily: "'Pretendard Variable', -apple-system, sans-serif" }}
     >
       <Sidebar />

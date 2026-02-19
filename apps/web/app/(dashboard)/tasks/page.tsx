@@ -79,10 +79,10 @@ export default function AllTasksPage() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">📋</span>
-            <h2 className="text-3xl font-extrabold">모든 작업</h2>
-            <span className="text-sm text-[#64748b] ml-2">{filtered.length}개</span>
+            <h2 className="text-3xl font-extrabold text-text-primary">모든 작업</h2>
+            <span className="text-sm text-text-muted ml-2">{filtered.length}개</span>
           </div>
-          <p className="text-[#94a3b8] text-sm">모든 목록의 작업을 한 곳에서 관리하세요</p>
+          <p className="text-text-secondary text-sm">모든 목록의 작업을 한 곳에서 관리하세요</p>
         </div>
 
         <div className="mb-4">
@@ -91,26 +91,26 @@ export default function AllTasksPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="작업 검색..."
-            className="w-full px-4 py-3 bg-[#111128] border border-[#1e1e3a] rounded-xl text-[#e2e8f0] placeholder-[#64748b] text-sm focus:outline-none focus:border-[#e94560] transition-colors"
+            className="w-full px-4 py-3 bg-background-card border border-border rounded-xl text-text-primary placeholder-text-muted text-sm focus:outline-none focus:border-[#e94560] transition-colors"
           />
         </div>
 
         <div className="mb-6 flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-[#64748b] uppercase tracking-wider">목록</span>
-            <button onClick={() => setFilterList(null)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${!filterList ? 'bg-[#e94560]/20 text-[#e94560]' : 'text-[#94a3b8] hover:bg-[#111128]'}`}>전체</button>
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">목록</span>
+            <button onClick={() => setFilterList(null)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${!filterList ? 'bg-[#e94560]/20 text-[#e94560]' : 'text-text-secondary hover:bg-background-card'}`}>전체</button>
             {lists.map((list) => (
-              <button key={list.id} onClick={() => setFilterList(filterList === list.id! ? null : list.id!)} className={`px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 ${filterList === list.id ? '' : 'text-[#94a3b8] hover:bg-[#111128]'}`} style={filterList === list.id ? { color: list.color } : undefined}>
+              <button key={list.id} onClick={() => setFilterList(filterList === list.id! ? null : list.id!)} className={`px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 ${filterList === list.id ? '' : 'text-text-secondary hover:bg-background-card'}`} style={filterList === list.id ? { color: list.color } : undefined}>
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: list.color }} />
                 {list.label}
               </button>
             ))}
           </div>
-          <div className="w-px h-5 bg-[#1e1e3a]" />
+          <div className="w-px h-5 bg-border" />
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-[#64748b] uppercase tracking-wider">상태</span>
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">상태</span>
             {Object.entries(statusLabels).map(([key, val]) => (
-              <button key={key} onClick={() => setFilterStatus(filterStatus === key ? null : key)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${filterStatus === key ? '' : 'text-[#94a3b8] hover:bg-[#111128]'}`} style={filterStatus === key ? { color: val.color } : undefined}>{val.label}</button>
+              <button key={key} onClick={() => setFilterStatus(filterStatus === key ? null : key)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${filterStatus === key ? '' : 'text-text-secondary hover:bg-background-card'}`} style={filterStatus === key ? { color: val.color } : undefined}>{val.label}</button>
             ))}
           </div>
         </div>
@@ -121,16 +121,16 @@ export default function AllTasksPage() {
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
             return (
-              <div key={task.id} className={`group flex items-center gap-3 p-4 bg-[#111128] border rounded-xl hover:border-[#333] transition-all ${isCompleted ? 'border-[#1e1e3a]/50 opacity-60' : 'border-[#1e1e3a]'}`} style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}>
-                <button onClick={() => handleToggleTask(task)} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'border-[#4a4a6a] hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'}`}>
+              <div key={task.id} className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl hover:border-border-hover transition-all ${isCompleted ? 'border-border/50 opacity-60' : 'border-border'}`} style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}>
+                <button onClick={() => handleToggleTask(task)} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'border-text-secondary/50 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'}`}>
                   {isCompleted && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </button>
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-                <span className={`flex-1 text-sm transition-all ${isCompleted ? 'line-through text-[#4a4a6a]' : 'text-[#e2e8f0]'}`}>{task.title}</span>
-                {task.dueDate && <span className="text-[10px] text-[#64748b]">📅 {task.dueDate.slice(5)}</span>}
+                <span className={`flex-1 text-sm transition-all ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>{task.title}</span>
+                {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5)}</span>}
                 <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
-                <button onClick={() => handleToggleStar(task)} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-[#3a3a5a] hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
+                <button onClick={() => handleToggleStar(task)} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
               </div>
             );
           })}
@@ -139,8 +139,8 @@ export default function AllTasksPage() {
         {filtered.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📭</div>
-            <p className="text-[#94a3b8] font-semibold">작업이 없습니다</p>
-            <p className="text-[#64748b] text-sm mt-1">My Day에서 작업을 추가해보세요</p>
+            <p className="text-text-secondary font-semibold">작업이 없습니다</p>
+            <p className="text-text-muted text-sm mt-1">My Day에서 작업을 추가해보세요</p>
           </div>
         )}
       </div>

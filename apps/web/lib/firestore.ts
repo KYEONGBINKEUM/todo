@@ -2,7 +2,9 @@ import {
   collection,
   doc,
   getDocs,
+  getDoc,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -253,6 +255,28 @@ export async function addFolder(uid: string, folder: Omit<FolderData, 'id' | 'cr
 
 export async function deleteFolder(uid: string, folderId: string): Promise<void> {
   await deleteDoc(doc(db, 'users', uid, 'folders', folderId));
+}
+
+// ============================================================================
+// User Settings
+// ============================================================================
+
+export type Theme = 'system' | 'light' | 'dark';
+
+export interface UserSettings {
+  theme: Theme;
+}
+
+export async function getUserSettings(uid: string): Promise<UserSettings> {
+  const ref = doc(db, 'users', uid, 'settings', 'app');
+  const snap = await getDoc(ref);
+  if (snap.exists()) return snap.data() as UserSettings;
+  return { theme: 'system' };
+}
+
+export async function updateUserSettings(uid: string, settings: Partial<UserSettings>): Promise<void> {
+  const ref = doc(db, 'users', uid, 'settings', 'app');
+  await setDoc(ref, settings, { merge: true });
 }
 
 // ============================================================================

@@ -89,9 +89,9 @@ export default function UpcomingPage() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">📅</span>
-            <h2 className="text-3xl font-extrabold">예정된 작업</h2>
+            <h2 className="text-3xl font-extrabold text-text-primary">예정된 작업</h2>
           </div>
-          <p className="text-[#94a3b8] text-sm">마감일이 있는 작업을 날짜별로 확인하세요</p>
+          <p className="text-text-secondary text-sm">마감일이 있는 작업을 날짜별로 확인하세요</p>
         </div>
 
         {sectionOrder.map((sectionLabel) => {
@@ -102,8 +102,8 @@ export default function UpcomingPage() {
           return (
             <div key={sectionLabel} className="mb-6">
               <div className="flex items-center gap-2 mb-3">
-                <h3 className={`text-sm font-bold ${isOverdue ? 'text-red-400' : 'text-[#94a3b8]'}`}>{sectionLabel}</h3>
-                <span className="text-[10px] text-[#64748b] bg-[#1e1e3a] px-2 py-0.5 rounded-full">{sectionTasks.length}</span>
+                <h3 className={`text-sm font-bold ${isOverdue ? 'text-red-400' : 'text-text-secondary'}`}>{sectionLabel}</h3>
+                <span className="text-[10px] text-text-muted bg-border px-2 py-0.5 rounded-full">{sectionTasks.length}</span>
               </div>
               <div className="space-y-2">
                 {sectionTasks.map((task, index) => {
@@ -111,15 +111,15 @@ export default function UpcomingPage() {
                   const list = getListInfo(task.listId);
                   const isCompleted = task.status === 'completed';
                   return (
-                    <div key={task.id} className={`group flex items-center gap-3 p-4 bg-[#111128] border rounded-xl hover:border-[#333] transition-all ${isOverdue && !isCompleted ? 'border-red-500/20' : isCompleted ? 'border-[#1e1e3a]/50 opacity-60' : 'border-[#1e1e3a]'}`} style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}>
-                      <button onClick={() => handleToggleTask(task)} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'border-[#4a4a6a] hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'}`}>
+                    <div key={task.id} className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl hover:border-border-hover transition-all ${isOverdue && !isCompleted ? 'border-red-500/20' : isCompleted ? 'border-border/50 opacity-60' : 'border-border'}`} style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}>
+                      <button onClick={() => handleToggleTask(task)} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'border-text-secondary/50 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'}`}>
                         {isCompleted && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                       </button>
                       <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-                      <span className={`flex-1 text-sm transition-all ${isCompleted ? 'line-through text-[#4a4a6a]' : ''}`}>{task.title}</span>
-                      <span className={`text-[10px] ${isOverdue ? 'text-red-400' : 'text-[#64748b]'}`}>{task.dueDate!.slice(5).replace('-', '/')}</span>
+                      <span className={`flex-1 text-sm transition-all ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>{task.title}</span>
+                      <span className={`text-[10px] ${isOverdue ? 'text-red-400' : 'text-text-muted'}`}>{task.dueDate!.slice(5).replace('-', '/')}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
-                      <button onClick={() => handleToggleStar(task)} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-[#3a3a5a] hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
+                      <button onClick={() => handleToggleStar(task)} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
                     </div>
                   );
                 })}
@@ -131,8 +131,8 @@ export default function UpcomingPage() {
         {tasks.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📭</div>
-            <p className="text-[#94a3b8] font-semibold">예정된 작업이 없습니다</p>
-            <p className="text-[#64748b] text-sm mt-1">작업에 마감일을 추가해보세요</p>
+            <p className="text-text-secondary font-semibold">예정된 작업이 없습니다</p>
+            <p className="text-text-muted text-sm mt-1">작업에 마감일을 추가해보세요</p>
           </div>
         )}
       </div>

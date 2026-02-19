@@ -525,7 +525,11 @@ export default function NotesPage() {
       case 'todo':
         return (
           <div className="flex items-start gap-3">
-            <button onClick={() => toggleTodo(block.id)} className={`w-5 h-5 mt-0.5 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${block.checked ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'border-text-secondary/50 hover:border-[#e94560]'}`}>
+            <button
+              onClick={() => toggleTodo(block.id)}
+              className={`w-5 h-5 mt-0.5 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${block.checked ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'hover:border-[#e94560]'}`}
+              style={block.checked ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
+            >
               {block.checked && <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
             </button>
             <input data-block-id={block.id} value={block.content} onChange={(e) => updateBlock(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="할 일" className={`${baseClass} text-sm flex-1 ${block.checked ? 'line-through text-text-inactive' : ''}`} />

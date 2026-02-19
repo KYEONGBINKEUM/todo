@@ -170,7 +170,6 @@ body { font-size: var(--font-size-base); }
 
 /* Button reset */
 button {
-  border: none;
   background: none;
   cursor: pointer;
   font-family: inherit;

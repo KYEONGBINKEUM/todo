@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { getLists, addList, updateList, type ListData } from '@/lib/firestore';
+import SettingsModal from '@/components/settings/SettingsModal';
 
 const NAV_ITEMS = [
   { icon: '☀️', label: 'My Day', href: '/my-day' },
@@ -34,6 +35,7 @@ export default function Sidebar() {
   const [editingLabel, setEditingLabel] = useState('');
   const [showAddList, setShowAddList] = useState(false);
   const [newListLabel, setNewListLabel] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   const loadLists = useCallback(async () => {
     if (!user) return;
@@ -86,155 +88,173 @@ export default function Sidebar() {
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <aside className="w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0">
-      {/* Logo */}
-      <div className="mb-8">
-        <Link href="/my-day">
-          <h1 className="text-xl font-extrabold bg-gradient-to-r from-text-primary to-[#e94560] bg-clip-text text-transparent">
-            AI Todo
-          </h1>
-        </Link>
-        <p className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">
-          Digital Assistant
-        </p>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1">
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                isActive
-                  ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
-                  : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
-              }`}
-            >
-              <span className="text-base">{item.icon}</span>
-              <span className="flex-1 text-left">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Lists */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">
-            목록
-          </span>
-          <button
-            onClick={() => setShowAddList(!showAddList)}
-            className="text-text-inactive hover:text-[#e94560] transition-colors text-sm"
-            title="목록 추가"
-          >
-            +
-          </button>
+    <>
+      <aside className="w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0">
+        {/* Logo */}
+        <div className="mb-8">
+          <Link href="/my-day">
+            <h1 className="text-xl font-extrabold bg-gradient-to-r from-text-primary to-[#e94560] bg-clip-text text-transparent">
+              AI Todo
+            </h1>
+          </Link>
+          <p className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">
+            Digital Assistant
+          </p>
         </div>
-        <div className="space-y-1">
-          {lists.map((list) => (
-            <div
-              key={list.id}
-              className="group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-background-card hover:text-text-primary transition-all"
-            >
-              <span
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: list.color }}
-              />
-              {editingListId === list.id ? (
-                <input
-                  value={editingLabel}
-                  onChange={(e) => setEditingLabel(e.target.value)}
-                  onBlur={() => handleRenameList(list.id!)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
-                  autoFocus
-                  className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
-                />
-              ) : (
-                <span
-                  className="flex-1 cursor-pointer"
-                  onDoubleClick={() => { setEditingListId(list.id!); setEditingLabel(list.label); }}
-                  title="더블클릭으로 이름 변경"
-                >
-                  {list.label}
-                </span>
-              )}
-            </div>
-          ))}
-          {showAddList && (
-            <div className="flex items-center gap-2 px-3 py-1.5">
-              <span className="w-3 h-3 rounded-full flex-shrink-0 bg-[#e94560]" />
-              <input
-                value={newListLabel}
-                onChange={(e) => setNewListLabel(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddList(); if (e.key === 'Escape') setShowAddList(false); }}
-                onBlur={handleAddList}
-                placeholder="목록 이름..."
-                autoFocus
-                className="flex-1 bg-transparent text-text-primary text-sm placeholder-text-muted outline-none border-b border-[#e94560]"
-              />
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Theme Toggle */}
-      <div className="mt-6 pt-4 border-t border-border">
-        <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">테마</p>
-        <div className="flex gap-1">
-          {THEME_OPTIONS.map((opt) => (
+        {/* Navigation */}
+        <nav className="flex-1 space-y-1">
+          {NAV_ITEMS.map((item) => {
+            const isActive = pathname === item.href || (item.href === '/tasks' && pathname?.startsWith('/tasks'));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                  isActive
+                    ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
+                    : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
+                }`}
+              >
+                <span className="text-base">{item.icon}</span>
+                <span className="flex-1 text-left">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Lists */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">
+              목록
+            </span>
             <button
-              key={opt.value}
-              onClick={() => setTheme(opt.value)}
-              title={opt.label}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-xs transition-all ${
-                theme === opt.value
-                  ? 'bg-[#e94560]/15 text-[#e94560] font-semibold'
-                  : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
-              }`}
+              onClick={() => setShowAddList(!showAddList)}
+              className="text-text-inactive hover:text-[#e94560] transition-colors text-sm"
+              title="목록 추가"
             >
-              <span>{opt.icon}</span>
-              <span className="text-[9px]">{opt.label}</span>
+              +
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* User / Settings */}
-      <div className="mt-4 pt-4 border-t border-border">
-        <div className="flex items-center gap-3 px-2">
-          {photoURL ? (
-            <img
-              src={photoURL}
-              alt={displayName}
-              className="w-8 h-8 rounded-full flex-shrink-0"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#e94560] to-[#533483] flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-              {initials}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-text-primary truncate">{displayName}</p>
-            <p className="text-[10px] text-text-muted">Free Plan</p>
           </div>
-          <button
-            onClick={handleSignOut}
-            className="text-text-inactive hover:text-[#e94560] transition-colors text-xs flex-shrink-0"
-            title="로그아웃"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </button>
+          <div className="space-y-1">
+            {lists.map((list) => (
+              <div
+                key={list.id}
+                className="group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-background-card hover:text-text-primary transition-all"
+              >
+                <span
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: list.color }}
+                />
+                {editingListId === list.id ? (
+                  <input
+                    value={editingLabel}
+                    onChange={(e) => setEditingLabel(e.target.value)}
+                    onBlur={() => handleRenameList(list.id!)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
+                    autoFocus
+                    className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
+                  />
+                ) : (
+                  <Link
+                    href={`/tasks?list=${list.id}`}
+                    className="flex-1 cursor-pointer"
+                    onDoubleClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); }}
+                    title="클릭: 목록 필터 / 더블클릭: 이름 변경"
+                  >
+                    {list.label}
+                  </Link>
+                )}
+              </div>
+            ))}
+            {showAddList && (
+              <div className="flex items-center gap-2 px-3 py-1.5">
+                <span className="w-3 h-3 rounded-full flex-shrink-0 bg-[#e94560]" />
+                <input
+                  value={newListLabel}
+                  onChange={(e) => setNewListLabel(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddList(); if (e.key === 'Escape') setShowAddList(false); }}
+                  onBlur={handleAddList}
+                  placeholder="목록 이름..."
+                  autoFocus
+                  className="flex-1 bg-transparent text-text-primary text-sm placeholder-text-muted outline-none border-b border-[#e94560]"
+                />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    </aside>
+
+        {/* Theme Toggle */}
+        <div className="mt-6 pt-4 border-t border-border">
+          <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">테마</p>
+          <div className="flex gap-1">
+            {THEME_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setTheme(opt.value)}
+                title={opt.label}
+                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-xs transition-all ${
+                  theme === opt.value
+                    ? 'bg-[#e94560]/15 text-[#e94560] font-semibold'
+                    : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
+                }`}
+              >
+                <span>{opt.icon}</span>
+                <span className="text-[9px]">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* User / Settings */}
+        <div className="mt-4 pt-4 border-t border-border">
+          <div className="flex items-center gap-3 px-2">
+            {photoURL ? (
+              <img
+                src={photoURL}
+                alt={displayName}
+                className="w-8 h-8 rounded-full flex-shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#e94560] to-[#533483] flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                {initials}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-text-primary truncate">{displayName}</p>
+              <p className="text-[10px] text-text-muted">Free Plan</p>
+            </div>
+            {/* Settings button */}
+            <button
+              onClick={() => setShowSettings(true)}
+              className="text-text-inactive hover:text-text-secondary transition-colors flex-shrink-0"
+              title="설정"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+            {/* Sign out button */}
+            <button
+              onClick={handleSignOut}
+              className="text-text-inactive hover:text-[#e94560] transition-colors text-xs flex-shrink-0"
+              title="로그아웃"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Settings Modal */}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+    </>
   );
 }

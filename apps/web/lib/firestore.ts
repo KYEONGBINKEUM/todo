@@ -71,6 +71,7 @@ export interface TaskData {
   reminder?: string | null;
   memo?: string;
   attachments?: TaskAttachment[];
+  tags?: string[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -90,9 +91,11 @@ export interface NoteData {
 
 export interface NoteBlock {
   id: string;
-  type: 'text' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote' | 'divider' | 'code';
+  type: 'text' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote' | 'divider' | 'code' | 'link' | 'toggle';
   content: string;
   checked?: boolean;
+  url?: string;
+  children?: string;
 }
 
 export interface ListData {
@@ -281,8 +284,11 @@ export async function deleteFolder(uid: string, folderId: string): Promise<void>
 
 export type Theme = 'system' | 'light' | 'dark';
 
+export type FontSize = 'small' | 'medium' | 'large';
+
 export interface UserSettings {
   theme: Theme;
+  fontSize?: FontSize;
 }
 
 export async function getUserSettings(uid: string): Promise<UserSettings> {

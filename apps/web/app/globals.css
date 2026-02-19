@@ -7,6 +7,7 @@
    ============================================================ */
 :root {
   --font-pretendard: 'Pretendard Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-size-base: 14px;
 
   /* Background */
   --color-bg-base:  #08081a;
@@ -147,6 +148,13 @@ body {
 .animate-slide-in-right {
   animation: slideInRight 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* Font size utilities */
+html[data-font="small"]  { --font-size-base: 12px; }
+html[data-font="medium"] { --font-size-base: 14px; }
+html[data-font="large"]  { --font-size-base: 16px; }
+
+body { font-size: var(--font-size-base); }
 
 /* Focus styles */
 *:focus-visible {

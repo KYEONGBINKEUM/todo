@@ -375,7 +375,15 @@ export default function MyDayPage() {
                 ) : (
                   /* 보기 모드 */
                   <>
-                    <span className={`flex-1 text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
+                    <span
+                      onClick={(e) => { e.stopPropagation(); if (!isCompleted) startEdit(task); }}
+                      className={`flex-1 text-sm transition-all duration-300 ${
+                        isCompleted
+                          ? 'line-through text-text-inactive cursor-default'
+                          : 'text-text-primary cursor-text hover:text-[#e94560]'
+                      }`}
+                      title={isCompleted ? undefined : '클릭하여 편집'}
+                    >
                       {task.title}
                     </span>
                     {/* sub-task progress indicator */}

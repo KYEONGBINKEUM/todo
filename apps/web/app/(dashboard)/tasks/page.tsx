@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { getTasks, getLists, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
+import { getTasks, getNotes, getLists, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -22,25 +23,59 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   completed: { label: '완료', color: '#22c55e' },
 };
 
-export default function AllTasksPage() {
+function parseTags(title: string): string[] {
+  return [...title.matchAll(/@([\w가-힣]+)/g)].map((m) => m[1]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inner component (uses useSearchParams — needs Suspense wrapper)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TasksContent() {
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
+  const [relatedNotes, setRelatedNotes] = useState<{ id: string; title: string; icon: string; tags: string[] }[]>([]);
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [filterTag, setFilterTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // 인라인 편집 상태
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editList, setEditList] = useState('');
+  const [editPriority, setEditPriority] = useState<TaskData['priority']>('medium');
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   // 상세 패널
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
+  // URL param → filterList 초기값
+  useEffect(() => {
+    const listParam = searchParams.get('list');
+    if (listParam) setFilterList(listParam);
+  }, [searchParams]);
+
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
-      const [fetchedTasks, fetchedLists] = await Promise.all([getTasks(user.uid), getLists(user.uid)]);
+      const [fetchedTasks, fetchedLists, fetchedNotes] = await Promise.all([
+        getTasks(user.uid),
+        getLists(user.uid),
+        getNotes(user.uid),
+      ]);
       setTasks(fetchedTasks);
       if (fetchedLists.length > 0) setLists(fetchedLists);
+      setRelatedNotes(fetchedNotes.map((n) => ({
+        id: n.id!,
+        title: n.title,
+        icon: n.icon,
+        tags: n.tags,
+      })));
     } catch (err) {
       console.error('Failed to load tasks:', err);
     } finally {
@@ -49,6 +84,10 @@ export default function AllTasksPage() {
   }, [user]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (editingId && editInputRef.current) editInputRef.current.focus();
+  }, [editingId]);
 
   const handleToggleTask = async (task: TaskData) => {
     if (!user || !task.id) return;
@@ -76,10 +115,49 @@ export default function AllTasksPage() {
     await updateTask(user.uid, selectedTaskId, updates);
   };
 
+  const startEdit = (task: TaskData) => {
+    setSelectedTaskId(null); // 패널 닫기
+    setEditingId(task.id!);
+    setEditTitle(task.title);
+    setEditList(task.listId);
+    setEditPriority(task.priority);
+  };
+
+  const saveEdit = async () => {
+    if (!user || !editingId) return;
+    const tags = parseTags(editTitle);
+    const updates: Partial<TaskData> = {
+      title: editTitle.trim() || '제목 없음',
+      listId: editList,
+      priority: editPriority,
+      tags,
+    };
+    setTasks((prev) => prev.map((t) => t.id === editingId ? { ...t, ...updates } : t));
+    setEditingId(null);
+    await updateTask(user.uid, editingId, updates);
+  };
+
+  const cancelEdit = () => setEditingId(null);
+
+  // 필터 적용
   const filtered = tasks
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterStatus || t.status === filterStatus)
+    .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
     .filter((t) => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  // @태그 소그룹 빌드
+  const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
+
+  // 관련 노트 (현재 filterTag 기준)
+  const tagRelatedNotes = filterTag
+    ? relatedNotes.filter(
+        (n) =>
+          n.tags.includes(filterTag) ||
+          // 블록 내용 검색은 client에서만 할 수 있으므로 tags로만 매칭
+          n.title.toLowerCase().includes(filterTag.toLowerCase())
+      )
+    : [];
 
   const getListInfo = (listId: string) => lists.find((l) => l.id === listId) || lists[0];
 
@@ -103,6 +181,7 @@ export default function AllTasksPage() {
           <p className="text-text-secondary text-sm">모든 목록의 작업을 한 곳에서 관리하세요</p>
         </div>
 
+        {/* Search */}
         <div className="mb-4">
           <input
             type="text"
@@ -113,7 +192,8 @@ export default function AllTasksPage() {
           />
         </div>
 
-        <div className="mb-6 flex items-center gap-4 flex-wrap">
+        {/* Filters */}
+        <div className="mb-4 flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-text-muted uppercase tracking-wider">목록</span>
             <button onClick={() => setFilterList(null)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${!filterList ? 'bg-[#e94560]/20 text-[#e94560]' : 'text-text-secondary hover:bg-background-card'}`}>전체</button>
@@ -133,16 +213,48 @@ export default function AllTasksPage() {
           </div>
         </div>
 
+        {/* @태그 칩 */}
+        {allTags.length > 0 && (
+          <div className="mb-4 flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">@태그</span>
+            {filterTag && (
+              <button
+                onClick={() => setFilterTag(null)}
+                className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all"
+              >
+                전체
+              </button>
+            )}
+            {allTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setFilterTag(filterTag === tag ? null : tag)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
+                  filterTag === tag
+                    ? 'bg-[#8b5cf6]/15 text-[#8b5cf6] border-[#8b5cf6]/30'
+                    : 'text-text-secondary border-border hover:border-border-hover hover:bg-background-card'
+                }`}
+              >
+                @{tag}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Task List */}
         <div className="space-y-2">
           {filtered.map((task, index) => {
             const priority = priorityColors[task.priority];
             const list = getListInfo(task.listId);
             const isCompleted = task.status === 'completed';
             const isSelected = selectedTaskId === task.id;
+            const isEditing = editingId === task.id;
+            const taskTags = task.tags ?? [];
+
             return (
               <div
                 key={task.id}
-                onClick={() => setSelectedTaskId(isSelected ? null : task.id!)}
+                onClick={() => { if (!isEditing) setSelectedTaskId(isSelected ? null : task.id!); }}
                 className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer ${
                   isSelected
                     ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]'
@@ -152,35 +264,75 @@ export default function AllTasksPage() {
                 }`}
                 style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}
               >
+                {/* 체크박스 */}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
                   className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'border-text-secondary/50 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'}`}
                 >
                   {isCompleted && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </button>
+
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-                <span className={`flex-1 text-sm transition-all ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>{task.title}</span>
-                {/* sub-task indicator */}
-                {(task.subTasks?.length ?? 0) > 0 && (
-                  <span className="text-[10px] text-text-muted flex-shrink-0">
-                    📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}
-                  </span>
+
+                {isEditing ? (
+                  /* 편집 모드 */
+                  <div className="flex-1 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      ref={editInputRef}
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                      className="flex-1 min-w-[120px] bg-background border border-[#e94560] rounded-lg px-2 py-1 text-sm text-text-primary focus:outline-none"
+                    />
+                    <select value={editList} onChange={(e) => setEditList(e.target.value)} className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer">
+                      {lists.map((l) => (<option key={l.id} value={l.id!} className="bg-background-card">{l.label}</option>))}
+                    </select>
+                    <select value={editPriority} onChange={(e) => setEditPriority(e.target.value as TaskData['priority'])} className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-text-secondary focus:outline-none cursor-pointer">
+                      <option value="urgent" className="bg-background-card">긴급</option>
+                      <option value="high" className="bg-background-card">높음</option>
+                      <option value="medium" className="bg-background-card">보통</option>
+                      <option value="low" className="bg-background-card">낮음</option>
+                    </select>
+                    <button onClick={saveEdit} className="px-3 py-1 bg-[#e94560] text-white text-xs rounded-lg hover:bg-[#ff5a7a] transition-colors">저장</button>
+                    <button onClick={cancelEdit} className="px-3 py-1 bg-background border border-border text-text-secondary text-xs rounded-lg hover:border-border-hover transition-colors">취소</button>
+                  </div>
+                ) : (
+                  /* 보기 모드 */
+                  <>
+                    <div className="flex-1 min-w-0">
+                      {/* 제목 클릭 → 편집 */}
+                      <span
+                        onClick={(e) => { e.stopPropagation(); startEdit(task); }}
+                        className={`block text-sm cursor-text transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary hover:text-[#e94560]'}`}
+                        title="클릭하여 편집"
+                      >
+                        {task.title}
+                      </span>
+                      {/* @태그 표시 */}
+                      {taskTags.length > 0 && (
+                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                          {taskTags.map((tag) => (
+                            <button
+                              key={tag}
+                              onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === tag ? null : tag); }}
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-semibold hover:bg-[#8b5cf6]/20 transition-colors"
+                            >
+                              @{tag}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {(task.subTasks?.length ?? 0) > 0 && (
+                      <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
+                    )}
+                    {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
+                    <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
+                  </>
                 )}
-                {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
-                <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }}
-                  className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}
-                >
-                  {task.starred ? '★' : '☆'}
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }}
-                  className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0"
-                >
-                  ×
-                </button>
               </div>
             );
           })}
@@ -189,8 +341,37 @@ export default function AllTasksPage() {
         {filtered.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📭</div>
-            <p className="text-text-secondary font-semibold">작업이 없습니다</p>
+            <p className="text-text-secondary font-semibold">{filterTag ? `@${filterTag} 태그의 작업이 없습니다` : '작업이 없습니다'}</p>
             <p className="text-text-muted text-sm mt-1">My Day에서 작업을 추가해보세요</p>
+          </div>
+        )}
+
+        {/* @태그 관련 노트 카드 */}
+        {filterTag && tagRelatedNotes.length > 0 && (
+          <div className="mt-8">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm">📝</span>
+              <span className="text-xs font-bold text-text-primary">@{filterTag} 관련 노트</span>
+              <span className="text-[10px] text-text-muted">{tagRelatedNotes.length}개</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {tagRelatedNotes.map((note) => (
+                <div
+                  key={note.id}
+                  className="p-3 bg-background-card border border-border rounded-xl hover:border-[#8b5cf6]/40 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-base">{note.icon}</span>
+                    <span className="text-xs font-semibold text-text-primary truncate">{note.title}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {note.tags.map((t) => (
+                      <span key={t} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6]">@{t}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -205,5 +386,21 @@ export default function AllTasksPage() {
         />
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Export with Suspense (required for useSearchParams in static export)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function AllTasksPage() {
+  return (
+    <Suspense fallback={
+      <div className="p-8 flex items-center justify-center min-h-[50vh]">
+        <div className="w-6 h-6 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <TasksContent />
+    </Suspense>
   );
 }

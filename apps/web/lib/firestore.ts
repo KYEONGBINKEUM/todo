@@ -7,6 +7,7 @@ import {
   deleteDoc,
   query,
   orderBy,
+  where,
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
@@ -107,8 +108,25 @@ export async function getTasks(uid: string): Promise<TaskData[]> {
   return result;
 }
 
+export async function getMyDayTasks(uid: string): Promise<TaskData[]> {
+  const cached = getCached<TaskData[]>(`${uid}:myDayTasks`);
+  if (cached) return cached;
+  const q = query(tasksRef(uid), where('myDay', '==', true));
+  const snapshot = await getDocs(q);
+  const result = snapshot.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() } as TaskData))
+    .sort((a, b) => {
+      const aTime = a.createdAt?.toMillis() ?? 0;
+      const bTime = b.createdAt?.toMillis() ?? 0;
+      return bTime - aTime;
+    });
+  setCache(`${uid}:myDayTasks`, result);
+  return result;
+}
+
 export async function addTask(uid: string, task: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
   invalidateCache(uid, 'tasks');
+  invalidateCache(uid, 'myDayTasks');
   const docRef = await addDoc(tasksRef(uid), {
     ...task,
     createdAt: serverTimestamp(),
@@ -118,6 +136,8 @@ export async function addTask(uid: string, task: Omit<TaskData, 'id' | 'createdA
 }
 
 export async function updateTask(uid: string, taskId: string, updates: Partial<TaskData>): Promise<void> {
+  invalidateCache(uid, 'tasks');
+  invalidateCache(uid, 'myDayTasks');
   await updateDoc(doc(db, 'users', uid, 'tasks', taskId), {
     ...updates,
     updatedAt: serverTimestamp(),
@@ -125,6 +145,8 @@ export async function updateTask(uid: string, taskId: string, updates: Partial<T
 }
 
 export async function deleteTask(uid: string, taskId: string): Promise<void> {
+  invalidateCache(uid, 'tasks');
+  invalidateCache(uid, 'myDayTasks');
   await deleteDoc(doc(db, 'users', uid, 'tasks', taskId));
 }
 

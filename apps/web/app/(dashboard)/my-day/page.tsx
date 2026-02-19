@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import {
-  getTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
+  getMyDayTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
   getLists, seedDefaultData,
   type TaskData, type ListData,
 } from '@/lib/firestore';
@@ -31,22 +31,35 @@ export default function MyDayPage() {
   const [filterList, setFilterList] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
-      await seedDefaultData(user.uid);
+      // tasks와 lists를 병렬로 fetch (seedDefaultData 제거)
       const [fetchedTasks, fetchedLists] = await Promise.all([
-        getTasks(user.uid),
+        getMyDayTasks(user.uid),
         getLists(user.uid),
       ]);
-      setTasks(fetchedTasks.filter((t) => t.myDay));
-      if (fetchedLists.length > 0) {
+      setTasks(fetchedTasks);
+      if (fetchedLists.length === 0) {
+        // 신규 사용자일 때만 seed 실행
+        await seedDefaultData(user.uid);
+        const seededLists = await getLists(user.uid);
+        setLists(seededLists);
+        if (seededLists.length > 0) setNewTaskList(seededLists[0].id!);
+      } else {
         setLists(fetchedLists);
         if (!newTaskList) setNewTaskList(fetchedLists[0].id!);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to load data:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('permission') || msg.includes('PERMISSION_DENIED')) {
+        setError('Firestore 권한 오류: Firebase 콘솔에서 보안 규칙을 확인하세요.');
+      } else {
+        setError(`데이터 로드 실패: ${msg}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -122,6 +135,23 @@ export default function MyDayPage() {
     return (
       <div className="p-8 flex items-center justify-center min-h-[50vh]">
         <div className="w-6 h-6 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[50vh]">
+        <div className="max-w-md text-center p-6 bg-red-500/10 border border-red-500/30 rounded-xl">
+          <p className="text-red-400 font-semibold mb-2">오류 발생</p>
+          <p className="text-[#94a3b8] text-sm">{error}</p>
+          <button
+            onClick={() => { setError(null); setLoading(true); loadData(); }}
+            className="mt-4 px-4 py-2 bg-[#e94560] text-white text-sm rounded-lg hover:bg-[#ff5a7a]"
+          >
+            다시 시도
+          </button>
+        </div>
       </div>
     );
   }

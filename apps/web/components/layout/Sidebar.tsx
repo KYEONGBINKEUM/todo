@@ -11,7 +11,12 @@ import SettingsModal from '@/components/settings/SettingsModal';
 
 const LIST_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
@@ -104,7 +109,21 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className="w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0">
+      {/* 모바일 오버레이 배경 */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside className={`
+        w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0
+        fixed top-0 left-0 h-full z-50 overflow-y-auto
+        md:relative md:top-auto md:h-auto md:z-auto md:overflow-y-visible
+        transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         {/* Logo */}
         <div className="mb-8">
           <Link href="/my-day">

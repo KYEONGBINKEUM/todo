@@ -212,7 +212,7 @@ function TasksContent() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">

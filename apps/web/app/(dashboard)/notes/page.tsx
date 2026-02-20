@@ -808,11 +808,11 @@ function NotesContent() {
   const unfolderNotes = searchFiltered.filter((n) => n.folderId === null && !n.pinned);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-full">
       {/* ================================================================ */}
       {/* Note List Panel */}
       {/* ================================================================ */}
-      <div className="w-72 border-r border-border bg-background flex flex-col flex-shrink-0">
+      <div className={`border-r border-border bg-background flex flex-col flex-shrink-0 ${activeNoteId ? 'hidden md:flex md:w-72' : 'flex w-full md:w-72'}`}>
         {/* Header */}
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-3">
@@ -1092,6 +1092,13 @@ function NotesContent() {
           {/* Editor Toolbar */}
           <div className="flex items-center justify-between px-6 py-2.5 border-b border-border bg-background/50">
             <div className="flex items-center gap-3 text-xs text-text-muted">
+              <button
+                onClick={() => setActiveNoteId('')}
+                className="md:hidden flex items-center gap-1 text-text-secondary hover:text-text-primary transition-colors mr-1"
+                title="목록으로"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
               <span>수정됨 {getRelativeTime(activeNote.updated_at)}</span>
               <span>·</span>
               <span>{activeNote.blocks.length} 블록</span>
@@ -1248,7 +1255,7 @@ function NotesContent() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="hidden md:flex flex-1 items-center justify-center">
           <div className="text-center">
             <div className="text-6xl mb-4 animate-pulse-slow">📝</div>
             <p className="text-text-secondary font-semibold text-lg">{t('notes.selectNote')}</p>
@@ -1266,7 +1273,7 @@ function NotesContent() {
 export default function NotesPage() {
   return (
     <Suspense fallback={
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <div className="w-6 h-6 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
       </div>
     }>

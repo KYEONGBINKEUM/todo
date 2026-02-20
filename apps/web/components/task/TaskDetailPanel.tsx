@@ -193,7 +193,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
       {/* Panel */}
-      <div className="fixed top-0 right-0 h-full w-[380px] z-50 flex flex-col bg-background-card border-l border-border shadow-2xl animate-slide-in-right overflow-hidden">
+      <div className="fixed top-14 md:top-0 right-0 bottom-0 w-full md:w-[380px] z-50 flex flex-col bg-background-card border-l border-border shadow-2xl animate-slide-in-right overflow-hidden">
 
         {/* Header — editable title */}
         <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-border flex-shrink-0">

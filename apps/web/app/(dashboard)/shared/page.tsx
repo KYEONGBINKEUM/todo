@@ -159,7 +159,7 @@ export default function SharedPage() {
   const selectedList = sharedLists.find((l) => l.id === selectedListId);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">

@@ -56,6 +56,8 @@ export interface TaskAttachment {
   size: number;
   type: string;
   addedAt: string;
+  downloadURL?: string;  // Firebase Storage URL (신규)
+  storagePath?: string;  // Storage 경로 (삭제 시 사용)
 }
 
 export interface TaskData {

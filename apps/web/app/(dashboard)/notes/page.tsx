@@ -5,10 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
-  getNotes, addNote as addNoteDB, updateNote as updateNoteDB, deleteNote as deleteNoteDB,
-  getFolders, addFolder as addFolderDB, deleteFolder as deleteFolderDB, updateFolder as updateFolderDB,
+  addNote as addNoteDB, updateNote as updateNoteDB, deleteNote as deleteNoteDB,
+  addFolder as addFolderDB, deleteFolder as deleteFolderDB, updateFolder as updateFolderDB,
   restoreFolder as restoreFolderDB, permanentDeleteFolder as permanentDeleteFolderDB,
 } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 
 // ============================================================================
 // Types
@@ -73,6 +74,8 @@ function NotesContent() {
   const { user } = useAuth();
   const { t } = useI18n();
   const searchParams = useSearchParams();
+  const { notes: storeNotes, folders: storeFolders, loading: storeLoading } = useDataStore();
+  const initializedRef = useRef(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [trashedFolders, setTrashedFolders] = useState<Folder[]>([]);
@@ -111,56 +114,49 @@ function NotesContent() {
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const slashMenuRef = useRef<HTMLDivElement>(null);
 
-  // Load data
-  const loadData = useCallback(async () => {
-    if (!user) return;
-    try {
-      const [fetchedNotes, fetchedFolders] = await Promise.all([
-        getNotes(user.uid),
-        getFolders(user.uid),
-      ]);
-      const mappedNotes: Note[] = fetchedNotes.map((n) => ({
-        id: n.id!,
-        title: n.title,
-        icon: n.icon,
-        blocks: n.blocks as NoteBlock[],
-        created_at: n.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        updated_at: n.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        pinned: n.pinned,
-        tags: n.tags,
-        folderId: n.folderId,
-        linkedTaskId: n.linkedTaskId || null,
-        linkedTaskIds: n.linkedTaskIds || [],
-      }));
-      setNotes(mappedNotes);
-      const paramNoteId = searchParams.get('note');
-      if (paramNoteId && mappedNotes.find((n) => n.id === paramNoteId)) {
-        setActiveNoteId(paramNoteId);
-      } else if (mappedNotes.length > 0) {
-        setActiveNoteId(mappedNotes[0].id);
-      }
-      const allFolders: Folder[] = fetchedFolders.map((f) => ({
-        id: f.id!,
-        name: f.name,
-        color: f.color,
-        icon: f.icon,
-        parentId: f.parentId ?? null,
-        deleted: f.deleted ?? false,
-        deletedAt: f.deletedAt ?? null,
-      }));
-      const mappedFolders = allFolders.filter((f) => !f.deleted);
-      const trashed = allFolders.filter((f) => f.deleted);
-      setFolders(mappedFolders);
-      setTrashedFolders(trashed);
-      setOpenFolderIds(new Set(mappedFolders.map((f) => f.id)));
-    } catch (err) {
-      console.error('Failed to load notes:', err);
-    } finally {
-      setPageLoading(false);
-    }
-  }, [user]);
+  // Initialize from global data store (once on first load)
+  useEffect(() => {
+    if (storeLoading || initializedRef.current) return;
+    initializedRef.current = true;
 
-  useEffect(() => { loadData(); }, [loadData]);
+    const mappedNotes: Note[] = storeNotes.map((n) => ({
+      id: n.id!,
+      title: n.title,
+      icon: n.icon,
+      blocks: n.blocks as NoteBlock[],
+      created_at: n.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      updated_at: n.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      pinned: n.pinned,
+      tags: n.tags,
+      folderId: n.folderId,
+      linkedTaskId: n.linkedTaskId || null,
+      linkedTaskIds: n.linkedTaskIds || [],
+    }));
+    setNotes(mappedNotes);
+    const paramNoteId = searchParams.get('note');
+    if (paramNoteId && mappedNotes.find((n) => n.id === paramNoteId)) {
+      setActiveNoteId(paramNoteId);
+    } else if (mappedNotes.length > 0) {
+      setActiveNoteId(mappedNotes[0].id);
+    }
+
+    const allFolders: Folder[] = storeFolders.map((f) => ({
+      id: f.id!,
+      name: f.name,
+      color: f.color,
+      icon: f.icon,
+      parentId: f.parentId ?? null,
+      deleted: f.deleted ?? false,
+      deletedAt: f.deletedAt ?? null,
+    }));
+    const mappedFolders = allFolders.filter((f) => !f.deleted);
+    const trashed = allFolders.filter((f) => f.deleted);
+    setFolders(mappedFolders);
+    setTrashedFolders(trashed);
+    setOpenFolderIds(new Set(mappedFolders.map((f) => f.id)));
+    setPageLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLoading]);
 
   const saveNoteToFirestore = useCallback(async (note: Note) => {
     if (!user) return;

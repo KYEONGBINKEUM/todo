@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation';
 import { TaskData, SubTask, TaskAttachment, NoteData, getNotes } from '@/lib/firestore';
 import { useAuth } from '@/lib/auth-context';
 import { requestNotificationPermission } from '@/lib/use-reminders';
-import { saveAttachment, openAttachment, deleteAttachments } from '@/lib/attachment-store';
+import {
+  uploadAttachment, openAttachmentByURL, deleteAttachmentFromStorage,
+  openAttachment, deleteAttachments,
+  MAX_ATTACHMENT_SIZE,
+} from '@/lib/attachment-store';
 
 interface TaskDetailPanelProps {
   task: TaskData;
@@ -21,7 +25,7 @@ const PRIORITY_OPTIONS = [
   { value: 'low', label: '낮음', color: '#22c55e' },
 ] as const;
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
+const MAX_FILE_SIZE = MAX_ATTACHMENT_SIZE; // 10 MB
 
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: TaskDetailPanelProps) {
   const { user } = useAuth();
@@ -131,11 +135,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const allFiles = Array.from(e.target.files ?? []);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    if (!allFiles.length) return;
+    if (!allFiles.length || !user || !task.id) return;
 
     const files = allFiles.filter((f) => {
       if (f.size > MAX_FILE_SIZE) {
-        alert(`"${f.name}"은 2 MB를 초과하여 첨부할 수 없습니다.`);
+        alert(`"${f.name}"은 10 MB를 초과하여 첨부할 수 없습니다.`);
         return false;
       }
       return true;
@@ -145,25 +149,35 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     const newAtts: TaskAttachment[] = [];
     for (const file of files) {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      await saveAttachment(id, file);
+      const { downloadURL, storagePath } = await uploadAttachment(user.uid, task.id, file, id);
       newAtts.push({
         id,
         name: file.name,
         size: file.size,
         type: file.type,
         addedAt: new Date().toISOString(),
+        downloadURL,
+        storagePath,
       });
     }
     onUpdate({ attachments: [...attachments, ...newAtts] });
   };
 
-  const deleteAttachment = async (id: string) => {
-    await deleteAttachments([id]);
-    onUpdate({ attachments: attachments.filter((a) => a.id !== id) });
+  const deleteAttachment = async (att: TaskAttachment) => {
+    if (att.storagePath) {
+      await deleteAttachmentFromStorage(att.storagePath);
+    } else {
+      await deleteAttachments([att.id]); // 구형 IndexedDB
+    }
+    onUpdate({ attachments: attachments.filter((a) => a.id !== att.id) });
   };
 
   const handleOpenAttachment = (att: TaskAttachment) => {
-    openAttachment(att.id, att.name, att.type);
+    if (att.downloadURL) {
+      openAttachmentByURL(att.downloadURL, att.name, att.type);
+    } else {
+      openAttachment(att.id, att.name, att.type); // 구형 IndexedDB
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -436,7 +450,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                       </p>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteAttachment(att.id); }}
+                      onClick={(e) => { e.stopPropagation(); deleteAttachment(att); }}
                       className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all flex-shrink-0"
                     >
                       ×

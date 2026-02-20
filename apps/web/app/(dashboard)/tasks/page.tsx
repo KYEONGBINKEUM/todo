@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
-import { getTasks, getNotes, getLists, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
+import { addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
-import { deleteAttachments } from '@/lib/attachment-store';
+import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
+import { useDataStore } from '@/lib/data-store';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -31,14 +32,13 @@ function TasksContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { t } = useI18n();
+  const { tasks: storeTasks, lists: storeLists, notes: storeNotes, loading } = useDataStore();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
-  const [relatedNotes, setRelatedNotes] = useState<{ id: string; title: string; icon: string; tags: string[] }[]>([]);
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
   const [newTaskList, setNewTaskList] = useState('');
@@ -65,34 +65,26 @@ function TasksContent() {
     if (listParam) setFilterList(listParam);
   }, [searchParams]);
 
-  const loadData = useCallback(async () => {
-    if (!user) return;
-    try {
-      const [fetchedTasks, fetchedLists, fetchedNotes] = await Promise.all([
-        getTasks(user.uid),
-        getLists(user.uid),
-        getNotes(user.uid),
-      ]);
-      const sorted = [...fetchedTasks].sort((a, b) => {
-        if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
-        if (a.order !== undefined) return -1;
-        if (b.order !== undefined) return 1;
-        return 0;
-      });
-      setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
-      if (fetchedLists.length > 0) {
-        setLists(fetchedLists);
-        if (!newTaskList) setNewTaskList(fetchedLists[0].id!);
-      }
-      setRelatedNotes(fetchedNotes.map((n) => ({ id: n.id!, title: n.title, icon: n.icon, tags: n.tags })));
-    } catch (err) {
-      console.error('Failed to load tasks:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
+  // 스토어 → 로컬 tasks (정렬 유지)
+  useEffect(() => {
+    if (savingOrder.current) return;
+    const sorted = [...storeTasks].sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return 0;
+    });
+    setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
+  }, [storeTasks]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // 스토어 → 로컬 lists
+  useEffect(() => {
+    if (storeLists.length > 0) {
+      setLists(storeLists);
+      if (!newTaskList) setNewTaskList(storeLists[0].id!);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLists]);
 
   const filtered = tasks
     .filter((t) => !filterList || t.listId === filterList)
@@ -106,6 +98,7 @@ function TasksContent() {
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
   const canDrag = !filterList && !filterStatus && !filterTag && !searchQuery;
 
+  const relatedNotes = storeNotes.map((n) => ({ id: n.id!, title: n.title, icon: n.icon, tags: n.tags }));
   const tagRelatedNotes = filterTag
     ? relatedNotes.filter((n) => n.tags.includes(filterTag) || n.title.toLowerCase().includes(filterTag.toLowerCase()))
     : [];
@@ -152,22 +145,18 @@ function TasksContent() {
   const handleToggleTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     const newStatus = task.status === 'completed' ? 'todo' : 'completed';
-    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: newStatus } : t));
     await updateTask(user.uid, task.id, { status: newStatus });
   };
 
   const handleToggleStar = async (task: TaskData) => {
     if (!user || !task.id) return;
-    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, starred: !t.starred } : t));
     await updateTask(user.uid, task.id, { starred: !task.starred });
   };
 
   const handleDeleteTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     if (selectedTaskId === task.id) setSelectedTaskId(null);
-    const attIds = (task.attachments ?? []).map((a) => a.id);
-    if (attIds.length) await deleteAttachments(attIds);
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    await deleteAttachmentsFromStorage(task.attachments ?? []);
     await deleteTaskDB(user.uid, task.id);
   };
 
@@ -176,21 +165,15 @@ function TasksContent() {
     setAdding(true);
     const title = newTaskTitle.trim();
     const tags = parseTags(title);
-    const tempId = `temp-${Date.now()}`;
     const maxOrder = tasks.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
-    const newTask: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'> = {
-      title, status: 'todo', priority: newTaskPriority,
-      starred: false, listId: newTaskList || lists[0]?.id || '',
-      myDay: false, tags, order: maxOrder + 1000,
-    };
-    setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
     setNewTaskTitle('');
     try {
-      const id = await addTaskDB(user.uid, newTask);
-      setTasks((prev) => prev.map((t) => t.id === tempId ? { ...t, id } : t));
-    } catch {
-      setTasks((prev) => prev.filter((t) => t.id !== tempId));
-    } finally {
+      await addTaskDB(user.uid, {
+        title, status: 'todo', priority: newTaskPriority,
+        starred: false, listId: newTaskList || lists[0]?.id || '',
+        myDay: false, tags, order: maxOrder + 1000,
+      });
+    } catch { /* ignore */ } finally {
       setAdding(false);
     }
   };
@@ -199,7 +182,6 @@ function TasksContent() {
     if (!user || !selectedTaskId) return;
     const finalUpdates = { ...updates };
     if (updates.title !== undefined) finalUpdates.tags = parseTags(updates.title);
-    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
     await updateTask(user.uid, selectedTaskId, finalUpdates);
   };
 

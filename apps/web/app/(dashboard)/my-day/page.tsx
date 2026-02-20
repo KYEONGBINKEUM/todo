@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
-  getMyDayTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
-  getLists, seedDefaultData,
+  addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
   type TaskData, type ListData,
 } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
-import { deleteAttachments } from '@/lib/attachment-store';
+import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
+import { useDataStore } from '@/lib/data-store';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -56,6 +56,7 @@ function generateCalendarDays(): { date: Date; dateStr: string; day: number; wee
 export default function MyDayPage() {
   const { user } = useAuth();
   const { t } = useI18n();
+  const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -63,7 +64,6 @@ export default function MyDayPage() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
@@ -82,49 +82,30 @@ export default function MyDayPage() {
 
   useTaskReminders(tasks);
 
-  const loadData = useCallback(async () => {
-    if (!user) return;
-    try {
-      const [fetchedTasks, fetchedLists] = await Promise.all([
-        getMyDayTasks(user.uid),
-        getLists(user.uid),
-      ]);
+  // 스토어 tasks → 로컬 tasks (myDay 필터 + 날짜 필터 + 정렬)
+  useEffect(() => {
+    if (savingOrder.current) return; // DnD 저장 중에는 스토어 sync 건너뜀
+    const todayStr = getTodayStr();
+    const myDayTasks = storeTasks
+      .filter((t) => t.myDay)
+      .filter((t) => t.status !== 'completed' || t.completedDate === todayStr);
+    const sorted = [...myDayTasks].sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return 0;
+    });
+    setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
+  }, [storeTasks]);
 
-      const todayStr = getTodayStr();
-
-      // Filter: show incomplete tasks (carry over) + completed tasks only if completed today
-      const filteredByDate = fetchedTasks.filter((task) => {
-        if (task.status !== 'completed') return true;
-        return task.completedDate === todayStr;
-      });
-
-      const sorted = [...filteredByDate].sort((a, b) => {
-        if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
-        if (a.order !== undefined) return -1;
-        if (b.order !== undefined) return 1;
-        return 0;
-      });
-      const withOrder = sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 }));
-      setTasks(withOrder);
-
-      if (fetchedLists.length === 0) {
-        await seedDefaultData(user.uid);
-        const seededLists = await getLists(user.uid);
-        setLists(seededLists);
-        if (seededLists.length > 0) setNewTaskList(seededLists[0].id!);
-      } else {
-        setLists(fetchedLists);
-        if (!newTaskList) setNewTaskList(fetchedLists[0].id!);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg.includes('permission') ? 'Firestore 권한 오류: Firebase 콘솔에서 보안 규칙을 확인하세요.' : `데이터 로드 실패: ${msg}`);
-    } finally {
-      setLoading(false);
+  // 스토어 lists → 로컬 lists
+  useEffect(() => {
+    if (storeLists.length > 0) {
+      setLists(storeLists);
+      if (!newTaskList) setNewTaskList(storeLists[0].id!);
     }
-  }, [user]);
-
-  useEffect(() => { loadData(); }, [loadData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLists]);
 
   const today = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
@@ -185,13 +166,12 @@ export default function MyDayPage() {
     if (!user || !task.id) return;
     const newStatus = task.status === 'completed' ? 'todo' : 'completed';
     const completedDate = newStatus === 'completed' ? getTodayStr() : null;
-    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: newStatus, completedDate } : t));
+    // onSnapshot이 즉시 반영하므로 로컬 state 업데이트 불필요
     await updateTask(user.uid, task.id, { status: newStatus, completedDate });
   };
 
   const handleToggleStar = async (task: TaskData) => {
     if (!user || !task.id) return;
-    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, starred: !t.starred } : t));
     await updateTask(user.uid, task.id, { starred: !task.starred });
   };
 
@@ -200,20 +180,17 @@ export default function MyDayPage() {
     setAdding(true);
     const title = newTaskTitle.trim();
     const tags = parseTags(title);
-    const tempId = `temp-${Date.now()}`;
     const maxOrder = tasks.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
-    const newTask: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'> = {
-      title, status: 'todo', priority: newTaskPriority,
-      starred: false, listId: newTaskList || lists[0]?.id || '',
-      myDay: true, tags, order: maxOrder + 1000,
-    };
-    setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
     setNewTaskTitle('');
     try {
-      const id = await addTaskDB(user.uid, newTask);
-      setTasks((prev) => prev.map((t) => t.id === tempId ? { ...t, id } : t));
+      await addTaskDB(user.uid, {
+        title, status: 'todo', priority: newTaskPriority,
+        starred: false, listId: newTaskList || lists[0]?.id || '',
+        myDay: true, tags, order: maxOrder + 1000,
+      });
+      // onSnapshot이 자동으로 리스트에 추가
     } catch {
-      setTasks((prev) => prev.filter((t) => t.id !== tempId));
+      setError('할일 추가 실패');
     } finally {
       setAdding(false);
     }
@@ -222,9 +199,8 @@ export default function MyDayPage() {
   const handleDeleteTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     if (selectedTaskId === task.id) setSelectedTaskId(null);
-    const attIds = (task.attachments ?? []).map((a) => a.id);
-    if (attIds.length) await deleteAttachments(attIds);
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    const atts = task.attachments ?? [];
+    if (atts.length) await deleteAttachmentsFromStorage(atts);
     await deleteTaskDB(user.uid, task.id);
   };
 
@@ -234,7 +210,6 @@ export default function MyDayPage() {
     if (updates.title !== undefined) finalUpdates.tags = parseTags(updates.title);
     if (updates.status === 'completed') finalUpdates.completedDate = getTodayStr();
     if (updates.status && updates.status !== 'completed') finalUpdates.completedDate = null;
-    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
     await updateTask(user.uid, selectedTaskId, finalUpdates);
   };
 
@@ -254,7 +229,7 @@ export default function MyDayPage() {
         <div className="max-w-md text-center p-6 bg-red-500/10 border border-red-500/30 rounded-xl">
           <p className="text-red-400 font-semibold mb-2">오류 발생</p>
           <p className="text-text-secondary text-sm">{error}</p>
-          <button onClick={() => { setError(null); setLoading(true); loadData(); }} className="mt-4 px-4 py-2 bg-[#e94560] text-white text-sm rounded-lg hover:bg-[#ff5a7a]">다시 시도</button>
+          <button onClick={() => setError(null)} className="mt-4 px-4 py-2 bg-[#e94560] text-white text-sm rounded-lg hover:bg-[#ff5a7a]">닫기</button>
         </div>
       </div>
     );

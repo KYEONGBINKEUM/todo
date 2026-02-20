@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
-import { getTasks, getLists, addTask as addTaskDB, updateTask, type TaskData, type ListData } from '@/lib/firestore';
+import { addTask as addTaskDB, updateTask, type TaskData, type ListData } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 
 type DateGroup = 'overdue' | 'today' | 'tomorrow' | 'thisWeek' | 'thisMonth' | 'later';
 
@@ -44,30 +45,22 @@ const sectionOrder: { key: DateGroup; icon: string; i18nKey: string }[] = [
 export default function UpcomingPage() {
   const { user } = useAuth();
   const { t } = useI18n();
-  const [tasks, setTasks] = useState<TaskData[]>([]);
+  const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
+  const tasks = storeTasks.filter((t) => t.dueDate);
   const [lists, setLists] = useState<ListData[]>([]);
-  const [loading, setLoading] = useState(true);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
   const [newTaskList, setNewTaskList] = useState('');
   const [adding, setAdding] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
 
-  const loadData = useCallback(async () => {
-    if (!user) return;
-    try {
-      const [fetchedTasks, fetchedLists] = await Promise.all([getTasks(user.uid), getLists(user.uid)]);
-      setTasks(fetchedTasks.filter((t) => t.dueDate));
-      setLists(fetchedLists);
-      if (fetchedLists.length > 0 && !newTaskList) setNewTaskList(fetchedLists[0].id!);
-    } catch (err) {
-      console.error('Failed to load:', err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (storeLists.length > 0) {
+      setLists(storeLists);
+      if (!newTaskList) setNewTaskList(storeLists[0].id!);
     }
-  }, [user]);
-
-  useEffect(() => { loadData(); }, [loadData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLists]);
 
   const grouped = groupByDate(tasks);
 
@@ -76,20 +69,14 @@ export default function UpcomingPage() {
     setAdding(true);
     const title = newTaskTitle.trim();
     const todayStr = new Date().toISOString().split('T')[0];
-    const tempId = `temp-${Date.now()}`;
-    const newTask: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'> = {
-      title, status: 'todo', priority: newTaskPriority,
-      starred: false, listId: newTaskList || lists[0]?.id || '',
-      myDay: false, tags: [], dueDate: todayStr,
-    };
-    setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
     setNewTaskTitle('');
     try {
-      const id = await addTaskDB(user.uid, newTask);
-      setTasks((prev) => prev.map((t) => t.id === tempId ? { ...t, id } : t));
-    } catch {
-      setTasks((prev) => prev.filter((t) => t.id !== tempId));
-    } finally {
+      await addTaskDB(user.uid, {
+        title, status: 'todo', priority: newTaskPriority,
+        starred: false, listId: newTaskList || lists[0]?.id || '',
+        myDay: false, tags: [], dueDate: todayStr,
+      });
+    } catch { /* ignore */ } finally {
       setAdding(false);
     }
   };
@@ -97,13 +84,11 @@ export default function UpcomingPage() {
   const handleToggleTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     const newStatus = task.status === 'completed' ? 'todo' : 'completed';
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)));
     await updateTask(user.uid, task.id, { status: newStatus });
   };
 
   const handleToggleStar = async (task: TaskData) => {
     if (!user || !task.id) return;
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, starred: !t.starred } : t)));
     await updateTask(user.uid, task.id, { starred: !task.starred });
   };
 

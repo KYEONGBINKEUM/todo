@@ -68,7 +68,8 @@ export default function UpcomingPage() {
     if (!newTaskTitle.trim() || !user || adding) return;
     setAdding(true);
     const title = newTaskTitle.trim();
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     setNewTaskTitle('');
     try {
       await addTaskDB(user.uid, {

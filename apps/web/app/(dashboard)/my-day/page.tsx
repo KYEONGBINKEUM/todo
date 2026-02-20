@@ -29,23 +29,25 @@ function parseTags(title: string): string[] {
   return [...title.matchAll(/@([\w가-힣]+)/g)].map((m) => m[1]);
 }
 
-function getTodayStr() {
-  const d = new Date();
+function toLocalDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getTodayStr() {
+  return toLocalDateStr(new Date());
 }
 
 // 선택 날짜 중심으로 ±3일 (7일) 캘린더 생성
 function generateCalendarDays(centerDateStr: string): { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean; month: number }[] {
   const center = new Date(centerDateStr + 'T00:00:00');
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = getTodayStr();
   const days: { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean; month: number }[] = [];
   const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 
   for (let i = -3; i <= 3; i++) {
     const d = new Date(center);
     d.setDate(center.getDate() + i);
-    const ds = d.toISOString().split('T')[0];
+    const ds = toLocalDateStr(d);
     days.push({
       date: d,
       dateStr: ds,
@@ -104,7 +106,7 @@ export default function MyDayPage() {
   const shiftCalendar = (days: number) => {
     const d = new Date(selectedDate + 'T00:00:00');
     d.setDate(d.getDate() + days);
-    setSelectedDate(d.toISOString().split('T')[0]);
+    setSelectedDate(toLocalDateStr(d));
   };
 
   // 스토어 tasks → 로컬 tasks (myDay 필터 + 날짜 기반 필터 + 정렬)

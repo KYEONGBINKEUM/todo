@@ -280,7 +280,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               <div className="flex items-center gap-2 flex-1">
                 <input
                   type="date"
-                  value={task.createdDate ?? (task.createdAt && typeof task.createdAt.toDate === 'function' ? task.createdAt.toDate().toISOString().split('T')[0] : '')}
+                  value={task.createdDate ?? (task.createdAt && typeof task.createdAt.toDate === 'function' ? (() => { const d = task.createdAt.toDate(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() : '')}
                   onChange={(e) => onUpdate({ createdDate: e.target.value || null })}
                   className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
                 />

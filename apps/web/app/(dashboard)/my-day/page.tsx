@@ -67,6 +67,7 @@ export default function MyDayPage() {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
+  const [showCompleted, setShowCompleted] = useState(true);
 
   // Drag state
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
@@ -133,6 +134,9 @@ export default function MyDayPage() {
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag));
 
+  const activeTasks = filteredTasks.filter((t) => t.status !== 'completed');
+  const completedTasks = filteredTasks.filter((t) => t.status === 'completed');
+
   const completedCount = filteredTasks.filter((t) => t.status === 'completed').length;
   const totalCount = filteredTasks.length;
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
@@ -159,7 +163,7 @@ export default function MyDayPage() {
     handleDragEnd();
     if (srcIdx === null || srcIdx === dstIdx || savingOrder.current) return;
 
-    const newTasks = [...filteredTasks];
+    const newTasks = [...activeTasks];
     const [moved] = newTasks.splice(srcIdx, 1);
     newTasks.splice(dstIdx, 0, moved);
 
@@ -380,12 +384,11 @@ export default function MyDayPage() {
           </p>
         )}
 
-        {/* Task List */}
+        {/* Active Task List */}
         <div className="space-y-2">
-          {filteredTasks.map((task, index) => {
+          {activeTasks.map((task, index) => {
             const priority = priorityColors[task.priority];
             const list = getListInfo(task.listId);
-            const isCompleted = task.status === 'completed';
             const isSelected = selectedTaskId === task.id;
             const isDragging = dragSrcIdx === index;
             const isDragOver = dragOverIdx === index;
@@ -404,7 +407,6 @@ export default function MyDayPage() {
                   isDragging ? 'opacity-40 scale-95' :
                   isDragOver ? 'border-[#e94560] shadow-[0_0_12px_rgba(233,69,96,0.15)]' :
                   isSelected ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]' :
-                  isCompleted ? 'border-border/50 opacity-70' :
                   'border-border hover:border-border-hover'
                 }`}
                 style={{ animation: isDragOver ? undefined : 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
@@ -419,25 +421,15 @@ export default function MyDayPage() {
                 {/* Checkbox */}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
-                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
-                    isCompleted
-                      ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent scale-110'
-                      : 'hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'
-                  }`}
-                  style={isCompleted ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
-                >
-                  {isCompleted && (
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="animate-[checkPop_0.3s_ease-out]">
-                      <path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
+                  className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]"
+                  style={{ borderColor: 'var(--color-checkbox-border)' }}
+                />
 
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
 
                 {/* Title + tags */}
                 <div className="flex-1 min-w-0">
-                  <span className={`block text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
+                  <span className="block text-sm text-text-primary">
                     {task.title}
                   </span>
                   {taskTags.length > 0 && (
@@ -479,12 +471,66 @@ export default function MyDayPage() {
           })}
         </div>
 
-        {filteredTasks.length === 0 && (
+        {activeTasks.length === 0 && completedTasks.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">{tasks.length === 0 ? '☀️' : filterTag ? '🏷️' : '🎉'}</div>
             <p className="text-text-secondary font-semibold">
               {tasks.length === 0 ? t('myDay.emptyAll') : filterTag ? `@${filterTag} ${t('myDay.emptyTag')}` : filterList ? t('myDay.emptyList') : t('myDay.emptyComplete')}
             </p>
+          </div>
+        )}
+
+        {/* 완료됨 Section */}
+        {completedTasks.length > 0 && (
+          <div className="mt-6">
+            <button
+              onClick={() => setShowCompleted(!showCompleted)}
+              className="flex items-center gap-2 text-text-muted text-sm mb-3 hover:text-text-secondary transition-colors w-full"
+            >
+              <span className={`transition-transform duration-200 text-xs ${showCompleted ? 'rotate-90' : ''}`}>▶</span>
+              <span className="font-semibold">{t('status.completed')}</span>
+              <span className="text-[10px] bg-border px-2 py-0.5 rounded-full">{completedTasks.length}</span>
+            </button>
+            {showCompleted && (
+              <div className="space-y-2">
+                {completedTasks.map((task, index) => {
+                  const priority = priorityColors[task.priority];
+                  const list = getListInfo(task.listId);
+                  const isSelected = selectedTaskId === task.id;
+                  const taskTags = task.tags ?? [];
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => setSelectedTaskId(isSelected ? null : task.id!)}
+                      className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer opacity-60 ${isSelected ? 'border-[#e94560]/40' : 'border-border/50 hover:border-border-hover hover:opacity-80'}`}
+                      style={{ animation: 'fadeUp 0.3s ease-out both', animationDelay: `${index * 0.03}s` }}
+                    >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
+                        className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      </button>
+                      <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                      <div className="flex-1 min-w-0">
+                        <span className="block text-sm line-through text-text-inactive">{task.title}</span>
+                        {taskTags.length > 0 && (
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {taskTags.map((tag) => (<span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6]">@{tag}</span>))}
+                          </div>
+                        )}
+                      </div>
+                      {(task.subTasks?.length ?? 0) > 0 && (
+                        <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
+                      )}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

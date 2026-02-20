@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
-import { getTasks, getNotes, getLists, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
+import { getTasks, getNotes, getLists, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB, type TaskData, type ListData } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachments } from '@/lib/attachment-store';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
@@ -39,6 +39,11 @@ function TasksContent() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
+  const [newTaskList, setNewTaskList] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(true);
 
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -75,7 +80,10 @@ function TasksContent() {
         return 0;
       });
       setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
-      if (fetchedLists.length > 0) setLists(fetchedLists);
+      if (fetchedLists.length > 0) {
+        setLists(fetchedLists);
+        if (!newTaskList) setNewTaskList(fetchedLists[0].id!);
+      }
       setRelatedNotes(fetchedNotes.map((n) => ({ id: n.id!, title: n.title, icon: n.icon, tags: n.tags })));
     } catch (err) {
       console.error('Failed to load tasks:', err);
@@ -91,6 +99,9 @@ function TasksContent() {
     .filter((t) => !filterStatus || t.status === filterStatus)
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
     .filter((t) => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const activeTasks = filtered.filter((t) => t.status !== 'completed');
+  const completedTasks = filtered.filter((t) => t.status === 'completed');
 
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
   const canDrag = !filterList && !filterStatus && !filterTag && !searchQuery;
@@ -160,6 +171,30 @@ function TasksContent() {
     await deleteTaskDB(user.uid, task.id);
   };
 
+  const handleAddTask = async () => {
+    if (!newTaskTitle.trim() || !user || adding) return;
+    setAdding(true);
+    const title = newTaskTitle.trim();
+    const tags = parseTags(title);
+    const tempId = `temp-${Date.now()}`;
+    const maxOrder = tasks.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
+    const newTask: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'> = {
+      title, status: 'todo', priority: newTaskPriority,
+      starred: false, listId: newTaskList || lists[0]?.id || '',
+      myDay: false, tags, order: maxOrder + 1000,
+    };
+    setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
+    setNewTaskTitle('');
+    try {
+      const id = await addTaskDB(user.uid, newTask);
+      setTasks((prev) => prev.map((t) => t.id === tempId ? { ...t, id } : t));
+    } catch {
+      setTasks((prev) => prev.filter((t) => t.id !== tempId));
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const handlePanelUpdate = async (updates: Partial<TaskData>) => {
     if (!user || !selectedTaskId) return;
     const finalUpdates = { ...updates };
@@ -186,6 +221,34 @@ function TasksContent() {
             <span className="text-sm text-text-muted ml-2">{filtered.length}</span>
           </div>
           <p className="text-text-secondary text-sm">{t('tasks.desc')}</p>
+        </div>
+
+        {/* Add Task */}
+        <div className="mb-6 flex gap-2">
+          <div className="flex-1 flex bg-background-card border border-border rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
+            <input
+              type="text"
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+              placeholder={t('myDay.addTask')}
+              className="flex-1 px-4 py-3 bg-transparent text-text-primary placeholder-text-muted text-sm focus:outline-none"
+            />
+            <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value as TaskData['priority'])} className="px-2 bg-transparent text-xs border-l border-border focus:outline-none cursor-pointer text-text-secondary">
+              <option value="urgent" className="bg-background-card">{t('priority.urgent')}</option>
+              <option value="high" className="bg-background-card">{t('priority.high')}</option>
+              <option value="medium" className="bg-background-card">{t('priority.medium')}</option>
+              <option value="low" className="bg-background-card">{t('priority.low')}</option>
+            </select>
+            <select value={newTaskList} onChange={(e) => setNewTaskList(e.target.value)} className="px-2 bg-transparent text-text-secondary text-xs border-l border-border focus:outline-none cursor-pointer">
+              {lists.map((list) => (
+                <option key={list.id} value={list.id!} className="bg-background-card">{list.label}</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={handleAddTask} disabled={adding} className="px-5 py-3 bg-[#e94560] hover:bg-[#ff5a7a] text-white font-semibold rounded-xl text-sm transition-colors disabled:opacity-50">
+            {adding ? '...' : t('common.add')}
+          </button>
         </div>
 
         {/* Search */}
@@ -246,12 +309,11 @@ function TasksContent() {
           </p>
         )}
 
-        {/* Task List */}
+        {/* Active Task List */}
         <div className="space-y-2">
-          {filtered.map((task, index) => {
+          {activeTasks.map((task, index) => {
             const ps = priorityStyle(task.priority);
             const list = getListInfo(task.listId);
-            const isCompleted = task.status === 'completed';
             const isSelected = selectedTaskId === task.id;
             const isDragging = dragSrcIdx === index;
             const isDragOver = dragOverIdx === index;
@@ -270,7 +332,6 @@ function TasksContent() {
                   isDragging ? 'opacity-40 scale-95' :
                   isDragOver ? 'border-[#e94560] shadow-[0_0_12px_rgba(233,69,96,0.15)]' :
                   isSelected ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]' :
-                  isCompleted ? 'border-border/50 opacity-60' :
                   'border-border hover:border-border-hover'
                 }`}
                 style={{ animation: isDragOver ? undefined : 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}
@@ -280,38 +341,22 @@ function TasksContent() {
                     ⋮⋮
                   </span>
                 )}
-
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
-                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
-                    isCompleted ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent' : 'hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'
-                  }`}
-                  style={isCompleted ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
-                >
-                  {isCompleted && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                </button>
-
+                  className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]"
+                  style={{ borderColor: 'var(--color-checkbox-border)' }}
+                />
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-
                 <div className="flex-1 min-w-0">
-                  <span className={`block text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
-                    {task.title}
-                  </span>
+                  <span className="block text-sm text-text-primary">{task.title}</span>
                   {taskTags.length > 0 && (
                     <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                       {taskTags.map((tag) => (
-                        <button
-                          key={tag}
-                          onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === tag ? null : tag); }}
-                          className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-semibold hover:bg-[#8b5cf6]/20 transition-colors"
-                        >
-                          @{tag}
-                        </button>
+                        <button key={tag} onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === tag ? null : tag); }} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-semibold hover:bg-[#8b5cf6]/20 transition-colors">@{tag}</button>
                       ))}
                     </div>
                   )}
                 </div>
-
                 {(task.subTasks?.length ?? 0) > 0 && (
                   <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
                 )}
@@ -325,11 +370,63 @@ function TasksContent() {
           })}
         </div>
 
-        {filtered.length === 0 && (
+        {activeTasks.length === 0 && completedTasks.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📭</div>
             <p className="text-text-secondary font-semibold">{filterTag ? `@${filterTag} ${t('tasks.emptyTag')}` : t('tasks.empty')}</p>
             <p className="text-text-muted text-sm mt-1">{t('tasks.emptyHint')}</p>
+          </div>
+        )}
+
+        {/* 완료됨 Section */}
+        {completedTasks.length > 0 && (
+          <div className="mt-6">
+            <button
+              onClick={() => setShowCompleted(!showCompleted)}
+              className="flex items-center gap-2 text-text-muted text-sm mb-3 hover:text-text-secondary transition-colors w-full"
+            >
+              <span className={`transition-transform duration-200 text-xs ${showCompleted ? 'rotate-90' : ''}`}>▶</span>
+              <span className="font-semibold">{t('status.completed')}</span>
+              <span className="text-[10px] bg-border px-2 py-0.5 rounded-full">{completedTasks.length}</span>
+            </button>
+            {showCompleted && (
+              <div className="space-y-2">
+                {completedTasks.map((task, index) => {
+                  const ps = priorityStyle(task.priority);
+                  const list = getListInfo(task.listId);
+                  const isSelected = selectedTaskId === task.id;
+                  const taskTags = task.tags ?? [];
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => setSelectedTaskId(isSelected ? null : task.id!)}
+                      className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer opacity-60 ${isSelected ? 'border-[#e94560]/40' : 'border-border/50 hover:border-border-hover hover:opacity-80'}`}
+                      style={{ animation: 'fadeUp 0.3s ease-out both', animationDelay: `${index * 0.03}s` }}
+                    >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
+                        className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      </button>
+                      <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                      <div className="flex-1 min-w-0">
+                        <span className="block text-sm line-through text-text-inactive">{task.title}</span>
+                        {taskTags.length > 0 && (
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {taskTags.map((tag) => (<span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6]">@{tag}</span>))}
+                          </div>
+                        )}
+                      </div>
+                      {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0" title={t('common.delete')}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

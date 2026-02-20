@@ -6,5 +6,20 @@ service cloud.firestore {
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // 공유 목록: 멤버만 접근 가능
+    match /sharedLists/{listId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.memberUids;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerUid;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.ownerUid;
+
+      // 공유 목록 내 작업
+      match /tasks/{taskId} {
+        allow read: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/sharedLists/$(listId)).data.memberUids;
+        allow write: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/sharedLists/$(listId)).data.memberUids;
+      }
+    }
   }
 }

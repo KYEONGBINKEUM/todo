@@ -1,36 +1,51 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import { getUserSettings, type Plan } from '@/lib/firestore';
 
 interface AdBannerProps {
-  /** Google AdSense 게시자 ID (예: ca-pub-XXXXXXXXXXXXXXXX) */
   client?: string;
-  /** 광고 슬롯 ID */
   slot?: string;
   className?: string;
 }
 
 /**
- * Google AdSense 배너 컴포넌트 (프리 플랜 유저 대상)
- * - NEXT_PUBLIC_ADSENSE_CLIENT 환경변수 미설정 시 목업 플레이스홀더 표시
- * - 실제 사용 시 .env.local에 NEXT_PUBLIC_ADSENSE_CLIENT=ca-pub-XXXX 설정
+ * Google AdSense 배너 컴포넌트
+ * - Pro 이상 요금제는 광고가 표시되지 않음
+ * - Free 플랜에서만 광고 노출
  */
 export default function AdBanner({ client, slot, className = '' }: AdBannerProps) {
+  const { user } = useAuth();
   const adRef = useRef<HTMLModElement>(null);
   const pushed = useRef(false);
+  const [userPlan, setUserPlan] = useState<Plan>('free');
+  const [loading, setLoading] = useState(true);
 
   const clientId = client ?? process.env.NEXT_PUBLIC_ADSENSE_CLIENT;
   const slotId = slot ?? process.env.NEXT_PUBLIC_ADSENSE_SLOT;
   const isConfigured = !!clientId && !!slotId;
 
   useEffect(() => {
-    if (!isConfigured || pushed.current) return;
+    if (!user) { setLoading(false); return; }
+    getUserSettings(user.uid).then((s) => {
+      setUserPlan(s.plan || 'free');
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => {
+    if (!isConfigured || pushed.current || userPlan !== 'free') return;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
       pushed.current = true;
     } catch {}
-  }, [isConfigured]);
+  }, [isConfigured, userPlan]);
+
+  // Pro 이상 요금제는 광고 숨김
+  if (loading) return null;
+  if (userPlan !== 'free') return null;
 
   // 목업 배너 (AdSense 미설정 시)
   if (!isConfigured) {
@@ -51,7 +66,6 @@ export default function AdBanner({ client, slot, className = '' }: AdBannerProps
 
   return (
     <div className={`w-full overflow-hidden ${className}`} style={{ minHeight: 52 }}>
-      {/* AdSense 스크립트는 app/layout.tsx <head>에 추가해야 합니다 */}
       <ins
         ref={adRef}
         className="adsbygoogle"

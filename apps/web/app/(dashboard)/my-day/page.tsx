@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { useI18n } from '@/lib/i18n-context';
 import {
   getMyDayTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
   getLists, seedDefaultData,
@@ -28,8 +29,33 @@ function parseTags(title: string): string[] {
   return [...title.matchAll(/@([\w가-힣]+)/g)].map((m) => m[1]);
 }
 
+function getTodayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// Generate 7-day calendar strip: 6 days before + today
+function generateCalendarDays(): { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean }[] {
+  const today = new Date();
+  const days: { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean }[] = [];
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    days.push({
+      date: d,
+      dateStr: d.toISOString().split('T')[0],
+      day: d.getDate(),
+      weekday: weekdays[d.getDay()],
+      isToday: i === 0,
+    });
+  }
+  return days;
+}
+
 export default function MyDayPage() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -40,15 +66,18 @@ export default function MyDayPage() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState(getTodayStr());
 
-  // 드래그 상태
+  // Drag state
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const savingOrder = useRef(false);
 
-  // 상세 패널
+  // Detail panel
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
+
+  const calendarDays = generateCalendarDays();
 
   useTaskReminders(tasks);
 
@@ -59,8 +88,16 @@ export default function MyDayPage() {
         getMyDayTasks(user.uid),
         getLists(user.uid),
       ]);
-      // order 필드 기준 정렬, 없으면 기존 서버 순서 유지하며 가상 order 할당
-      const sorted = [...fetchedTasks].sort((a, b) => {
+
+      const todayStr = getTodayStr();
+
+      // Filter: show incomplete tasks (carry over) + completed tasks only if completed today
+      const filteredByDate = fetchedTasks.filter((task) => {
+        if (task.status !== 'completed') return true;
+        return task.completedDate === todayStr;
+      });
+
+      const sorted = [...filteredByDate].sort((a, b) => {
         if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
         if (a.order !== undefined) return -1;
         if (b.order !== undefined) return 1;
@@ -101,8 +138,7 @@ export default function MyDayPage() {
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
   const canDrag = !filterList && !filterTag;
 
-  // ── 드래그 & 드롭 ─────────────────────────────────────────────────────────
-
+  // Drag & Drop
   const handleDragStart = (e: React.DragEvent, idx: number) => {
     setDragSrcIdx(idx);
     e.dataTransfer.effectAllowed = 'move';
@@ -127,7 +163,6 @@ export default function MyDayPage() {
     const [moved] = newTasks.splice(srcIdx, 1);
     newTasks.splice(dstIdx, 0, moved);
 
-    // 새 order 할당
     const withOrder = newTasks.map((t, i) => ({ ...t, order: (i + 1) * 1000 }));
     setTasks(withOrder);
 
@@ -141,13 +176,13 @@ export default function MyDayPage() {
     }
   };
 
-  // ── Task handlers ──────────────────────────────────────────────────────────
-
+  // Task handlers
   const handleToggleTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     const newStatus = task.status === 'completed' ? 'todo' : 'completed';
-    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: newStatus } : t));
-    await updateTask(user.uid, task.id, { status: newStatus });
+    const completedDate = newStatus === 'completed' ? getTodayStr() : null;
+    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: newStatus, completedDate } : t));
+    await updateTask(user.uid, task.id, { status: newStatus, completedDate });
   };
 
   const handleToggleStar = async (task: TaskData) => {
@@ -183,7 +218,6 @@ export default function MyDayPage() {
   const handleDeleteTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     if (selectedTaskId === task.id) setSelectedTaskId(null);
-    // IndexedDB 파일 정리
     const attIds = (task.attachments ?? []).map((a) => a.id);
     if (attIds.length) await deleteAttachments(attIds);
     setTasks((prev) => prev.filter((t) => t.id !== task.id));
@@ -194,6 +228,8 @@ export default function MyDayPage() {
     if (!user || !selectedTaskId) return;
     const finalUpdates = { ...updates };
     if (updates.title !== undefined) finalUpdates.tags = parseTags(updates.title);
+    if (updates.status === 'completed') finalUpdates.completedDate = getTodayStr();
+    if (updates.status && updates.status !== 'completed') finalUpdates.completedDate = null;
     setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
     await updateTask(user.uid, selectedTaskId, finalUpdates);
   };
@@ -224,18 +260,40 @@ export default function MyDayPage() {
     <div className="p-8">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">☀️</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">My Day</h2>
+            <h2 className="text-3xl font-extrabold text-text-primary">{t('myDay.title')}</h2>
           </div>
           <p className="text-text-secondary text-sm">{today}</p>
+        </div>
+
+        {/* 7-Day Calendar Strip */}
+        <div className="mb-6 p-3 bg-background-card border border-border rounded-xl">
+          <div className="grid grid-cols-7 gap-1.5">
+            {calendarDays.map((d) => (
+              <button
+                key={d.dateStr}
+                onClick={() => setSelectedDate(d.dateStr)}
+                className={`flex flex-col items-center py-2 rounded-xl transition-all ${
+                  d.isToday
+                    ? 'bg-gradient-to-br from-[#e94560] to-[#533483] text-white shadow-lg shadow-[#e94560]/20'
+                    : selectedDate === d.dateStr
+                    ? 'bg-[#e94560]/15 text-[#e94560] border border-[#e94560]/30'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+              >
+                <span className="text-[10px] font-medium mb-0.5">{d.weekday}</span>
+                <span className={`text-lg font-bold ${d.isToday ? 'text-white' : ''}`}>{d.day}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Progress Bar */}
         <div className="mb-6 p-4 bg-background-card border border-border rounded-xl">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-text-secondary">오늘의 진행률</span>
+            <span className="text-sm text-text-secondary">{t('myDay.progress')}</span>
             <span className="text-sm font-bold text-[#e94560]">{completedCount}/{totalCount}</span>
           </div>
           <div className="w-full h-2.5 bg-border rounded-full overflow-hidden">
@@ -252,7 +310,7 @@ export default function MyDayPage() {
             onClick={() => setFilterList(null)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${!filterList ? 'bg-[#e94560]/20 text-[#e94560] border border-[#e94560]/30' : 'bg-background-card text-text-secondary border border-border hover:border-border-hover'}`}
           >
-            전체
+            {t('common.all')}
           </button>
           {lists.map((list) => (
             <button
@@ -267,12 +325,12 @@ export default function MyDayPage() {
           ))}
         </div>
 
-        {/* @태그 필터 칩 */}
+        {/* @Tag filter chips */}
         {allTags.length > 0 && (
           <div className="mb-4 flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-text-muted uppercase tracking-wider">@태그</span>
             {filterTag && (
-              <button onClick={() => setFilterTag(null)} className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all">전체</button>
+              <button onClick={() => setFilterTag(null)} className="px-2.5 py-1 rounded-lg text-xs bg-background-card text-text-secondary border border-border hover:border-border-hover transition-all">{t('common.all')}</button>
             )}
             {allTags.map((tag) => (
               <button
@@ -294,14 +352,14 @@ export default function MyDayPage() {
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-              placeholder="+ 새 작업 추가... (@태그 사용 가능)"
+              placeholder={t('myDay.addTask')}
               className="flex-1 px-4 py-3 bg-transparent text-text-primary placeholder-text-muted text-sm focus:outline-none"
             />
             <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value as TaskData['priority'])} className="px-2 bg-transparent text-xs border-l border-border focus:outline-none cursor-pointer text-text-secondary">
-              <option value="urgent" className="bg-background-card">긴급</option>
-              <option value="high" className="bg-background-card">높음</option>
-              <option value="medium" className="bg-background-card">보통</option>
-              <option value="low" className="bg-background-card">낮음</option>
+              <option value="urgent" className="bg-background-card">{t('priority.urgent')}</option>
+              <option value="high" className="bg-background-card">{t('priority.high')}</option>
+              <option value="medium" className="bg-background-card">{t('priority.medium')}</option>
+              <option value="low" className="bg-background-card">{t('priority.low')}</option>
             </select>
             <select value={newTaskList} onChange={(e) => setNewTaskList(e.target.value)} className="px-2 bg-transparent text-text-secondary text-xs border-l border-border focus:outline-none cursor-pointer">
               {lists.map((list) => (
@@ -310,15 +368,15 @@ export default function MyDayPage() {
             </select>
           </div>
           <button onClick={handleAddTask} disabled={adding} className="px-5 py-3 bg-[#e94560] hover:bg-[#ff5a7a] text-white font-semibold rounded-xl text-sm transition-colors disabled:opacity-50">
-            {adding ? '...' : '추가'}
+            {adding ? '...' : t('common.add')}
           </button>
         </div>
 
-        {/* 드래그 안내 */}
+        {/* Drag hint */}
         {canDrag && filteredTasks.length > 1 && (
           <p className="text-[10px] text-text-inactive mb-2 flex items-center gap-1">
             <span>⋮⋮</span>
-            <span>아이콘을 드래그하여 순서를 변경할 수 있습니다</span>
+            <span>{t('myDay.dragHint')}</span>
           </p>
         )}
 
@@ -351,14 +409,14 @@ export default function MyDayPage() {
                 }`}
                 style={{ animation: isDragOver ? undefined : 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
               >
-                {/* 드래그 핸들 */}
+                {/* Drag handle */}
                 {canDrag && (
                   <span className="opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none" title="드래그하여 순서 변경">
                     ⋮⋮
                   </span>
                 )}
 
-                {/* 체크박스 */}
+                {/* Checkbox */}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
                   className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
@@ -377,7 +435,7 @@ export default function MyDayPage() {
 
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
 
-                {/* 제목 + @태그 */}
+                {/* Title + tags */}
                 <div className="flex-1 min-w-0">
                   <span className={`block text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
                     {task.title}
@@ -425,27 +483,10 @@ export default function MyDayPage() {
           <div className="text-center py-16">
             <div className="text-5xl mb-4">{tasks.length === 0 ? '☀️' : filterTag ? '🏷️' : '🎉'}</div>
             <p className="text-text-secondary font-semibold">
-              {tasks.length === 0 ? '오늘의 작업을 추가해보세요' : filterTag ? `@${filterTag} 태그의 작업이 없습니다` : filterList ? '이 목록에 작업이 없습니다' : '모든 작업을 완료했습니다!'}
+              {tasks.length === 0 ? t('myDay.emptyAll') : filterTag ? `@${filterTag} ${t('myDay.emptyTag')}` : filterList ? t('myDay.emptyList') : t('myDay.emptyComplete')}
             </p>
           </div>
         )}
-
-        {/* AI Suggestions */}
-        <div className="mt-8 p-5 bg-gradient-to-r from-background-card to-background border border-border rounded-xl">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-base">🧠</span>
-            <span className="text-xs font-bold text-[#8b5cf6] uppercase tracking-wider">AI Suggestions</span>
-            <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-gradient-to-r from-amber-500 to-red-500 text-white">PREMIUM</span>
-          </div>
-          <div className="space-y-2">
-            {['📊 작업을 하위 작업으로 분해하시겠습니까?', '⏰ 집중 시간대 분석: 오전 10시-12시가 가장 생산적입니다', '🔄 반복 작업을 자동 설정하시겠습니까?'].map((s, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-2 bg-border/30 rounded-lg text-xs text-text-secondary">
-                <span className="flex-1">{s}</span>
-                <button className="text-[#8b5cf6] hover:text-[#a78bfa] text-[10px] font-semibold flex-shrink-0">적용</button>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {selectedTask && (

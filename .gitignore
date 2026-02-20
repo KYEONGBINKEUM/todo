@@ -41,6 +41,10 @@ yarn-error.log*
 .vscode/
 .idea/
 
+# Tauri
+apps/web/src-tauri/target/
+apps/web/src-tauri/gen/
+
 # Turbo
 .turbo
 

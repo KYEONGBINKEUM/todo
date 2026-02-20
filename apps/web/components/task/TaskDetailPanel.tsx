@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { TaskData, SubTask, TaskAttachment, NoteData, getNotes } from '@/lib/firestore';
+import { TaskData, SubTask, TaskAttachment, NoteData } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
 import { requestNotificationPermission } from '@/lib/use-reminders';
 import {
@@ -46,17 +47,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Linked Notes ───────────────────────────────────────────────────────────
-  const [allNotes, setAllNotes] = useState<NoteData[]>([]);
+  const { notes: allNotes } = useDataStore();
   const [showNoteSelector, setShowNoteSelector] = useState(false);
 
   const subTaskInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load notes for linking
-  useEffect(() => {
-    if (!user) return;
-    getNotes(user.uid).then(setAllNotes).catch(() => {});
-  }, [user]);
 
   // Sync when a different task is selected
   useEffect(() => {

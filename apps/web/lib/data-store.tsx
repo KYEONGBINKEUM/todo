@@ -33,7 +33,7 @@ const DataStoreContext = createContext<DataStore>({
 });
 
 export function DataStoreProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>([]);
   const [notes, setNotes] = useState<NoteData[]>([]);
@@ -42,6 +42,10 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   const unsubsRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
+    // Auth 아직 로딩 중이면 대기 (loading=true 유지)
+    // → user=null 인데 authLoading=true인 경우 setLoading(false) 조기 호출 방지
+    if (authLoading) return;
+
     // 기존 리스너 정리
     unsubsRef.current.forEach((u) => u());
     unsubsRef.current = [];
@@ -104,7 +108,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
       unsubsRef.current.forEach((u) => u());
       unsubsRef.current = [];
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   return (
     <DataStoreContext.Provider value={{ tasks, lists, notes, folders, loading }}>

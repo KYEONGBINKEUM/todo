@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
-import { getLists, addList, updateList, deleteList, getUserSettings, type ListData, type Plan } from '@/lib/firestore';
+import { addList, updateList, deleteList, getUserSettings, type ListData, type Plan } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 import SettingsModal from '@/components/settings/SettingsModal';
 
 const LIST_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
@@ -22,6 +23,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
+  const { lists: storeLists } = useDataStore();
   const [lists, setLists] = useState<ListData[]>([]);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -45,21 +47,18 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { value: 'dark' as const, icon: '🌙', labelKey: 'nav.themeDark' },
   ];
 
-  const loadLists = useCallback(async () => {
-    if (!user) return;
-    try {
-      const fetched = await getLists(user.uid);
-      setLists(fetched);
-      const settings = await getUserSettings(user.uid);
-      setUserPlan(settings.plan || 'free');
-    } catch (err) {
-      console.error('Failed to load lists:', err);
-    }
-  }, [user]);
-
+  // storeLists(onSnapshot)로 목록 동기화 — getDocs 호출 제거
   useEffect(() => {
-    loadLists();
-  }, [loadLists]);
+    setLists(storeLists);
+  }, [storeLists]);
+
+  // 요금제 정보 — 세션당 1회만 조회
+  useEffect(() => {
+    if (!user) return;
+    getUserSettings(user.uid)
+      .then((s) => setUserPlan(s.plan || 'free'))
+      .catch(() => {});
+  }, [user]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -89,16 +88,14 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const handleAddList = async () => {
     if (!user || !newListLabel.trim()) { setShowAddList(false); return; }
     const color = LIST_COLORS[lists.length % LIST_COLORS.length];
-    const tempId = `temp-${Date.now()}`;
-    setLists((prev) => [...prev, { id: tempId, label: newListLabel.trim(), color }]);
+    const label = newListLabel.trim();
     setNewListLabel('');
     setShowAddList(false);
     try {
-      const realId = await addList(user.uid, { label: newListLabel.trim(), color });
-      setLists((prev) => prev.map((l) => l.id === tempId ? { ...l, id: realId } : l));
+      await addList(user.uid, { label, color });
+      // onSnapshot이 storeLists를 갱신 → useEffect가 local lists를 자동 동기화
     } catch (err) {
       console.error('Failed to add list:', err);
-      setLists((prev) => prev.filter((l) => l.id !== tempId));
     }
   };
 

@@ -30,7 +30,8 @@ function parseTags(title: string): string[] {
 }
 
 function getTodayStr() {
-  return new Date().toISOString().split('T')[0];
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // 선택 날짜 중심으로 ±3일 (7일) 캘린더 생성
@@ -61,9 +62,10 @@ function generateCalendarDays(centerDateStr: string): { date: Date; dateStr: str
 function getTaskCreatedDate(task: TaskData): string {
   if (task.createdDate) return task.createdDate;
   if (task.createdAt && typeof task.createdAt.toDate === 'function') {
-    return task.createdAt.toDate().toISOString().split('T')[0];
+    const d = task.createdAt.toDate();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
-  return '1970-01-01'; // 날짜 정보 없는 기존 데이터
+  return '1970-01-01';
 }
 
 export default function MyDayPage() {
@@ -113,25 +115,16 @@ export default function MyDayPage() {
     let activeDateTasks: TaskData[];
     let completedDateTasks: TaskData[];
 
-    if (selectedDate === getTodayStr()) {
-      // 오늘: 등록일 <= 오늘이고 미완료인 것 + 오늘 완료된 것
-      activeDateTasks = myDayAll.filter((t) => {
-        if (t.status === 'completed') return false;
-        const cd = getTaskCreatedDate(t);
-        return cd <= selectedDate;
-      });
-      completedDateTasks = myDayAll.filter((t) => t.status === 'completed' && t.completedDate === selectedDate);
-    } else {
-      // 과거: 등록일 <= 선택일 && (미완료 또는 완료일 > 선택일) → 그 날 시점의 활성 작업
-      activeDateTasks = myDayAll.filter((t) => {
-        const cd = getTaskCreatedDate(t);
-        if (cd > selectedDate) return false;
-        if (t.status !== 'completed') return true;
-        return t.completedDate != null && t.completedDate > selectedDate;
-      });
-      // 완료: 선택일에 완료된 것
-      completedDateTasks = myDayAll.filter((t) => t.status === 'completed' && t.completedDate === selectedDate);
-    }
+    // 활성 작업: 등록일 <= 선택일 && (미완료 또는 완료일 > 선택일)
+    activeDateTasks = myDayAll.filter((t) => {
+      const cd = getTaskCreatedDate(t);
+      if (cd > selectedDate) return false;
+      if (t.status !== 'completed') return true;
+      // 완료된 작업은 완료일 이전 날짜에서만 활성으로 표시
+      return t.completedDate != null && t.completedDate > selectedDate;
+    });
+    // 완료 작업: 선택일에 완료된 것만
+    completedDateTasks = myDayAll.filter((t) => t.status === 'completed' && t.completedDate === selectedDate);
 
     const combined = [...activeDateTasks, ...completedDateTasks];
     const sorted = [...combined].sort((a, b) => {
@@ -166,7 +159,7 @@ export default function MyDayPage() {
   const completedCount = filteredTasks.filter((t) => t.status === 'completed').length;
   const totalCount = filteredTasks.length;
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
-  const canDrag = !filterList && !filterTag && isViewingToday;
+  const canDrag = !filterList && !filterTag;
 
   // Drag & Drop
   const handleDragStart = (e: React.DragEvent, idx: number) => {
@@ -210,8 +203,7 @@ export default function MyDayPage() {
   const handleToggleTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     const newStatus = task.status === 'completed' ? 'todo' : 'completed';
-    const completedDate = newStatus === 'completed' ? getTodayStr() : null;
-    // onSnapshot이 즉시 반영하므로 로컬 state 업데이트 불필요
+    const completedDate = newStatus === 'completed' ? selectedDate : null;
     await updateTask(user.uid, task.id, { status: newStatus, completedDate });
   };
 
@@ -232,7 +224,7 @@ export default function MyDayPage() {
         title, status: 'todo', priority: newTaskPriority,
         starred: false, listId: newTaskList || lists[0]?.id || '',
         myDay: true, tags, order: maxOrder + 1000,
-        createdDate: getTodayStr(),
+        createdDate: selectedDate,
       });
       // onSnapshot이 자동으로 리스트에 추가
     } catch {
@@ -376,14 +368,13 @@ export default function MyDayPage() {
           </div>
         </div>
 
-        {/* 과거 날짜 안내 */}
+        {/* 선택 날짜 안내 (오늘 아닌 경우) */}
         {!isViewingToday && (
-          <div className="mb-4 px-4 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 text-xs text-amber-500">
+          <div className="mb-4 px-4 py-2.5 bg-[#e94560]/10 border border-[#e94560]/20 rounded-xl flex items-center gap-2 text-xs text-[#e94560]">
             <span>📅</span>
             <span className="font-semibold">
-              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })} 기록
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
             </span>
-            <span className="text-amber-500/70">— 읽기 전용</span>
           </div>
         )}
 
@@ -441,9 +432,8 @@ export default function MyDayPage() {
           </div>
         )}
 
-        {/* Add Task Input — 오늘만 표시 */}
-        {isViewingToday && (
-          <div className="mb-6 flex gap-2">
+        {/* Add Task Input */}
+        <div className="mb-6 flex gap-2">
             <div className="flex-1 flex bg-background-card border border-border rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
               <input
                 type="text"
@@ -469,7 +459,6 @@ export default function MyDayPage() {
               {adding ? '...' : t('common.add')}
             </button>
           </div>
-        )}
 
         {/* Drag hint */}
         {canDrag && filteredTasks.length > 1 && (

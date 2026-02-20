@@ -172,7 +172,7 @@ function TasksContent() {
         title, status: 'todo', priority: newTaskPriority,
         starred: false, listId: newTaskList || lists[0]?.id || '',
         myDay: false, tags, order: maxOrder + 1000,
-        createdDate: new Date().toISOString().split('T')[0],
+        createdDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
       });
     } catch { /* ignore */ } finally {
       setAdding(false);

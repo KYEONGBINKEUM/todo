@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
-  getMyDayTasks, addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
-  getLists, seedDefaultData,
+  addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
   type TaskData, type ListData,
 } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
-import { deleteAttachments } from '@/lib/attachment-store';
+import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
+import { useDataStore } from '@/lib/data-store';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -33,29 +33,43 @@ function getTodayStr() {
   return new Date().toISOString().split('T')[0];
 }
 
-// Generate 7-day calendar strip: 6 days before + today
-function generateCalendarDays(): { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean }[] {
+// 선택 날짜 중심으로 ±3일 (7일) 캘린더 생성
+function generateCalendarDays(centerDateStr: string): { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean; month: number }[] {
+  const center = new Date(centerDateStr + 'T00:00:00');
   const today = new Date();
-  const days: { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean }[] = [];
+  const todayStr = today.toISOString().split('T')[0];
+  const days: { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean; month: number }[] = [];
   const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
+  for (let i = -3; i <= 3; i++) {
+    const d = new Date(center);
+    d.setDate(center.getDate() + i);
+    const ds = d.toISOString().split('T')[0];
     days.push({
       date: d,
-      dateStr: d.toISOString().split('T')[0],
+      dateStr: ds,
       day: d.getDate(),
       weekday: weekdays[d.getDay()],
-      isToday: i === 0,
+      isToday: ds === todayStr,
+      month: d.getMonth() + 1,
     });
   }
   return days;
 }
 
+// createdDate 폴백: createdDate가 없으면 createdAt Timestamp에서 추출
+function getTaskCreatedDate(task: TaskData): string {
+  if (task.createdDate) return task.createdDate;
+  if (task.createdAt && typeof task.createdAt.toDate === 'function') {
+    return task.createdAt.toDate().toISOString().split('T')[0];
+  }
+  return '1970-01-01'; // 날짜 정보 없는 기존 데이터
+}
+
 export default function MyDayPage() {
   const { user } = useAuth();
   const { t } = useI18n();
+  const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -63,10 +77,10 @@ export default function MyDayPage() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
+  const [showCompleted, setShowCompleted] = useState(true);
 
   // Drag state
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
@@ -77,53 +91,66 @@ export default function MyDayPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
-  const calendarDays = generateCalendarDays();
+  const datePickerRef = useRef<HTMLInputElement>(null);
+  const todayStr = getTodayStr();
+  const isViewingToday = selectedDate === todayStr;
+  const calendarDays = generateCalendarDays(selectedDate);
 
   useTaskReminders(tasks);
 
-  const loadData = useCallback(async () => {
-    if (!user) return;
-    try {
-      const [fetchedTasks, fetchedLists] = await Promise.all([
-        getMyDayTasks(user.uid),
-        getLists(user.uid),
-      ]);
+  // 캘린더 네비게이션
+  const shiftCalendar = (days: number) => {
+    const d = new Date(selectedDate + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    setSelectedDate(d.toISOString().split('T')[0]);
+  };
 
-      const todayStr = getTodayStr();
+  // 스토어 tasks → 로컬 tasks (myDay 필터 + 날짜 기반 필터 + 정렬)
+  useEffect(() => {
+    if (savingOrder.current) return;
+    const myDayAll = storeTasks.filter((t) => t.myDay);
 
-      // Filter: show incomplete tasks (carry over) + completed tasks only if completed today
-      const filteredByDate = fetchedTasks.filter((task) => {
-        if (task.status !== 'completed') return true;
-        return task.completedDate === todayStr;
+    let activeDateTasks: TaskData[];
+    let completedDateTasks: TaskData[];
+
+    if (selectedDate === getTodayStr()) {
+      // 오늘: 등록일 <= 오늘이고 미완료인 것 + 오늘 완료된 것
+      activeDateTasks = myDayAll.filter((t) => {
+        if (t.status === 'completed') return false;
+        const cd = getTaskCreatedDate(t);
+        return cd <= selectedDate;
       });
-
-      const sorted = [...filteredByDate].sort((a, b) => {
-        if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
-        if (a.order !== undefined) return -1;
-        if (b.order !== undefined) return 1;
-        return 0;
+      completedDateTasks = myDayAll.filter((t) => t.status === 'completed' && t.completedDate === selectedDate);
+    } else {
+      // 과거: 등록일 <= 선택일 && (미완료 또는 완료일 > 선택일) → 그 날 시점의 활성 작업
+      activeDateTasks = myDayAll.filter((t) => {
+        const cd = getTaskCreatedDate(t);
+        if (cd > selectedDate) return false;
+        if (t.status !== 'completed') return true;
+        return t.completedDate != null && t.completedDate > selectedDate;
       });
-      const withOrder = sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 }));
-      setTasks(withOrder);
-
-      if (fetchedLists.length === 0) {
-        await seedDefaultData(user.uid);
-        const seededLists = await getLists(user.uid);
-        setLists(seededLists);
-        if (seededLists.length > 0) setNewTaskList(seededLists[0].id!);
-      } else {
-        setLists(fetchedLists);
-        if (!newTaskList) setNewTaskList(fetchedLists[0].id!);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg.includes('permission') ? 'Firestore 권한 오류: Firebase 콘솔에서 보안 규칙을 확인하세요.' : `데이터 로드 실패: ${msg}`);
-    } finally {
-      setLoading(false);
+      // 완료: 선택일에 완료된 것
+      completedDateTasks = myDayAll.filter((t) => t.status === 'completed' && t.completedDate === selectedDate);
     }
-  }, [user]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+    const combined = [...activeDateTasks, ...completedDateTasks];
+    const sorted = [...combined].sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return 0;
+    });
+    setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
+  }, [storeTasks, selectedDate]);
+
+  // 스토어 lists → 로컬 lists
+  useEffect(() => {
+    if (storeLists.length > 0) {
+      setLists(storeLists);
+      if (!newTaskList) setNewTaskList(storeLists[0].id!);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLists]);
 
   const today = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
@@ -133,10 +160,13 @@ export default function MyDayPage() {
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag));
 
+  const activeTasks = filteredTasks.filter((t) => t.status !== 'completed');
+  const completedTasks = filteredTasks.filter((t) => t.status === 'completed');
+
   const completedCount = filteredTasks.filter((t) => t.status === 'completed').length;
   const totalCount = filteredTasks.length;
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
-  const canDrag = !filterList && !filterTag;
+  const canDrag = !filterList && !filterTag && isViewingToday;
 
   // Drag & Drop
   const handleDragStart = (e: React.DragEvent, idx: number) => {
@@ -159,7 +189,7 @@ export default function MyDayPage() {
     handleDragEnd();
     if (srcIdx === null || srcIdx === dstIdx || savingOrder.current) return;
 
-    const newTasks = [...filteredTasks];
+    const newTasks = [...activeTasks];
     const [moved] = newTasks.splice(srcIdx, 1);
     newTasks.splice(dstIdx, 0, moved);
 
@@ -181,13 +211,12 @@ export default function MyDayPage() {
     if (!user || !task.id) return;
     const newStatus = task.status === 'completed' ? 'todo' : 'completed';
     const completedDate = newStatus === 'completed' ? getTodayStr() : null;
-    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: newStatus, completedDate } : t));
+    // onSnapshot이 즉시 반영하므로 로컬 state 업데이트 불필요
     await updateTask(user.uid, task.id, { status: newStatus, completedDate });
   };
 
   const handleToggleStar = async (task: TaskData) => {
     if (!user || !task.id) return;
-    setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, starred: !t.starred } : t));
     await updateTask(user.uid, task.id, { starred: !task.starred });
   };
 
@@ -196,20 +225,18 @@ export default function MyDayPage() {
     setAdding(true);
     const title = newTaskTitle.trim();
     const tags = parseTags(title);
-    const tempId = `temp-${Date.now()}`;
     const maxOrder = tasks.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
-    const newTask: Omit<TaskData, 'id' | 'createdAt' | 'updatedAt'> = {
-      title, status: 'todo', priority: newTaskPriority,
-      starred: false, listId: newTaskList || lists[0]?.id || '',
-      myDay: true, tags, order: maxOrder + 1000,
-    };
-    setTasks((prev) => [{ ...newTask, id: tempId }, ...prev]);
     setNewTaskTitle('');
     try {
-      const id = await addTaskDB(user.uid, newTask);
-      setTasks((prev) => prev.map((t) => t.id === tempId ? { ...t, id } : t));
+      await addTaskDB(user.uid, {
+        title, status: 'todo', priority: newTaskPriority,
+        starred: false, listId: newTaskList || lists[0]?.id || '',
+        myDay: true, tags, order: maxOrder + 1000,
+        createdDate: getTodayStr(),
+      });
+      // onSnapshot이 자동으로 리스트에 추가
     } catch {
-      setTasks((prev) => prev.filter((t) => t.id !== tempId));
+      setError('할일 추가 실패');
     } finally {
       setAdding(false);
     }
@@ -218,9 +245,8 @@ export default function MyDayPage() {
   const handleDeleteTask = async (task: TaskData) => {
     if (!user || !task.id) return;
     if (selectedTaskId === task.id) setSelectedTaskId(null);
-    const attIds = (task.attachments ?? []).map((a) => a.id);
-    if (attIds.length) await deleteAttachments(attIds);
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    const atts = task.attachments ?? [];
+    if (atts.length) await deleteAttachmentsFromStorage(atts);
     await deleteTaskDB(user.uid, task.id);
   };
 
@@ -230,7 +256,6 @@ export default function MyDayPage() {
     if (updates.title !== undefined) finalUpdates.tags = parseTags(updates.title);
     if (updates.status === 'completed') finalUpdates.completedDate = getTodayStr();
     if (updates.status && updates.status !== 'completed') finalUpdates.completedDate = null;
-    setTasks((prev) => prev.map((t) => t.id === selectedTaskId ? { ...t, ...finalUpdates } : t));
     await updateTask(user.uid, selectedTaskId, finalUpdates);
   };
 
@@ -250,14 +275,14 @@ export default function MyDayPage() {
         <div className="max-w-md text-center p-6 bg-red-500/10 border border-red-500/30 rounded-xl">
           <p className="text-red-400 font-semibold mb-2">오류 발생</p>
           <p className="text-text-secondary text-sm">{error}</p>
-          <button onClick={() => { setError(null); setLoading(true); loadData(); }} className="mt-4 px-4 py-2 bg-[#e94560] text-white text-sm rounded-lg hover:bg-[#ff5a7a]">다시 시도</button>
+          <button onClick={() => setError(null)} className="mt-4 px-4 py-2 bg-[#e94560] text-white text-sm rounded-lg hover:bg-[#ff5a7a]">닫기</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="mb-6">
@@ -269,26 +294,98 @@ export default function MyDayPage() {
         </div>
 
         {/* 7-Day Calendar Strip */}
-        <div className="mb-6 p-3 bg-background-card border border-border rounded-xl">
-          <div className="grid grid-cols-7 gap-1.5">
-            {calendarDays.map((d) => (
+        <div className="mb-6 bg-background-card border border-border rounded-xl">
+          {/* 캘린더 헤더: 월 표시 + 오늘 버튼 + 날짜 피커 */}
+          <div className="flex items-center justify-between px-3 pt-3 pb-1">
+            <span className="text-xs font-bold text-text-primary">
+              {(() => {
+                const d = new Date(selectedDate + 'T00:00:00');
+                return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+              })()}
+            </span>
+            <div className="flex items-center gap-1.5">
+              {!isViewingToday && (
+                <button
+                  onClick={() => setSelectedDate(todayStr)}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#e94560]/15 text-[#e94560] hover:bg-[#e94560]/25 transition-colors"
+                >
+                  오늘
+                </button>
+              )}
               <button
-                key={d.dateStr}
-                onClick={() => setSelectedDate(d.dateStr)}
-                className={`flex flex-col items-center py-2 rounded-xl transition-all ${
-                  d.isToday
-                    ? 'bg-gradient-to-br from-[#e94560] to-[#533483] text-white shadow-lg shadow-[#e94560]/20'
-                    : selectedDate === d.dateStr
-                    ? 'bg-[#e94560]/15 text-[#e94560] border border-[#e94560]/30'
-                    : 'text-text-secondary hover:bg-background-hover'
-                }`}
+                onClick={() => datePickerRef.current?.showPicker()}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-[#e94560] hover:bg-border/50 transition-colors"
+                title="날짜 선택"
               >
-                <span className="text-[10px] font-medium mb-0.5">{d.weekday}</span>
-                <span className={`text-lg font-bold ${d.isToday ? 'text-white' : ''}`}>{d.day}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
               </button>
-            ))}
+              <input
+                ref={datePickerRef}
+                type="date"
+                value={selectedDate}
+                onChange={(e) => { if (e.target.value) setSelectedDate(e.target.value); }}
+                className="absolute w-0 h-0 opacity-0 pointer-events-none"
+                tabIndex={-1}
+              />
+            </div>
+          </div>
+
+          {/* 날짜 스트립: 좌우 화살표 + 7일 */}
+          <div className="flex items-center gap-1 px-2 pb-3">
+            <button
+              onClick={() => shiftCalendar(-7)}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border/50 transition-colors flex-shrink-0"
+              title="이전 7일"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+
+            <div className="flex-1 grid grid-cols-7 gap-1">
+              {calendarDays.map((d) => (
+                <button
+                  key={d.dateStr}
+                  onClick={() => setSelectedDate(d.dateStr)}
+                  className={`flex flex-col items-center py-2 rounded-xl transition-all ${
+                    selectedDate === d.dateStr && d.isToday
+                      ? 'bg-gradient-to-br from-[#e94560] to-[#533483] text-white shadow-lg shadow-[#e94560]/20'
+                      : selectedDate === d.dateStr
+                      ? 'bg-[#e94560]/15 text-[#e94560] border border-[#e94560]/30'
+                      : d.isToday
+                      ? 'text-[#e94560] font-bold hover:bg-[#e94560]/10'
+                      : 'text-text-secondary hover:bg-background-hover'
+                  }`}
+                >
+                  <span className="text-[10px] font-medium mb-0.5">{d.weekday}</span>
+                  <span className={`text-lg font-bold ${selectedDate === d.dateStr && d.isToday ? 'text-white' : ''}`}>{d.day}</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => shiftCalendar(7)}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border/50 transition-colors flex-shrink-0"
+              title="다음 7일"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+            </button>
           </div>
         </div>
+
+        {/* 과거 날짜 안내 */}
+        {!isViewingToday && (
+          <div className="mb-4 px-4 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 text-xs text-amber-500">
+            <span>📅</span>
+            <span className="font-semibold">
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })} 기록
+            </span>
+            <span className="text-amber-500/70">— 읽기 전용</span>
+          </div>
+        )}
 
         {/* Progress Bar */}
         <div className="mb-6 p-4 bg-background-card border border-border rounded-xl">
@@ -344,33 +441,35 @@ export default function MyDayPage() {
           </div>
         )}
 
-        {/* Add Task Input */}
-        <div className="mb-6 flex gap-2">
-          <div className="flex-1 flex bg-background-card border border-border rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
-            <input
-              type="text"
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-              placeholder={t('myDay.addTask')}
-              className="flex-1 px-4 py-3 bg-transparent text-text-primary placeholder-text-muted text-sm focus:outline-none"
-            />
-            <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value as TaskData['priority'])} className="px-2 bg-transparent text-xs border-l border-border focus:outline-none cursor-pointer text-text-secondary">
-              <option value="urgent" className="bg-background-card">{t('priority.urgent')}</option>
-              <option value="high" className="bg-background-card">{t('priority.high')}</option>
-              <option value="medium" className="bg-background-card">{t('priority.medium')}</option>
-              <option value="low" className="bg-background-card">{t('priority.low')}</option>
-            </select>
-            <select value={newTaskList} onChange={(e) => setNewTaskList(e.target.value)} className="px-2 bg-transparent text-text-secondary text-xs border-l border-border focus:outline-none cursor-pointer">
-              {lists.map((list) => (
-                <option key={list.id} value={list.id!} className="bg-background-card">{list.label}</option>
-              ))}
-            </select>
+        {/* Add Task Input — 오늘만 표시 */}
+        {isViewingToday && (
+          <div className="mb-6 flex gap-2">
+            <div className="flex-1 flex bg-background-card border border-border rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
+              <input
+                type="text"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                placeholder={t('myDay.addTask')}
+                className="flex-1 px-4 py-3 bg-transparent text-text-primary placeholder-text-muted text-sm focus:outline-none"
+              />
+              <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value as TaskData['priority'])} className="px-2 bg-transparent text-xs border-l border-border focus:outline-none cursor-pointer text-text-secondary">
+                <option value="urgent" className="bg-background-card">{t('priority.urgent')}</option>
+                <option value="high" className="bg-background-card">{t('priority.high')}</option>
+                <option value="medium" className="bg-background-card">{t('priority.medium')}</option>
+                <option value="low" className="bg-background-card">{t('priority.low')}</option>
+              </select>
+              <select value={newTaskList} onChange={(e) => setNewTaskList(e.target.value)} className="px-2 bg-transparent text-text-secondary text-xs border-l border-border focus:outline-none cursor-pointer">
+                {lists.map((list) => (
+                  <option key={list.id} value={list.id!} className="bg-background-card">{list.label}</option>
+                ))}
+              </select>
+            </div>
+            <button onClick={handleAddTask} disabled={adding} className="px-5 py-3 bg-[#e94560] hover:bg-[#ff5a7a] text-white font-semibold rounded-xl text-sm transition-colors disabled:opacity-50">
+              {adding ? '...' : t('common.add')}
+            </button>
           </div>
-          <button onClick={handleAddTask} disabled={adding} className="px-5 py-3 bg-[#e94560] hover:bg-[#ff5a7a] text-white font-semibold rounded-xl text-sm transition-colors disabled:opacity-50">
-            {adding ? '...' : t('common.add')}
-          </button>
-        </div>
+        )}
 
         {/* Drag hint */}
         {canDrag && filteredTasks.length > 1 && (
@@ -380,12 +479,11 @@ export default function MyDayPage() {
           </p>
         )}
 
-        {/* Task List */}
+        {/* Active Task List */}
         <div className="space-y-2">
-          {filteredTasks.map((task, index) => {
+          {activeTasks.map((task, index) => {
             const priority = priorityColors[task.priority];
             const list = getListInfo(task.listId);
-            const isCompleted = task.status === 'completed';
             const isSelected = selectedTaskId === task.id;
             const isDragging = dragSrcIdx === index;
             const isDragOver = dragOverIdx === index;
@@ -404,7 +502,6 @@ export default function MyDayPage() {
                   isDragging ? 'opacity-40 scale-95' :
                   isDragOver ? 'border-[#e94560] shadow-[0_0_12px_rgba(233,69,96,0.15)]' :
                   isSelected ? 'border-[#e94560]/40 shadow-[0_0_12px_rgba(233,69,96,0.08)]' :
-                  isCompleted ? 'border-border/50 opacity-70' :
                   'border-border hover:border-border-hover'
                 }`}
                 style={{ animation: isDragOver ? undefined : 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
@@ -419,25 +516,15 @@ export default function MyDayPage() {
                 {/* Checkbox */}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
-                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
-                    isCompleted
-                      ? 'bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent scale-110'
-                      : 'hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]'
-                  }`}
-                  style={isCompleted ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
-                >
-                  {isCompleted && (
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="animate-[checkPop_0.3s_ease-out]">
-                      <path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
+                  className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]"
+                  style={{ borderColor: 'var(--color-checkbox-border)' }}
+                />
 
                 <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
 
                 {/* Title + tags */}
                 <div className="flex-1 min-w-0">
-                  <span className={`block text-sm transition-all duration-300 ${isCompleted ? 'line-through text-text-inactive' : 'text-text-primary'}`}>
+                  <span className="block text-sm text-text-primary">
                     {task.title}
                   </span>
                   {taskTags.length > 0 && (
@@ -479,12 +566,66 @@ export default function MyDayPage() {
           })}
         </div>
 
-        {filteredTasks.length === 0 && (
+        {activeTasks.length === 0 && completedTasks.length === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">{tasks.length === 0 ? '☀️' : filterTag ? '🏷️' : '🎉'}</div>
             <p className="text-text-secondary font-semibold">
               {tasks.length === 0 ? t('myDay.emptyAll') : filterTag ? `@${filterTag} ${t('myDay.emptyTag')}` : filterList ? t('myDay.emptyList') : t('myDay.emptyComplete')}
             </p>
+          </div>
+        )}
+
+        {/* 완료됨 Section */}
+        {completedTasks.length > 0 && (
+          <div className="mt-6">
+            <button
+              onClick={() => setShowCompleted(!showCompleted)}
+              className="flex items-center gap-2 text-text-muted text-sm mb-3 hover:text-text-secondary transition-colors w-full"
+            >
+              <span className={`transition-transform duration-200 text-xs ${showCompleted ? 'rotate-90' : ''}`}>▶</span>
+              <span className="font-semibold">{t('status.completed')}</span>
+              <span className="text-[10px] bg-border px-2 py-0.5 rounded-full">{completedTasks.length}</span>
+            </button>
+            {showCompleted && (
+              <div className="space-y-2">
+                {completedTasks.map((task, index) => {
+                  const priority = priorityColors[task.priority];
+                  const list = getListInfo(task.listId);
+                  const isSelected = selectedTaskId === task.id;
+                  const taskTags = task.tags ?? [];
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => setSelectedTaskId(isSelected ? null : task.id!)}
+                      className={`group flex items-center gap-3 p-4 bg-background-card border rounded-xl transition-all cursor-pointer opacity-60 ${isSelected ? 'border-[#e94560]/40' : 'border-border/50 hover:border-border-hover hover:opacity-80'}`}
+                      style={{ animation: 'fadeUp 0.3s ease-out both', animationDelay: `${index * 0.03}s` }}
+                    >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleTask(task); }}
+                        className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      </button>
+                      <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                      <div className="flex-1 min-w-0">
+                        <span className="block text-sm line-through text-text-inactive">{task.title}</span>
+                        {taskTags.length > 0 && (
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {taskTags.map((tag) => (<span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6]">@{tag}</span>))}
+                          </div>
+                        )}
+                      </div>
+                      {(task.subTasks?.length ?? 0) > 0 && (
+                        <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
+                      )}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

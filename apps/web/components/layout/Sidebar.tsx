@@ -1,22 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
-import { getLists, addList, updateList, getUserSettings, type ListData, type Plan } from '@/lib/firestore';
+import { addList, updateList, deleteList, getUserSettings, getStorageLimit, type ListData, type Plan } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 import SettingsModal from '@/components/settings/SettingsModal';
 
 const LIST_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
+  const { lists: storeLists } = useDataStore();
   const [lists, setLists] = useState<ListData[]>([]);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -24,13 +31,14 @@ export default function Sidebar() {
   const [newListLabel, setNewListLabel] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [userPlan, setUserPlan] = useState<Plan>('free');
+  const [storageUsed, setStorageUsed] = useState(0);
 
   const NAV_ITEMS = [
     { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
     { icon: '📋', labelKey: 'nav.allTasks', href: '/tasks' },
     { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
     { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
-    { icon: '👥', labelKey: 'nav.shared', href: '/shared' },
+    // { icon: '👥', labelKey: 'nav.shared', href: '/shared' }, // TODO: Firestore 권한 규칙 수정 후 부활
     { icon: '⭐', labelKey: 'nav.important', href: '/important' },
   ];
 
@@ -40,25 +48,31 @@ export default function Sidebar() {
     { value: 'dark' as const, icon: '🌙', labelKey: 'nav.themeDark' },
   ];
 
-  const loadLists = useCallback(async () => {
-    if (!user) return;
-    try {
-      const fetched = await getLists(user.uid);
-      setLists(fetched);
-      const settings = await getUserSettings(user.uid);
-      setUserPlan(settings.plan || 'free');
-    } catch (err) {
-      console.error('Failed to load lists:', err);
-    }
-  }, [user]);
-
+  // storeLists(onSnapshot)로 목록 동기화 — getDocs 호출 제거
   useEffect(() => {
-    loadLists();
-  }, [loadLists]);
+    setLists(storeLists);
+  }, [storeLists]);
+
+  // 요금제 정보 — 세션당 1회만 조회
+  useEffect(() => {
+    if (!user) return;
+    getUserSettings(user.uid)
+      .then((s) => { setUserPlan(s.plan || 'free'); setStorageUsed(s.storageUsed ?? 0); })
+      .catch(() => {});
+  }, [user]);
 
   const handleSignOut = async () => {
     await signOut();
     router.push('/login');
+  };
+
+  const handleDeleteList = async (listId: string) => {
+    setLists((prev) => prev.filter((l) => l.id !== listId));
+    try {
+      await deleteList(user!.uid, listId);
+    } catch (err) {
+      console.error('Failed to delete list:', err);
+    }
   };
 
   const handleRenameList = async (listId: string) => {
@@ -75,16 +89,14 @@ export default function Sidebar() {
   const handleAddList = async () => {
     if (!user || !newListLabel.trim()) { setShowAddList(false); return; }
     const color = LIST_COLORS[lists.length % LIST_COLORS.length];
-    const tempId = `temp-${Date.now()}`;
-    setLists((prev) => [...prev, { id: tempId, label: newListLabel.trim(), color }]);
+    const label = newListLabel.trim();
     setNewListLabel('');
     setShowAddList(false);
     try {
-      const realId = await addList(user.uid, { label: newListLabel.trim(), color });
-      setLists((prev) => prev.map((l) => l.id === tempId ? { ...l, id: realId } : l));
+      await addList(user.uid, { label, color });
+      // onSnapshot이 storeLists를 갱신 → useEffect가 local lists를 자동 동기화
     } catch (err) {
       console.error('Failed to add list:', err);
-      setLists((prev) => prev.filter((l) => l.id !== tempId));
     }
   };
 
@@ -93,9 +105,32 @@ export default function Sidebar() {
   const initials = displayName.charAt(0).toUpperCase();
   const planLabel = userPlan === 'free' ? t('freePlan') : userPlan === 'pro' ? 'Pro Plan' : 'Team Plan';
 
+  const storageLimit = getStorageLimit(userPlan);
+  const storagePercent = Math.min(100, (storageUsed / storageLimit) * 100);
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  };
+
   return (
     <>
-      <aside className="w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0">
+      {/* 모바일 오버레이 배경 */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside className={`
+        w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0
+        fixed top-0 left-0 h-full z-50
+        md:static md:h-full md:z-auto
+        transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         {/* Logo */}
         <div className="mb-8">
           <Link href="/my-day">
@@ -109,7 +144,7 @@ export default function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-shrink-0 space-y-1">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href || (item.href === '/tasks' && pathname?.startsWith('/tasks'));
             return (
@@ -129,8 +164,8 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Lists */}
-        <div className="mt-8">
+        {/* Lists — flex-1 + min-h-0으로 독립 스크롤 */}
+        <div className="mt-4 flex-1 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">
               {t('nav.lists')}
@@ -163,14 +198,30 @@ export default function Sidebar() {
                     className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
                   />
                 ) : (
-                  <Link
-                    href={`/tasks?list=${list.id}`}
-                    className="flex-1 cursor-pointer"
-                    onDoubleClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); }}
-                    title="클릭: 목록 필터 / 더블클릭: 이름 변경"
-                  >
-                    {list.label}
-                  </Link>
+                  <>
+                    <Link
+                      href={`/tasks?list=${list.id}`}
+                      className="flex-1 cursor-pointer truncate"
+                    >
+                      {list.label}
+                    </Link>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <button
+                        onClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); }}
+                        className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-text-secondary transition-colors text-[11px]"
+                        title="이름 변경"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={(e) => { e.preventDefault(); handleDeleteList(list.id!); }}
+                        className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-[#e94560] transition-colors text-sm"
+                        title="목록 삭제"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             ))}
@@ -192,7 +243,7 @@ export default function Sidebar() {
         </div>
 
         {/* Theme Toggle */}
-        <div className="mt-6 pt-4 border-t border-border">
+        <div className="mt-6 pt-4 border-t border-border flex-shrink-0">
           <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">{t('nav.theme')}</p>
           <div className="flex gap-1">
             {THEME_OPTIONS.map((opt) => (
@@ -214,7 +265,7 @@ export default function Sidebar() {
         </div>
 
         {/* User / Settings */}
-        <div className="mt-4 pt-4 border-t border-border">
+        <div className="mt-4 pt-4 border-t border-border flex-shrink-0">
           <div className="flex items-center gap-3 px-2">
             {photoURL ? (
               <img
@@ -255,6 +306,23 @@ export default function Sidebar() {
                 <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
             </button>
+          </div>
+          {/* Storage usage bar */}
+          <div className="mt-3 px-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[9px] text-text-muted">
+                {formatSize(storageUsed)} / {formatSize(storageLimit)}
+              </span>
+              <span className="text-[9px] text-text-inactive">{storagePercent.toFixed(0)}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  storagePercent > 90 ? 'bg-[#e94560]' : storagePercent > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#e94560] to-[#533483]'
+                }`}
+                style={{ width: `${storagePercent}%` }}
+              />
+            </div>
           </div>
         </div>
       </aside>

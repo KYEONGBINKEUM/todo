@@ -119,7 +119,6 @@ const translations: Record<Language, Record<string, string>> = {
     'perm.view': '보기',
     'perm.edit': '편집',
     'perm.admin': '관리자',
-    'ad.label': '광고',
     'freePlan': 'Free Plan',
   },
   en: {
@@ -232,7 +231,6 @@ const translations: Record<Language, Record<string, string>> = {
     'perm.view': 'View',
     'perm.edit': 'Edit',
     'perm.admin': 'Admin',
-    'ad.label': 'AD',
     'freePlan': 'Free Plan',
   },
   ja: {
@@ -345,7 +343,6 @@ const translations: Record<Language, Record<string, string>> = {
     'perm.view': '閲覧',
     'perm.edit': '編集',
     'perm.admin': '管理者',
-    'ad.label': '広告',
     'freePlan': 'Free Plan',
   },
   es: {
@@ -458,7 +455,6 @@ const translations: Record<Language, Record<string, string>> = {
     'perm.view': 'Ver',
     'perm.edit': 'Editar',
     'perm.admin': 'Admin',
-    'ad.label': 'AD',
     'freePlan': 'Plan Gratis',
   },
   pt: {
@@ -571,7 +567,6 @@ const translations: Record<Language, Record<string, string>> = {
     'perm.view': 'Ver',
     'perm.edit': 'Editar',
     'perm.admin': 'Admin',
-    'ad.label': 'AD',
     'freePlan': 'Plano Grátis',
   },
   fr: {
@@ -684,7 +679,6 @@ const translations: Record<Language, Record<string, string>> = {
     'perm.view': 'Voir',
     'perm.edit': 'Modifier',
     'perm.admin': 'Admin',
-    'ad.label': 'PUB',
     'freePlan': 'Plan Gratuit',
   },
 };

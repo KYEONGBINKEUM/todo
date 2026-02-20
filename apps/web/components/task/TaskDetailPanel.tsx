@@ -1,10 +1,16 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { TaskData, SubTask, TaskAttachment, NoteData, getNotes } from '@/lib/firestore';
+import { useRouter } from 'next/navigation';
+import { TaskData, SubTask, TaskAttachment, NoteData, updateStorageUsed } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
 import { requestNotificationPermission } from '@/lib/use-reminders';
-import { saveAttachment, openAttachment, deleteAttachments } from '@/lib/attachment-store';
+import {
+  uploadAttachment, openAttachmentByURL, deleteAttachmentFromStorage,
+  openAttachment, deleteAttachments,
+  MAX_ATTACHMENT_SIZE,
+} from '@/lib/attachment-store';
 
 interface TaskDetailPanelProps {
   task: TaskData;
@@ -20,10 +26,11 @@ const PRIORITY_OPTIONS = [
   { value: 'low', label: '낮음', color: '#22c55e' },
 ] as const;
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
+const MAX_FILE_SIZE = MAX_ATTACHMENT_SIZE; // 10 MB
 
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: TaskDetailPanelProps) {
   const { user } = useAuth();
+  const router = useRouter();
 
   // ── Title ──────────────────────────────────────────────────────────────────
   const [titleValue, setTitleValue] = useState(task.title);
@@ -40,17 +47,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Linked Notes ───────────────────────────────────────────────────────────
-  const [allNotes, setAllNotes] = useState<NoteData[]>([]);
+  const { notes: allNotes } = useDataStore();
   const [showNoteSelector, setShowNoteSelector] = useState(false);
 
   const subTaskInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load notes for linking
-  useEffect(() => {
-    if (!user) return;
-    getNotes(user.uid).then(setAllNotes).catch(() => {});
-  }, [user]);
 
   // Sync when a different task is selected
   useEffect(() => {
@@ -129,11 +130,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const allFiles = Array.from(e.target.files ?? []);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    if (!allFiles.length) return;
+    if (!allFiles.length || !user || !task.id) return;
 
     const files = allFiles.filter((f) => {
       if (f.size > MAX_FILE_SIZE) {
-        alert(`"${f.name}"은 2 MB를 초과하여 첨부할 수 없습니다.`);
+        alert(`"${f.name}"은 10 MB를 초과하여 첨부할 수 없습니다.`);
         return false;
       }
       return true;
@@ -143,25 +144,40 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     const newAtts: TaskAttachment[] = [];
     for (const file of files) {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      await saveAttachment(id, file);
+      const { downloadURL, storagePath } = await uploadAttachment(user.uid, task.id, file, id);
       newAtts.push({
         id,
         name: file.name,
         size: file.size,
         type: file.type,
         addedAt: new Date().toISOString(),
+        downloadURL,
+        storagePath,
       });
     }
     onUpdate({ attachments: [...attachments, ...newAtts] });
+    // 스토리지 사용량 증가
+    const totalAdded = newAtts.reduce((sum, a) => sum + a.size, 0);
+    if (totalAdded > 0) updateStorageUsed(user.uid, totalAdded).catch(() => {});
   };
 
-  const deleteAttachment = async (id: string) => {
-    await deleteAttachments([id]);
-    onUpdate({ attachments: attachments.filter((a) => a.id !== id) });
+  const deleteAttachment = async (att: TaskAttachment) => {
+    if (att.storagePath) {
+      await deleteAttachmentFromStorage(att.storagePath);
+    } else {
+      await deleteAttachments([att.id]); // 구형 IndexedDB
+    }
+    onUpdate({ attachments: attachments.filter((a) => a.id !== att.id) });
+    // 스토리지 사용량 감소
+    if (user && att.size > 0) updateStorageUsed(user.uid, -att.size).catch(() => {});
   };
 
   const handleOpenAttachment = (att: TaskAttachment) => {
-    openAttachment(att.id, att.name, att.type);
+    if (att.downloadURL) {
+      openAttachmentByURL(att.downloadURL, att.name, att.type);
+    } else {
+      openAttachment(att.id, att.name, att.type); // 구형 IndexedDB
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -191,7 +207,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
       {/* Panel */}
-      <div className="fixed top-0 right-0 h-full w-[380px] z-50 flex flex-col bg-background-card border-l border-border shadow-2xl animate-slide-in-right overflow-hidden">
+      <div className="fixed top-14 md:top-0 right-0 bottom-0 w-full md:w-[380px] z-50 flex flex-col bg-background-card border-l border-border shadow-2xl animate-slide-in-right overflow-hidden">
 
         {/* Header — editable title */}
         <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-border flex-shrink-0">
@@ -255,6 +271,19 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 {task.dueDate && (
                   <button onClick={() => onUpdate({ dueDate: null })} className="text-text-muted hover:text-[#e94560] text-sm transition-colors" title="마감일 제거">×</button>
                 )}
+              </div>
+            </div>
+
+            {/* Created Date (등록일) */}
+            <div className="flex items-center gap-3">
+              <span className="text-text-muted text-xs w-16 flex-shrink-0">등록일</span>
+              <div className="flex items-center gap-2 flex-1">
+                <input
+                  type="date"
+                  value={task.createdDate ?? (task.createdAt && typeof task.createdAt.toDate === 'function' ? task.createdAt.toDate().toISOString().split('T')[0] : '')}
+                  onChange={(e) => onUpdate({ createdDate: e.target.value || null })}
+                  className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
+                />
               </div>
             </div>
 
@@ -434,7 +463,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                       </p>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteAttachment(att.id); }}
+                      onClick={(e) => { e.stopPropagation(); deleteAttachment(att); }}
                       className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all flex-shrink-0"
                     >
                       ×
@@ -499,15 +528,23 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                   const note = allNotes.find((n) => n.id === noteId);
                   if (!note) return null;
                   return (
-                    <div key={noteId} className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border group">
-                      <span className="text-base">{note.icon || '📝'}</span>
-                      <span className="text-xs text-text-primary flex-1 truncate">{note.title}</span>
+                    <div key={noteId} className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border group hover:border-[#8b5cf6]/40 transition-colors">
                       <button
-                        onClick={() => {
+                        onClick={() => { onClose(); router.push(`/notes?note=${noteId}`); }}
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                        title="노트로 이동"
+                      >
+                        <span className="text-base flex-shrink-0">{note.icon || '📝'}</span>
+                        <span className="text-xs text-text-primary truncate">{note.title}</span>
+                        <span className="text-[9px] text-[#8b5cf6] flex-shrink-0 opacity-0 group-hover:opacity-100">↗</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           const updated = (task.linkedNoteIds ?? []).filter((id) => id !== noteId);
                           onUpdate({ linkedNoteIds: updated });
                         }}
-                        className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-sm"
+                        className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-sm flex-shrink-0"
                       >
                         ×
                       </button>

@@ -56,6 +56,8 @@ export interface TaskAttachment {
   size: number;
   type: string;
   addedAt: string;
+  downloadURL?: string;  // Firebase Storage URL (신규)
+  storagePath?: string;  // Storage 경로 (삭제 시 사용)
 }
 
 export interface TaskData {
@@ -74,6 +76,7 @@ export interface TaskData {
   tags?: string[];
   order?: number;
   completedDate?: string | null;
+  createdDate?: string | null;
   linkedNoteIds?: string[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -114,6 +117,9 @@ export interface FolderData {
   name: string;
   color: string;
   icon: string;
+  parentId?: string | null;
+  deleted?: boolean;
+  deletedAt?: string | null;
   createdAt?: Timestamp;
 }
 
@@ -250,6 +256,7 @@ export async function addList(uid: string, list: Omit<ListData, 'id' | 'createdA
 }
 
 export async function deleteList(uid: string, listId: string): Promise<void> {
+  invalidateCache(uid, 'lists');
   await deleteDoc(doc(db, 'users', uid, 'lists', listId));
 }
 
@@ -271,6 +278,7 @@ export async function getFolders(uid: string): Promise<FolderData[]> {
 }
 
 export async function addFolder(uid: string, folder: Omit<FolderData, 'id' | 'createdAt'>): Promise<string> {
+  invalidateCache(uid, 'folders');
   const docRef = await addDoc(foldersRef(uid), {
     ...folder,
     createdAt: serverTimestamp(),
@@ -283,7 +291,26 @@ export async function updateFolder(uid: string, folderId: string, updates: Parti
   await updateDoc(doc(db, 'users', uid, 'folders', folderId), { ...updates });
 }
 
+/** 소프트 삭제 — 휴지통으로 이동 */
 export async function deleteFolder(uid: string, folderId: string): Promise<void> {
+  invalidateCache(uid, 'folders');
+  await updateDoc(doc(db, 'users', uid, 'folders', folderId), {
+    deleted: true,
+    deletedAt: new Date().toISOString(),
+  });
+}
+
+/** 휴지통에서 복원 */
+export async function restoreFolder(uid: string, folderId: string): Promise<void> {
+  invalidateCache(uid, 'folders');
+  await updateDoc(doc(db, 'users', uid, 'folders', folderId), {
+    deleted: false,
+    deletedAt: null,
+  });
+}
+
+/** 영구 삭제 */
+export async function permanentDeleteFolder(uid: string, folderId: string): Promise<void> {
   invalidateCache(uid, 'folders');
   await deleteDoc(doc(db, 'users', uid, 'folders', folderId));
 }
@@ -319,17 +346,10 @@ function sharedListsRef() {
 export async function getSharedLists(uid: string): Promise<SharedListData[]> {
   const cached = getCached<SharedListData[]>(`${uid}:sharedLists`);
   if (cached) return cached;
-  // Get lists owned by user
-  const ownedQ = query(sharedListsRef(), where('ownerUid', '==', uid));
-  const ownedSnap = await getDocs(ownedQ);
-  const owned = ownedSnap.docs.map((d) => ({ id: d.id, ...d.data() } as SharedListData));
-  // Get lists where user is a member
-  const memberQ = query(sharedListsRef(), where('memberUids', 'array-contains', uid));
-  const memberSnap = await getDocs(memberQ);
-  const membered = memberSnap.docs.map((d) => ({ id: d.id, ...d.data() } as SharedListData));
-  // Merge & deduplicate
-  const all = [...owned];
-  membered.forEach((m) => { if (!all.find((o) => o.id === m.id)) all.push(m); });
+  // ownerUid는 항상 memberUids에 포함되므로 단일 쿼리로 소유+멤버 목록 모두 조회
+  const q = query(sharedListsRef(), where('memberUids', 'array-contains', uid));
+  const snap = await getDocs(q);
+  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as SharedListData));
   setCache(`${uid}:sharedLists`, all);
   return all;
 }
@@ -411,6 +431,24 @@ export interface UserSettings {
   language?: Language;
   plan?: Plan;
   isAdmin?: boolean;
+  storageUsed?: number; // bytes
+}
+
+/** 플랜별 스토리지 한도 (bytes) */
+export function getStorageLimit(plan: Plan): number {
+  switch (plan) {
+    case 'pro': return 10 * 1024 * 1024 * 1024;   // 10 GB
+    case 'team': return 50 * 1024 * 1024 * 1024;   // 50 GB
+    default: return 100 * 1024 * 1024;              // 100 MB (free)
+  }
+}
+
+/** 스토리지 사용량 업데이트 (delta: 양수=추가, 음수=삭제) */
+export async function updateStorageUsed(uid: string, delta: number): Promise<void> {
+  const settings = await getUserSettings(uid);
+  const current = settings.storageUsed ?? 0;
+  const updated = Math.max(0, current + delta);
+  await updateUserSettings(uid, { storageUsed: updated });
 }
 
 export async function getUserSettings(uid: string): Promise<UserSettings> {

@@ -1,28 +1,55 @@
 'use client';
 
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
+import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function LoginPage() {
-  const [loading, setLoading] = useState(false);
+  // 리다이렉트 결과 확인 전까지 버튼 비활성화
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  // 이미 로그인된 상태면 바로 리다이렉트 (onAuthStateChanged 감지)
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace('/my-day');
+    }
+  }, [user, authLoading, router]);
+
+  // 페이지 로드 시 리다이렉트 결과 확인 (웹/데스크톱 공통)
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          router.replace('/my-day');
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : '';
+        if (message && !message.includes('auth/no-auth-event')) {
+          setError(message);
+        }
+        setLoading(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      await signInWithPopup(auth, googleProvider);
-      router.push('/my-day');
+      // 웹·데스크톱 모두 리다이렉트 방식 (팝업 차단 우회)
+      await signInWithRedirect(auth, googleProvider);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
       if (message.includes('invalid-api-key') || message.includes('auth/configuration-not-found')) {
         setError('Firebase가 아직 설정되지 않았습니다. .env.local을 확인해주세요.');
-      } else if (message.includes('popup-closed-by-user')) {
-        // User closed the popup, no error needed
       } else {
         setError(message);
       }

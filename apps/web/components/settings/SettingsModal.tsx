@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
-import { updateUserSettings, getUserSettings, type FontSize, type Plan, type Language } from '@/lib/firestore';
+import { updateUserSettings, getUserSettings, getStorageLimit, type FontSize, type Plan, type Language } from '@/lib/firestore';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -27,7 +27,7 @@ const LANGUAGES: { code: Language; name: string; flag: string }[] = [
 
 const PLANS: { value: Plan; label: string; desc: string; color: string }[] = [
   { value: 'free', label: 'Free', desc: '기본 기능 무제한', color: '#64748b' },
-  { value: 'pro', label: 'Pro', desc: 'AI + 광고 제거 + 10GB', color: '#e94560' },
+  { value: 'pro', label: 'Pro', desc: 'AI + 10GB 스토리지', color: '#e94560' },
   { value: 'team', label: 'Team', desc: '무제한 협업 + 관리자 기능', color: '#8b5cf6' },
 ];
 
@@ -39,6 +39,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [fontSize, setFontSizeState] = useState<FontSize>('medium');
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [storageUsed, setStorageUsed] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -48,8 +49,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       applyFontSize(fs);
       setUserPlan(s.plan || 'free');
       setIsAdmin(s.isAdmin || false);
+      setStorageUsed(s.storageUsed ?? 0);
     });
   }, [user]);
+
+  const storageLimit = getStorageLimit(userPlan);
+  const storagePercent = Math.min(100, (storageUsed / storageLimit) * 100);
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  };
 
   const handleFontSize = (size: FontSize) => {
     setFontSizeState(size);
@@ -165,7 +176,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           { label: '노트 작성', included: true },
                           { label: '기기 동기화', included: true },
                           { label: 'AI 자동 작성/요약', included: userPlan !== 'free' },
-                          { label: '광고 제거', included: userPlan !== 'free' },
                           { label: '무제한 공유 협업', included: userPlan === 'team' },
                           { label: '파일 스토리지 10GB', included: userPlan !== 'free' },
                         ].map((item) => (
@@ -214,6 +224,31 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           {t('settings.upgrade')} (준비 중)
                         </button>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Storage */}
+                  <div>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">스토리지</p>
+                    <div className="p-4 bg-background rounded-xl border border-border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-text-secondary">사용량</span>
+                        <span className="text-xs font-bold text-text-primary">
+                          {formatSize(storageUsed)} / {formatSize(storageLimit)}
+                        </span>
+                      </div>
+                      <div className="w-full h-2.5 bg-border rounded-full overflow-hidden mb-2">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            storagePercent > 90 ? 'bg-[#e94560]' : storagePercent > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#e94560] to-[#533483]'
+                          }`}
+                          style={{ width: `${storagePercent}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-text-muted">
+                        {userPlan === 'free' ? 'Free 플랜: 100 MB' : userPlan === 'pro' ? 'Pro 플랜: 10 GB' : 'Team 플랜: 50 GB'}
+                        {storagePercent > 90 && <span className="text-[#e94560] ml-1 font-semibold">— 용량이 거의 찼습니다</span>}
+                      </p>
                     </div>
                   </div>
                 </div>

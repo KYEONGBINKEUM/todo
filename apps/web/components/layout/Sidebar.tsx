@@ -119,8 +119,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
       <aside className={`
         w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0
-        fixed top-0 left-0 h-full z-50 overflow-y-auto
-        md:relative md:top-auto md:h-auto md:z-auto md:overflow-y-visible
+        fixed top-0 left-0 h-full z-50
+        md:static md:h-full md:z-auto
         transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
@@ -137,7 +137,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-shrink-0 space-y-1">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href || (item.href === '/tasks' && pathname?.startsWith('/tasks'));
             return (
@@ -157,8 +157,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           })}
         </nav>
 
-        {/* Lists */}
-        <div className="mt-8">
+        {/* Lists — flex-1 + min-h-0으로 독립 스크롤 */}
+        <div className="mt-4 flex-1 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">
               {t('nav.lists')}
@@ -236,7 +236,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </div>
 
         {/* Theme Toggle */}
-        <div className="mt-6 pt-4 border-t border-border">
+        <div className="mt-6 pt-4 border-t border-border flex-shrink-0">
           <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">{t('nav.theme')}</p>
           <div className="flex gap-1">
             {THEME_OPTIONS.map((opt) => (
@@ -258,7 +258,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </div>
 
         {/* User / Settings */}
-        <div className="mt-4 pt-4 border-t border-border">
+        <div className="mt-4 pt-4 border-t border-border flex-shrink-0">
           <div className="flex items-center gap-3 px-2">
             {photoURL ? (
               <img

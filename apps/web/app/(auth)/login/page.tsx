@@ -1,28 +1,53 @@
 'use client';
 
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+// Tauri WebView 환경 감지 (데스크톱 앱)
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
+  // redirect 방식 복귀 시 결과 처리 (Tauri 전용)
+  useEffect(() => {
+    if (!isTauri) return;
+    setLoading(true);
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          router.push('/my-day');
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      await signInWithPopup(auth, googleProvider);
-      router.push('/my-day');
+      if (isTauri) {
+        // Tauri WebView는 팝업 차단 → 리다이렉트 방식 사용
+        await signInWithRedirect(auth, googleProvider);
+        // 리다이렉트 후 위 useEffect에서 결과 처리
+      } else {
+        await signInWithPopup(auth, googleProvider);
+        router.push('/my-day');
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
       if (message.includes('invalid-api-key') || message.includes('auth/configuration-not-found')) {
         setError('Firebase가 아직 설정되지 않았습니다. .env.local을 확인해주세요.');
       } else if (message.includes('popup-closed-by-user')) {
-        // User closed the popup, no error needed
+        // 사용자가 팝업을 닫음, 에러 표시 불필요
       } else {
         setError(message);
       }

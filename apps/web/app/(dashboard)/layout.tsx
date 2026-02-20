@@ -42,7 +42,7 @@ export default function DashboardLayout({
 
   return (
     <div
-      className="flex min-h-screen bg-background text-text-primary"
+      className="flex h-screen overflow-hidden bg-background text-text-primary"
       style={{ fontFamily: "'Pretendard Variable', -apple-system, sans-serif" }}
     >
       {/* 모바일 상단 헤더 */}

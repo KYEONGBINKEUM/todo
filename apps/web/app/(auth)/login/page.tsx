@@ -1,13 +1,12 @@
 'use client';
 
-import { signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
 export default function LoginPage() {
-  // 리다이렉트 결과 확인 전까지 버튼 비활성화
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
@@ -20,7 +19,7 @@ export default function LoginPage() {
     }
   }, [user, authLoading, router]);
 
-  // 페이지 로드 시 리다이렉트 결과 확인 (웹/데스크톱 공통)
+  // 리다이렉트 폴백 결과 확인
   useEffect(() => {
     getRedirectResult(auth)
       .then((result) => {
@@ -30,11 +29,7 @@ export default function LoginPage() {
           setLoading(false);
         }
       })
-      .catch((err) => {
-        const message = err instanceof Error ? err.message : '';
-        if (message && !message.includes('auth/no-auth-event')) {
-          setError(message);
-        }
+      .catch(() => {
         setLoading(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -44,13 +39,22 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      // 웹·데스크톱 모두 리다이렉트 방식 (팝업 차단 우회)
-      await signInWithRedirect(auth, googleProvider);
+      // 팝업 우선 시도 (EXE/데스크톱에서 가장 안정적)
+      await signInWithPopup(auth, googleProvider);
+      router.replace('/my-day');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
-      if (message.includes('invalid-api-key') || message.includes('auth/configuration-not-found')) {
+      // 팝업이 차단된 경우에만 리다이렉트로 폴백
+      if (message.includes('auth/popup-blocked') || message.includes('auth/popup-closed-by-browser')) {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch {
+          setError('로그인에 실패했습니다. 다시 시도해주세요.');
+        }
+      } else if (message.includes('invalid-api-key') || message.includes('auth/configuration-not-found')) {
         setError('Firebase가 아직 설정되지 않았습니다. .env.local을 확인해주세요.');
-      } else {
+      } else if (!message.includes('auth/cancelled-popup-request')) {
         setError(message);
       }
       setLoading(false);

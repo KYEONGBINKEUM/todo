@@ -109,24 +109,26 @@ export default function MyDayPage() {
     setSelectedDate(toLocalDateStr(d));
   };
 
+  // 선택 날짜 기준 완료된 task ID 세트
+  const [completedOnDateIds, setCompletedOnDateIds] = useState<Set<string>>(new Set());
+
   // 스토어 tasks → 로컬 tasks (myDay 필터 + 날짜 기반 필터 + 정렬)
   useEffect(() => {
     if (savingOrder.current) return;
     const myDayAll = storeTasks.filter((t) => t.myDay);
 
-    let activeDateTasks: TaskData[];
-    let completedDateTasks: TaskData[];
-
     // 활성 작업: 등록일 <= 선택일 && (미완료 또는 완료일 > 선택일)
-    activeDateTasks = myDayAll.filter((t) => {
+    const activeDateTasks = myDayAll.filter((t) => {
       const cd = getTaskCreatedDate(t);
       if (cd > selectedDate) return false;
       if (t.status !== 'completed') return true;
-      // 완료된 작업은 완료일 이전 날짜에서만 활성으로 표시
       return t.completedDate != null && t.completedDate > selectedDate;
     });
     // 완료 작업: 선택일에 완료된 것만
-    completedDateTasks = myDayAll.filter((t) => t.status === 'completed' && t.completedDate === selectedDate);
+    const completedDateTasks = myDayAll.filter((t) => t.status === 'completed' && t.completedDate === selectedDate);
+
+    // 완료된 task ID 세트 저장 (status 대신 이것으로 활성/완료 구분)
+    setCompletedOnDateIds(new Set(completedDateTasks.map((t) => t.id!)));
 
     const combined = [...activeDateTasks, ...completedDateTasks];
     const sorted = [...combined].sort((a, b) => {
@@ -155,10 +157,10 @@ export default function MyDayPage() {
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag));
 
-  const activeTasks = filteredTasks.filter((t) => t.status !== 'completed');
-  const completedTasks = filteredTasks.filter((t) => t.status === 'completed');
+  const activeTasks = filteredTasks.filter((t) => !completedOnDateIds.has(t.id!));
+  const completedTasks = filteredTasks.filter((t) => completedOnDateIds.has(t.id!));
 
-  const completedCount = filteredTasks.filter((t) => t.status === 'completed').length;
+  const completedCount = completedTasks.length;
   const totalCount = filteredTasks.length;
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
   const canDrag = !filterList && !filterTag;

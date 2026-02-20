@@ -1,22 +1,18 @@
 'use client';
 
-import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
-// Tauri WebView 환경 감지 (데스크톱 앱)
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-
 export default function LoginPage() {
-  const [loading, setLoading] = useState(false);
+  // 리다이렉트 결과 확인 전까지 버튼 비활성화
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  // redirect 방식 복귀 시 결과 처리 (Tauri 전용)
+  // 페이지 로드 시 리다이렉트 결과 확인 (웹/데스크톱 공통)
   useEffect(() => {
-    if (!isTauri) return;
-    setLoading(true);
     getRedirectResult(auth)
       .then((result) => {
         if (result?.user) {
@@ -25,29 +21,26 @@ export default function LoginPage() {
           setLoading(false);
         }
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : '';
+        if (message && !message.includes('auth/no-auth-event')) {
+          setError(message);
+        }
+        setLoading(false);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      if (isTauri) {
-        // Tauri WebView는 팝업 차단 → 리다이렉트 방식 사용
-        await signInWithRedirect(auth, googleProvider);
-        // 리다이렉트 후 위 useEffect에서 결과 처리
-      } else {
-        await signInWithPopup(auth, googleProvider);
-        router.push('/my-day');
-      }
+      // 웹·데스크톱 모두 리다이렉트 방식 (팝업 차단 우회)
+      await signInWithRedirect(auth, googleProvider);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
       if (message.includes('invalid-api-key') || message.includes('auth/configuration-not-found')) {
         setError('Firebase가 아직 설정되지 않았습니다. .env.local을 확인해주세요.');
-      } else if (message.includes('popup-closed-by-user')) {
-        // 사용자가 팝업을 닫음, 에러 표시 불필요
       } else {
         setError(message);
       }

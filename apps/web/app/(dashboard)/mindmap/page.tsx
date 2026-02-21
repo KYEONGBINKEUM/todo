@@ -30,9 +30,15 @@ interface MindMap {
   createdAt: string;
 }
 
+interface HistorySnapshot {
+  nodes: MindMapNode[];
+  edges: MindMapEdge[];
+}
+
 const NODE_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
 const DEFAULT_NODE_WIDTH = 180;
 const DEFAULT_NODE_HEIGHT = 70;
+const MAX_HISTORY = 50;
 
 // ============================================================================
 // Component
@@ -48,19 +54,23 @@ function MindmapContent() {
   const [activeMapId, setActiveMapId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Canvas state
-  const [viewportX, setViewportX] = useState(0);
-  const [viewportY, setViewportY] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  // Viewport — stored in ref for real-time access in event handlers
+  const vpRef = useRef({ x: 0, y: 0, zoom: 1 });
+  const [, forceRender] = useState(0);
+  const kick = () => forceRender((n) => n + 1);
 
-  // Interaction state
+  // Interaction — all in ref to avoid stale closures
+  const dragRef = useRef<{
+    mode: 'none' | 'pan' | 'node';
+    startX: number; startY: number;
+    offsetX: number; offsetY: number;
+    nodeId: string | null;
+    moved: boolean;
+  }>({ mode: 'none', startX: 0, startY: 0, offsetX: 0, offsetY: 0, nodeId: null, moved: false });
+
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [edgeStyle, setEdgeStyle] = useState<'curved' | 'straight'>('curved');
 
   // Connection drawing
@@ -73,21 +83,70 @@ function MindmapContent() {
 
   // Touch state
   const touchRef = useRef<{
-    startX: number; startY: number;
-    lastDist: number; // pinch-zoom
-    isPan: boolean;
-    isNodeDrag: boolean;
-    nodeId: string | null;
-    offsetX: number; offsetY: number;
-    moved: boolean;
+    lastDist: number;
     longPressTimer: NodeJS.Timeout | null;
-  }>({ startX: 0, startY: 0, lastDist: 0, isPan: false, isNodeDrag: false, nodeId: null, offsetX: 0, offsetY: 0, moved: false, longPressTimer: null });
+  }>({ lastDist: 0, longPressTimer: null });
+
+  // Undo/Redo
+  const historyRef = useRef<Map<string, { past: HistorySnapshot[]; future: HistorySnapshot[] }>>(new Map());
+  const skipHistoryRef = useRef(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mindmapsRef = useRef(mindmaps);
+  mindmapsRef.current = mindmaps;
 
   // Helper: first selected node id
   const selectedNodeId = selectedNodeIds.size === 1 ? [...selectedNodeIds][0] : null;
+  const activeMap = mindmaps.find((m) => m.id === activeMapId);
+  const activeMapRef = useRef(activeMap);
+  activeMapRef.current = activeMap;
+  const selectedNodeIdsRef = useRef(selectedNodeIds);
+  selectedNodeIdsRef.current = selectedNodeIds;
+  const activeMapIdRef = useRef(activeMapId);
+  activeMapIdRef.current = activeMapId;
+
+  // Viewport helpers
+  const vp = vpRef.current;
+
+  // ========== History Helpers ==========
+  const getHistory = (mapId: string) => {
+    if (!historyRef.current.has(mapId)) {
+      historyRef.current.set(mapId, { past: [], future: [] });
+    }
+    return historyRef.current.get(mapId)!;
+  };
+
+  const pushHistory = (mapId: string, snapshot: HistorySnapshot) => {
+    if (skipHistoryRef.current) return;
+    const h = getHistory(mapId);
+    h.past.push(snapshot);
+    if (h.past.length > MAX_HISTORY) h.past.shift();
+    h.future = [];
+  };
+
+  const canUndo = activeMapId ? (getHistory(activeMapId).past.length > 0) : false;
+  const canRedo = activeMapId ? (getHistory(activeMapId).future.length > 0) : false;
+
+  const undo = () => {
+    if (!activeMap || !canUndo) return;
+    const h = getHistory(activeMapId);
+    const prev = h.past.pop()!;
+    h.future.push({ nodes: [...activeMap.nodes], edges: [...activeMap.edges] });
+    skipHistoryRef.current = true;
+    updateMapDirect((m) => ({ ...m, nodes: prev.nodes, edges: prev.edges }));
+    skipHistoryRef.current = false;
+  };
+
+  const redo = () => {
+    if (!activeMap || !canRedo) return;
+    const h = getHistory(activeMapId);
+    const next = h.future.pop()!;
+    h.past.push({ nodes: [...activeMap.nodes], edges: [...activeMap.edges] });
+    skipHistoryRef.current = true;
+    updateMapDirect((m) => ({ ...m, nodes: next.nodes, edges: next.edges }));
+    skipHistoryRef.current = false;
+  };
 
   // ========== Init ==========
   useEffect(() => {
@@ -110,14 +169,11 @@ function MindmapContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeLoading]);
 
-  const activeMap = mindmaps.find((m) => m.id === activeMapId);
-
   // Sync viewport from activeMap
   useEffect(() => {
     if (activeMap) {
-      setViewportX(activeMap.viewportX);
-      setViewportY(activeMap.viewportY);
-      setZoom(activeMap.zoom || 1);
+      vpRef.current = { x: activeMap.viewportX, y: activeMap.viewportY, zoom: activeMap.zoom || 1 };
+      kick();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMapId]);
@@ -144,13 +200,21 @@ function MindmapContent() {
     saveTimerRef.current = setTimeout(() => saveToFirestore(map), 500);
   }, [saveToFirestore]);
 
-  const updateMap = (updater: (m: MindMap) => MindMap) => {
+  // updateMapDirect: update + save, used for undo/redo & non-history ops
+  const updateMapDirect = (updater: (m: MindMap) => MindMap) => {
     setMindmaps((prev) => {
-      const updated = prev.map((m) => (m.id === activeMapId ? updater(m) : m));
-      const map = updated.find((m) => m.id === activeMapId);
+      const updated = prev.map((m) => (m.id === activeMapIdRef.current ? updater(m) : m));
+      const map = updated.find((m) => m.id === activeMapIdRef.current);
       if (map) debouncedSave(map);
       return updated;
     });
+  };
+
+  // updateMap: push history then update
+  const updateMap = (updater: (m: MindMap) => MindMap) => {
+    const map = mindmapsRef.current.find((m) => m.id === activeMapIdRef.current);
+    if (map) pushHistory(activeMapIdRef.current, { nodes: [...map.nodes], edges: [...map.edges] });
+    updateMapDirect(updater);
   };
 
   // ========== CRUD ==========
@@ -227,15 +291,15 @@ function MindmapContent() {
   };
 
   const updateTitle = (title: string) => {
-    updateMap((m) => ({ ...m, title }));
+    updateMapDirect((m) => ({ ...m, title }));
   };
 
   // ========== Node Operations ==========
   const addNode = () => {
     if (!activeMap) return;
     const canvasRect = canvasRef.current?.getBoundingClientRect();
-    const centerX = canvasRect ? (canvasRect.width / 2 - viewportX) / zoom : 400;
-    const centerY = canvasRect ? (canvasRect.height / 2 - viewportY) / zoom : 300;
+    const centerX = canvasRect ? (canvasRect.width / 2 - vp.x) / vp.zoom : 400;
+    const centerY = canvasRect ? (canvasRect.height / 2 - vp.y) / vp.zoom : 300;
     const newNode: MindMapNode = {
       id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       text: '',
@@ -251,8 +315,8 @@ function MindmapContent() {
   };
 
   const deleteNode = async (nodeId: string) => {
-    if (!activeMap) return;
-    const node = activeMap.nodes.find((n) => n.id === nodeId);
+    if (!activeMapRef.current) return;
+    const node = activeMapRef.current.nodes.find((n) => n.id === nodeId);
     if (node?.imagePath) {
       try { await deleteObject(ref(storage, node.imagePath)); } catch { /* ignore */ }
     }
@@ -265,36 +329,46 @@ function MindmapContent() {
   };
 
   const deleteSelectedNodes = async () => {
-    if (!activeMap || selectedNodeIds.size === 0) return;
-    for (const nid of selectedNodeIds) {
-      const node = activeMap.nodes.find((n) => n.id === nid);
+    const map = activeMapRef.current;
+    const ids = selectedNodeIdsRef.current;
+    if (!map || ids.size === 0) return;
+    for (const nid of ids) {
+      const node = map.nodes.find((n) => n.id === nid);
       if (node?.imagePath) {
         try { await deleteObject(ref(storage, node.imagePath)); } catch { /* ignore */ }
       }
     }
     updateMap((m) => ({
       ...m,
-      nodes: m.nodes.filter((n) => !selectedNodeIds.has(n.id)),
-      edges: m.edges.filter((e) => !selectedNodeIds.has(e.from) && !selectedNodeIds.has(e.to)),
+      nodes: m.nodes.filter((n) => !ids.has(n.id)),
+      edges: m.edges.filter((e) => !ids.has(e.from) && !ids.has(e.to)),
     }));
     setSelectedNodeIds(new Set());
   };
 
   const connectSelectedNodes = () => {
-    if (!activeMap || selectedNodeIds.size < 2) return;
-    const ids = [...selectedNodeIds];
+    const map = activeMapRef.current;
+    const ids = [...selectedNodeIdsRef.current];
+    if (!map || ids.length < 2) return;
+    const currentMap = map;
+    // Push single history for the batch
+    pushHistory(activeMapIdRef.current, { nodes: [...currentMap.nodes], edges: [...currentMap.edges] });
+    skipHistoryRef.current = true;
+    let newEdges = [...currentMap.edges];
     for (let i = 0; i < ids.length - 1; i++) {
       const from = ids[i];
       const to = ids[i + 1];
-      if (!activeMap.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))) {
-        const newEdge: MindMapEdge = { id: `e-${Date.now()}-${i}`, from, to, style: edgeStyle, color: '#888' };
-        updateMap((m) => ({ ...m, edges: [...m.edges, newEdge] }));
+      if (!newEdges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))) {
+        newEdges.push({ id: `e-${Date.now()}-${i}`, from, to, style: edgeStyle, color: '#888' });
       }
     }
+    updateMapDirect((m) => ({ ...m, edges: newEdges }));
+    skipHistoryRef.current = false;
   };
 
   const updateNodeText = (nodeId: string, text: string) => {
-    updateMap((m) => ({
+    // Text changes: don't push history on every keystroke, debounce
+    updateMapDirect((m) => ({
       ...m,
       nodes: m.nodes.map((n) => (n.id === nodeId ? { ...n, text } : n)),
     }));
@@ -309,14 +383,15 @@ function MindmapContent() {
 
   // ========== Image Upload ==========
   const handleImageUpload = async (nodeId: string, file: File) => {
-    if (!user || !activeMap) return;
+    if (!user || !activeMapRef.current) return;
     if (file.size > MAX_ATTACHMENT_SIZE) {
       alert('이미지는 10MB 이하만 가능합니다.');
       return;
     }
     setUploadingNodeId(nodeId);
     try {
-      const path = `users/${user.uid}/mindmaps/${activeMap.id}/${nodeId}/${file.name}`;
+      const mapId = activeMapIdRef.current;
+      const path = `users/${user.uid}/mindmaps/${mapId}/${nodeId}/${file.name}`;
       const storageRef = ref(storage, path);
       const uploadTask = uploadBytesResumable(storageRef, file);
       await new Promise<void>((resolve, reject) => {
@@ -338,8 +413,8 @@ function MindmapContent() {
   };
 
   const removeNodeImage = async (nodeId: string) => {
-    if (!activeMap) return;
-    const node = activeMap.nodes.find((n) => n.id === nodeId);
+    if (!activeMapRef.current) return;
+    const node = activeMapRef.current.nodes.find((n) => n.id === nodeId);
     if (node?.imagePath) {
       try { await deleteObject(ref(storage, node.imagePath)); } catch { /* ignore */ }
     }
@@ -353,15 +428,10 @@ function MindmapContent() {
 
   // ========== Edge Operations ==========
   const addEdge = (from: string, to: string) => {
-    if (!activeMap) return;
-    if (activeMap.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))) return;
-    const newEdge: MindMapEdge = {
-      id: `e-${Date.now()}`,
-      from,
-      to,
-      style: edgeStyle,
-      color: '#888',
-    };
+    const map = activeMapRef.current;
+    if (!map) return;
+    if (map.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))) return;
+    const newEdge: MindMapEdge = { id: `e-${Date.now()}`, from, to, style: edgeStyle, color: '#888' };
     updateMap((m) => ({ ...m, edges: [...m.edges, newEdge] }));
   };
 
@@ -388,9 +458,7 @@ function MindmapContent() {
     const cy = node.y + node.height / 2;
     const dx = px - cx;
     const dy = py - cy;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    if (absDx > absDy) return dx > 0 ? 'right' : 'left';
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
     return dy > 0 ? 'bottom' : 'top';
   };
 
@@ -400,86 +468,139 @@ function MindmapContent() {
     const from = getConnectionPoint(fromNode, fromSide);
     const to = getConnectionPoint(toNode, toSide);
 
-    if (style === 'straight') {
-      return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
-    }
+    if (style === 'straight') return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const ctrl = Math.min(dist * 0.4, 120);
     const dirFrom = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] }[fromSide] || [0, 0];
     const dirTo = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] }[toSide] || [0, 0];
-    const cx1 = from.x + dirFrom[0] * ctrl;
-    const cy1 = from.y + dirFrom[1] * ctrl;
-    const cx2 = to.x + dirTo[0] * ctrl;
-    const cy2 = to.y + dirTo[1] * ctrl;
-    return `M ${from.x} ${from.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${to.x} ${to.y}`;
+    return `M ${from.x} ${from.y} C ${from.x + dirFrom[0] * ctrl} ${from.y + dirFrom[1] * ctrl}, ${to.x + dirTo[0] * ctrl} ${to.y + dirTo[1] * ctrl}, ${to.x} ${to.y}`;
   };
 
-  // ========== Canvas Interaction (Mouse) ==========
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.target !== canvasRef.current && !(e.target as HTMLElement).classList.contains('canvas-bg')) return;
-    setSelectedNodeIds(new Set());
-    setSelectedEdgeId(null);
-    setEditingNodeId(null);
-    setIsPanning(true);
-    setPanStart({ x: e.clientX - viewportX, y: e.clientY - viewportY });
+  // ========== Pointer Interaction (unified mouse/touch) ==========
+  // Use document-level listeners for move/up to guarantee release
+
+  const startPan = (clientX: number, clientY: number) => {
+    const d = dragRef.current;
+    d.mode = 'pan';
+    d.startX = clientX - vp.x;
+    d.startY = clientY - vp.y;
+    d.moved = false;
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
+  const startNodeDrag = (clientX: number, clientY: number, nodeId: string) => {
+    const d = dragRef.current;
     const rect = canvasRef.current?.getBoundingClientRect();
-    if (rect) {
-      setMousePos({
-        x: (e.clientX - rect.left - viewportX) / zoom,
-        y: (e.clientY - rect.top - viewportY) / zoom,
-      });
-    }
+    const node = activeMapRef.current?.nodes.find((n) => n.id === nodeId);
+    if (!node || !rect) return;
+    d.mode = 'node';
+    d.nodeId = nodeId;
+    d.offsetX = (clientX - rect.left - vp.x) / vp.zoom - node.x;
+    d.offsetY = (clientY - rect.top - vp.y) / vp.zoom - node.y;
+    d.moved = false;
+    // Save snapshot before drag for undo
+    const map = activeMapRef.current;
+    if (map) pushHistory(activeMapIdRef.current, { nodes: [...map.nodes], edges: [...map.edges] });
+  };
 
-    if (isPanning) {
-      setViewportX(e.clientX - panStart.x);
-      setViewportY(e.clientY - panStart.y);
+  const handlePointerMove = useCallback((clientX: number, clientY: number) => {
+    const d = dragRef.current;
+    if (d.mode === 'pan') {
+      vpRef.current.x = clientX - d.startX;
+      vpRef.current.y = clientY - d.startY;
+      d.moved = true;
+      kick();
       return;
     }
-
-    if (draggingNodeId) {
-      const newX = (e.clientX - (rect?.left || 0) - viewportX) / zoom - dragOffset.x;
-      const newY = (e.clientY - (rect?.top || 0) - viewportY) / zoom - dragOffset.y;
+    if (d.mode === 'node' && d.nodeId) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const newX = (clientX - rect.left - vpRef.current.x) / vpRef.current.zoom - d.offsetX;
+      const newY = (clientY - rect.top - vpRef.current.y) / vpRef.current.zoom - d.offsetY;
+      d.moved = true;
       setMindmaps((prev) =>
         prev.map((m) =>
-          m.id === activeMapId
-            ? { ...m, nodes: m.nodes.map((n) => (n.id === draggingNodeId ? { ...n, x: newX, y: newY } : n)) }
+          m.id === activeMapIdRef.current
+            ? { ...m, nodes: m.nodes.map((n) => (n.id === d.nodeId ? { ...n, x: newX, y: newY } : n)) }
             : m
         )
       );
     }
-  };
+  }, []);
 
-  const handleCanvasMouseUp = () => {
-    if (isPanning) {
-      setIsPanning(false);
-      updateMap((m) => ({ ...m, viewportX, viewportY }));
+  const handlePointerUp = useCallback(() => {
+    const d = dragRef.current;
+    if (d.mode === 'pan') {
+      // Save viewport
+      const { x, y } = vpRef.current;
+      updateMapDirect((m) => ({ ...m, viewportX: x, viewportY: y }));
     }
-    if (draggingNodeId) {
-      setDraggingNodeId(null);
-      const map = mindmaps.find((m) => m.id === activeMapId);
-      if (map) debouncedSave(map);
+    if (d.mode === 'node' && d.nodeId) {
+      if (d.moved) {
+        // Node was dragged — save (history already pushed in startNodeDrag)
+        const map = mindmapsRef.current.find((m) => m.id === activeMapIdRef.current);
+        if (map) debouncedSave(map);
+      } else {
+        // No movement — undo the history push from startNodeDrag
+        const h = getHistory(activeMapIdRef.current);
+        if (h.past.length > 0) h.past.pop();
+      }
     }
-    if (connectingFrom) {
-      setConnectingFrom(null);
-    }
+    d.mode = 'none';
+    d.nodeId = null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSave]);
+
+  // Document-level mouse listeners
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (dragRef.current.mode !== 'none') {
+        handlePointerMove(e.clientX, e.clientY);
+      }
+      // Update mousePos for connection drawing
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        setMousePos({
+          x: (e.clientX - rect.left - vpRef.current.x) / vpRef.current.zoom,
+          y: (e.clientY - rect.top - vpRef.current.y) / vpRef.current.zoom,
+        });
+      }
+    };
+    const onMouseUp = () => {
+      if (dragRef.current.mode !== 'none') {
+        handlePointerUp();
+      }
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [handlePointerMove, handlePointerUp]);
+
+  // Canvas mouse down — starts pan
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    // Only start pan if clicking on canvas bg (not on nodes)
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-node-id]')) return;
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeId(null);
+    setEditingNodeId(null);
+    startPan(e.clientX, e.clientY);
   };
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.92 : 1.08;
-    setZoom((z) => {
-      const nz = Math.max(0.25, Math.min(2.5, z * delta));
-      updateMap((m) => ({ ...m, zoom: nz }));
-      return nz;
-    });
+    const nz = Math.max(0.25, Math.min(2.5, vpRef.current.zoom * delta));
+    vpRef.current.zoom = nz;
+    updateMapDirect((m) => ({ ...m, zoom: nz }));
+    kick();
   };
 
-  // Node interactions (Mouse)
+  // Node mouse down — starts node drag
   const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
     e.stopPropagation();
     if (connectingFrom) return;
@@ -495,19 +616,11 @@ function MindmapContent() {
       return;
     }
 
-    // Single select
-    if (!selectedNodeIds.has(nodeId)) {
+    if (!selectedNodeIdsRef.current.has(nodeId)) {
       setSelectedNodeIds(new Set([nodeId]));
     }
     setSelectedEdgeId(null);
-    const rect = canvasRef.current?.getBoundingClientRect();
-    const node = activeMap?.nodes.find((n) => n.id === nodeId);
-    if (!node || !rect) return;
-    setDraggingNodeId(nodeId);
-    setDragOffset({
-      x: (e.clientX - rect.left - viewportX) / zoom - node.x,
-      y: (e.clientY - rect.top - viewportY) / zoom - node.y,
-    });
+    startNodeDrag(e.clientX, e.clientY, nodeId);
   };
 
   const handleNodeMouseUp = (nodeId: string) => {
@@ -529,55 +642,43 @@ function MindmapContent() {
     if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
 
     if (e.touches.length === 2) {
-      // Pinch zoom
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       t.lastDist = Math.sqrt(dx * dx + dy * dy);
-      t.isPan = false;
-      t.isNodeDrag = false;
+      dragRef.current.mode = 'none';
       return;
     }
 
     const touch = e.touches[0];
-    t.startX = touch.clientX;
-    t.startY = touch.clientY;
-    t.moved = false;
-
-    // Check if touching a node
     const target = e.target as HTMLElement;
     const nodeEl = target.closest('[data-node-id]') as HTMLElement | null;
+
     if (nodeEl) {
       const nodeId = nodeEl.getAttribute('data-node-id')!;
-      const rect = canvasRef.current?.getBoundingClientRect();
-      const node = activeMap?.nodes.find((n) => n.id === nodeId);
-      if (node && rect) {
-        t.isNodeDrag = true;
-        t.nodeId = nodeId;
-        t.offsetX = (touch.clientX - rect.left - viewportX) / zoom - node.x;
-        t.offsetY = (touch.clientY - rect.top - viewportY) / zoom - node.y;
-        if (!selectedNodeIds.has(nodeId)) {
-          setSelectedNodeIds(new Set([nodeId]));
-        }
-        setSelectedEdgeId(null);
-
-        // Long press = multi-select toggle
-        t.longPressTimer = setTimeout(() => {
-          setSelectedNodeIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(nodeId) && next.size > 1) next.delete(nodeId);
-            else next.add(nodeId);
-            return next;
-          });
-          t.isNodeDrag = false; // cancel drag after long press
-        }, 500);
+      if (!selectedNodeIdsRef.current.has(nodeId)) {
+        setSelectedNodeIds(new Set([nodeId]));
       }
+      setSelectedEdgeId(null);
+      startNodeDrag(touch.clientX, touch.clientY, nodeId);
+
+      // Long press = multi-select toggle
+      t.longPressTimer = setTimeout(() => {
+        setSelectedNodeIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(nodeId) && next.size > 1) next.delete(nodeId);
+          else next.add(nodeId);
+          return next;
+        });
+        dragRef.current.mode = 'none';
+      }, 500);
       return;
     }
 
     // Pan canvas
-    t.isPan = true;
-    t.isNodeDrag = false;
-    setPanStart({ x: touch.clientX - viewportX, y: touch.clientY - viewportY });
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeId(null);
+    setEditingNodeId(null);
+    startPan(touch.clientX, touch.clientY);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -585,102 +686,64 @@ function MindmapContent() {
     if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
 
     if (e.touches.length === 2) {
-      // Pinch zoom
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (t.lastDist > 0) {
         const scale = dist / t.lastDist;
-        setZoom((z) => {
-          const nz = Math.max(0.25, Math.min(2.5, z * scale));
-          updateMap((m) => ({ ...m, zoom: nz }));
-          return nz;
-        });
+        const nz = Math.max(0.25, Math.min(2.5, vpRef.current.zoom * scale));
+        vpRef.current.zoom = nz;
+        updateMapDirect((m) => ({ ...m, zoom: nz }));
+        kick();
       }
       t.lastDist = dist;
       return;
     }
 
-    const touch = e.touches[0];
-    const dx = touch.clientX - t.startX;
-    const dy = touch.clientY - t.startY;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) t.moved = true;
-
-    if (t.isNodeDrag && t.nodeId) {
+    if (dragRef.current.mode !== 'none') {
       e.preventDefault();
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const newX = (touch.clientX - rect.left - viewportX) / zoom - t.offsetX;
-      const newY = (touch.clientY - rect.top - viewportY) / zoom - t.offsetY;
-      setMindmaps((prev) =>
-        prev.map((m) =>
-          m.id === activeMapId
-            ? { ...m, nodes: m.nodes.map((n) => (n.id === t.nodeId ? { ...n, x: newX, y: newY } : n)) }
-            : m
-        )
-      );
-      return;
-    }
-
-    if (t.isPan) {
-      setViewportX(touch.clientX - panStart.x);
-      setViewportY(touch.clientY - panStart.y);
+      handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = () => {
     const t = touchRef.current;
     if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
-
-    if (t.isPan) {
-      t.isPan = false;
-      updateMap((m) => ({ ...m, viewportX, viewportY }));
-    }
-    if (t.isNodeDrag && t.nodeId) {
-      if (!t.moved) {
-        // Tap on node = select
-        setSelectedNodeIds(new Set([t.nodeId]));
-      } else {
-        // Dragged node — save
-        const map = mindmaps.find((m) => m.id === activeMapId);
-        if (map) debouncedSave(map);
-      }
-      t.isNodeDrag = false;
-      t.nodeId = null;
-    }
-    if (!t.moved && !t.isNodeDrag && !t.isPan) {
-      // Tap on empty canvas
-      const target = e.target as HTMLElement;
-      if (target === canvasRef.current || target.classList.contains('canvas-bg')) {
-        setSelectedNodeIds(new Set());
-        setSelectedEdgeId(null);
-        setEditingNodeId(null);
-      }
-    }
     t.lastDist = 0;
+
+    if (dragRef.current.mode !== 'none') {
+      handlePointerUp();
+    }
   };
 
   // Reset view
   const resetView = () => {
-    setViewportX(0);
-    setViewportY(0);
-    setZoom(1);
-    updateMap((m) => ({ ...m, viewportX: 0, viewportY: 0, zoom: 1 }));
+    vpRef.current = { x: 0, y: 0, zoom: 1 };
+    updateMapDirect((m) => ({ ...m, viewportX: 0, viewportY: 0, zoom: 1 }));
+    kick();
   };
 
-  // Delete key
+  // Keyboard
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (editingNodeId) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedEdgeId) { deleteEdge(selectedEdgeId); }
-        else if (selectedNodeIds.size > 0) { deleteSelectedNodes(); }
+        if (selectedEdgeId) deleteEdge(selectedEdgeId);
+        else if (selectedNodeIdsRef.current.size > 0) deleteSelectedNodes();
       }
       if (e.key === 'Escape') {
         setSelectedNodeIds(new Set());
         setSelectedEdgeId(null);
         setEditingNodeId(null);
         setConnectingFrom(null);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        redo();
       }
     };
     window.addEventListener('keydown', handler);
@@ -779,6 +842,16 @@ function MindmapContent() {
               />
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Undo / Redo */}
+              <button onClick={undo} disabled={!canUndo} title="되돌리기 (Ctrl+Z)" className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              </button>
+              <button onClick={redo} disabled={!canRedo} title="다시 실행 (Ctrl+Shift+Z)" className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+              </button>
+
+              <div className="w-px h-4 bg-border mx-0.5" />
+
               {/* Add node */}
               <button
                 onClick={addNode}
@@ -804,47 +877,31 @@ function MindmapContent() {
 
               {/* Zoom */}
               <button
-                onClick={() => { const nz = Math.min(2.5, zoom * 1.2); setZoom(nz); updateMap((m) => ({ ...m, zoom: nz })); }}
+                onClick={() => { vpRef.current.zoom = Math.min(2.5, vp.zoom * 1.2); updateMapDirect((m) => ({ ...m, zoom: vpRef.current.zoom })); kick(); }}
                 className="w-7 h-7 flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors text-xs"
                 title="확대"
-              >
-                +
-              </button>
-              <span className="text-[10px] text-text-muted w-8 md:w-10 text-center">{Math.round(zoom * 100)}%</span>
+              >+</button>
+              <span className="text-[10px] text-text-muted w-8 md:w-10 text-center">{Math.round(vp.zoom * 100)}%</span>
               <button
-                onClick={() => { const nz = Math.max(0.25, zoom * 0.8); setZoom(nz); updateMap((m) => ({ ...m, zoom: nz })); }}
+                onClick={() => { vpRef.current.zoom = Math.max(0.25, vp.zoom * 0.8); updateMapDirect((m) => ({ ...m, zoom: vpRef.current.zoom })); kick(); }}
                 className="w-7 h-7 flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors text-xs"
                 title="축소"
-              >
-                −
-              </button>
+              >−</button>
               <button
                 onClick={resetView}
                 className="hidden md:flex h-7 px-2 text-[10px] text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors items-center"
                 title="뷰 초기화"
-              >
-                초기화
-              </button>
+              >초기화</button>
 
               {/* Multi-select actions */}
               {selectedNodeIds.size >= 2 && (
                 <>
                   <div className="w-px h-4 bg-border mx-0.5" />
-                  <button
-                    onClick={connectSelectedNodes}
-                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 bg-[#8b5cf6]/10 text-[#8b5cf6] rounded-lg text-[11px] font-semibold hover:bg-[#8b5cf6]/20 transition-colors"
-                    title="선택된 노드 연결"
-                  >
-                    <span className="hidden md:inline">🔗 연결</span>
-                    <span className="md:hidden">🔗</span>
+                  <button onClick={connectSelectedNodes} className="h-7 px-2 md:px-2.5 flex items-center gap-1 bg-[#8b5cf6]/10 text-[#8b5cf6] rounded-lg text-[11px] font-semibold hover:bg-[#8b5cf6]/20 transition-colors" title="선택된 노드 연결">
+                    <span className="hidden md:inline">🔗 연결</span><span className="md:hidden">🔗</span>
                   </button>
-                  <button
-                    onClick={deleteSelectedNodes}
-                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors"
-                    title="선택된 노드 삭제"
-                  >
-                    <span className="hidden md:inline">🗑 삭제</span>
-                    <span className="md:hidden">🗑</span>
+                  <button onClick={deleteSelectedNodes} className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors" title="선택된 노드 삭제">
+                    <span className="hidden md:inline">🗑 삭제</span><span className="md:hidden">🗑</span>
                   </button>
                 </>
               )}
@@ -853,12 +910,8 @@ function MindmapContent() {
               {selectedNodeIds.size === 1 && (
                 <>
                   <div className="w-px h-4 bg-border mx-0.5" />
-                  <button
-                    onClick={() => { if (selectedNodeId) deleteNode(selectedNodeId); }}
-                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors"
-                  >
-                    <span className="hidden md:inline">🗑 삭제</span>
-                    <span className="md:hidden">🗑</span>
+                  <button onClick={() => { if (selectedNodeId) deleteNode(selectedNodeId); }} className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors">
+                    <span className="hidden md:inline">🗑 삭제</span><span className="md:hidden">🗑</span>
                   </button>
                 </>
               )}
@@ -867,12 +920,7 @@ function MindmapContent() {
               {selectedEdgeId && (
                 <>
                   <div className="w-px h-4 bg-border mx-0.5" />
-                  <button
-                    onClick={() => deleteEdge(selectedEdgeId)}
-                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors"
-                  >
-                    🗑
-                  </button>
+                  <button onClick={() => deleteEdge(selectedEdgeId)} className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors">🗑</button>
                 </>
               )}
             </div>
@@ -883,9 +931,6 @@ function MindmapContent() {
             ref={canvasRef}
             className="flex-1 overflow-hidden relative cursor-grab active:cursor-grabbing"
             onMouseDown={handleCanvasMouseDown}
-            onMouseMove={handleCanvasMouseMove}
-            onMouseUp={handleCanvasMouseUp}
-            onMouseLeave={handleCanvasMouseUp}
             onWheel={handleWheel}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
@@ -897,15 +942,15 @@ function MindmapContent() {
               className="canvas-bg absolute inset-0"
               style={{
                 backgroundImage: `radial-gradient(circle, var(--color-border) 1px, transparent 1px)`,
-                backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
-                backgroundPosition: `${viewportX}px ${viewportY}px`,
+                backgroundSize: `${24 * vp.zoom}px ${24 * vp.zoom}px`,
+                backgroundPosition: `${vp.x}px ${vp.y}px`,
               }}
             />
 
             {/* Viewport transform wrapper */}
             <div
               style={{
-                transform: `translate(${viewportX}px, ${viewportY}px) scale(${zoom})`,
+                transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
                 transformOrigin: '0 0',
                 position: 'absolute',
                 top: 0,
@@ -915,9 +960,7 @@ function MindmapContent() {
               }}
             >
               {/* SVG layer for edges */}
-              <svg
-                style={{ position: 'absolute', top: 0, left: 0, width: '10000px', height: '10000px', pointerEvents: 'none', overflow: 'visible' }}
-              >
+              <svg style={{ position: 'absolute', top: 0, left: 0, width: '10000px', height: '10000px', pointerEvents: 'none', overflow: 'visible' }}>
                 {activeMap.edges.map((edge) => {
                   const fromNode = activeMap.nodes.find((n) => n.id === edge.from);
                   const toNode = activeMap.nodes.find((n) => n.id === edge.to);
@@ -925,54 +968,22 @@ function MindmapContent() {
                   const path = calcEdgePath(fromNode, toNode, edge.style);
                   return (
                     <g key={edge.id}>
-                      <path
-                        d={path}
-                        fill="none"
-                        stroke="transparent"
-                        strokeWidth="16"
-                        style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                        onClick={(e) => { e.stopPropagation(); setSelectedEdgeId(edge.id); setSelectedNodeIds(new Set()); }}
-                      />
-                      <path
-                        d={path}
-                        fill="none"
-                        stroke={selectedEdgeId === edge.id ? '#e94560' : (edge.color || '#888')}
-                        strokeWidth={selectedEdgeId === edge.id ? 3 : 2}
-                        strokeLinecap="round"
-                        style={{ pointerEvents: 'none' }}
-                      />
+                      <path d={path} fill="none" stroke="transparent" strokeWidth="16" style={{ pointerEvents: 'stroke', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelectedEdgeId(edge.id); setSelectedNodeIds(new Set()); }} />
+                      <path d={path} fill="none" stroke={selectedEdgeId === edge.id ? '#e94560' : (edge.color || '#888')} strokeWidth={selectedEdgeId === edge.id ? 3 : 2} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
                       {(() => {
                         const toSide = getClosestSide(toNode, fromNode.x + fromNode.width / 2, fromNode.y + fromNode.height / 2);
                         const pt = getConnectionPoint(toNode, toSide);
                         const angle = { top: 90, right: 180, bottom: 270, left: 0 }[toSide] || 0;
-                        return (
-                          <polygon
-                            points="-6,-4 0,0 -6,4"
-                            fill={selectedEdgeId === edge.id ? '#e94560' : (edge.color || '#888')}
-                            transform={`translate(${pt.x},${pt.y}) rotate(${angle})`}
-                            style={{ pointerEvents: 'none' }}
-                          />
-                        );
+                        return <polygon points="-6,-4 0,0 -6,4" fill={selectedEdgeId === edge.id ? '#e94560' : (edge.color || '#888')} transform={`translate(${pt.x},${pt.y}) rotate(${angle})`} style={{ pointerEvents: 'none' }} />;
                       })()}
                     </g>
                   );
                 })}
-
-                {/* Temp edge while connecting */}
                 {connectingFrom && (() => {
                   const fromNode = activeMap.nodes.find((n) => n.id === connectingFrom.nodeId);
                   if (!fromNode) return null;
                   const from = getConnectionPoint(fromNode, connectingFrom.side);
-                  return (
-                    <path
-                      d={`M ${from.x} ${from.y} L ${mousePos.x} ${mousePos.y}`}
-                      fill="none"
-                      stroke="#e94560"
-                      strokeWidth="2"
-                      strokeDasharray="6 4"
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  );
+                  return <path d={`M ${from.x} ${from.y} L ${mousePos.x} ${mousePos.y}`} fill="none" stroke="#e94560" strokeWidth="2" strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />;
                 })()}
               </svg>
 
@@ -997,11 +1008,7 @@ function MindmapContent() {
                     onMouseUp={() => handleNodeMouseUp(node.id)}
                     onDoubleClick={() => { setEditingNodeId(node.id); setSelectedNodeIds(new Set([node.id])); }}
                   >
-                    {/* Node background */}
-                    <div
-                      className="w-full h-full rounded-xl p-3 relative"
-                      style={{ backgroundColor: node.color, minHeight: `${node.height}px` }}
-                    >
+                    <div className="w-full h-full rounded-xl p-3 relative" style={{ backgroundColor: node.color, minHeight: `${node.height}px` }}>
                       {/* Connector dots */}
                       {(isSelected || connectingFrom) && ['top', 'right', 'bottom', 'left'].map((side) => {
                         const pos = {
@@ -1011,12 +1018,7 @@ function MindmapContent() {
                           left: { left: '-5px', top: '50%', transform: 'translateY(-50%)' },
                         }[side] as React.CSSProperties;
                         return (
-                          <div
-                            key={side}
-                            className="absolute w-[10px] h-[10px] bg-white border-2 border-[#888] rounded-full cursor-crosshair hover:border-[#e94560] hover:scale-125 transition-all z-50"
-                            style={pos}
-                            onMouseDown={(e) => handleConnectorMouseDown(e, node.id, side)}
-                          />
+                          <div key={side} className="absolute w-[10px] h-[10px] bg-white border-2 border-[#888] rounded-full cursor-crosshair hover:border-[#e94560] hover:scale-125 transition-all z-50" style={pos} onMouseDown={(e) => handleConnectorMouseDown(e, node.id, side)} />
                         );
                       })}
 
@@ -1024,47 +1026,18 @@ function MindmapContent() {
                       {isSelected && selectedNodeIds.size === 1 && !isEditing && (
                         <div className="absolute -top-8 left-0 flex gap-1 z-50">
                           {NODE_COLORS.map((c) => (
-                            <button
-                              key={c}
-                              onClick={(e) => { e.stopPropagation(); updateNodeColor(node.id, c); }}
-                              className="w-5 h-5 rounded-full border-2 border-white/50 hover:scale-110 transition-transform shadow-sm"
-                              style={{ backgroundColor: c }}
-                            />
+                            <button key={c} onClick={(e) => { e.stopPropagation(); updateNodeColor(node.id, c); }} className="w-5 h-5 rounded-full border-2 border-white/50 hover:scale-110 transition-transform shadow-sm" style={{ backgroundColor: c }} />
                           ))}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.setAttribute('data-node-id', node.id); fileInputRef.current?.click(); }}
-                            className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm"
-                            title="이미지 추가"
-                          >
-                            📷
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }}
-                            className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm text-[#e94560]"
-                            title="삭제"
-                          >
-                            ×
-                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); fileInputRef.current?.setAttribute('data-node-id', node.id); fileInputRef.current?.click(); }} className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm" title="이미지 추가">📷</button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm text-[#e94560]" title="삭제">×</button>
                         </div>
                       )}
 
                       {/* Image */}
                       {node.imageURL && (
                         <div className="mb-2 relative group/img">
-                          <img
-                            src={node.imageURL}
-                            alt=""
-                            className="w-full rounded-lg object-cover max-h-32"
-                            draggable={false}
-                          />
-                          {isSelected && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); removeNodeImage(node.id); }}
-                              className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-xs flex items-center justify-center hover:bg-black/70"
-                            >
-                              ×
-                            </button>
-                          )}
+                          <img src={node.imageURL} alt="" className="w-full rounded-lg object-cover max-h-32" draggable={false} />
+                          {isSelected && <button onClick={(e) => { e.stopPropagation(); removeNodeImage(node.id); }} className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-xs flex items-center justify-center hover:bg-black/70">×</button>}
                         </div>
                       )}
                       {uploadingNodeId === node.id && (
@@ -1090,10 +1063,7 @@ function MindmapContent() {
                           style={{ cursor: 'text' }}
                         />
                       ) : (
-                        <div
-                          className="text-white text-sm whitespace-pre-wrap break-words select-none"
-                          style={{ minHeight: '24px', cursor: 'move' }}
-                        >
+                        <div className="text-white text-sm whitespace-pre-wrap break-words select-none" style={{ minHeight: '24px', cursor: 'move' }}>
                           {node.text || <span className="opacity-50">더블클릭하여 편집</span>}
                         </div>
                       )}
@@ -1123,18 +1093,12 @@ function MindmapContent() {
             </div>
 
             {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                const nodeId = fileInputRef.current?.getAttribute('data-node-id');
-                if (file && nodeId) handleImageUpload(nodeId, file);
-                e.target.value = '';
-              }}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+              const file = e.target.files?.[0];
+              const nodeId = fileInputRef.current?.getAttribute('data-node-id');
+              if (file && nodeId) handleImageUpload(nodeId, file);
+              e.target.value = '';
+            }} />
           </div>
         </div>
       ) : (
@@ -1143,10 +1107,7 @@ function MindmapContent() {
             <p className="text-6xl mb-4">🧠</p>
             <p className="text-lg font-bold mb-2">마인드맵</p>
             <p className="text-sm text-text-inactive mb-6">아이디어를 시각적으로 정리하고 연결하세요</p>
-            <button
-              onClick={createMindmap}
-              className="px-6 py-2.5 bg-gradient-to-r from-[#e94560] to-[#533483] text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity"
-            >
+            <button onClick={createMindmap} className="px-6 py-2.5 bg-gradient-to-r from-[#e94560] to-[#533483] text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity">
               + 새 마인드맵 만들기
             </button>
           </div>
@@ -1158,13 +1119,11 @@ function MindmapContent() {
 
 export default function MindmapPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="p-8 flex items-center justify-center min-h-[50vh]">
-          <div className="w-6 h-6 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={
+      <div className="p-8 flex items-center justify-center min-h-[50vh]">
+        <div className="w-6 h-6 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
       <MindmapContent />
     </Suspense>
   );

@@ -269,7 +269,7 @@ function MindmapContent() {
           updateMap((m) => ({
             ...m,
             nodes: m.nodes.map((n) =>
-              n.id === nodeId ? { ...n, imageURL: downloadURL, imagePath: path } : n
+              n.id === nodeId ? { ...n, imageURL: downloadURL, imagePath: path, imageSize: file.size } : n
             ),
           }));
           resolve();
@@ -290,7 +290,7 @@ function MindmapContent() {
     updateMap((m) => ({
       ...m,
       nodes: m.nodes.map((n) =>
-        n.id === nodeId ? { ...n, imageURL: undefined, imagePath: undefined } : n
+        n.id === nodeId ? { ...n, imageURL: undefined, imagePath: undefined, imageSize: undefined } : n
       ),
     }));
   };

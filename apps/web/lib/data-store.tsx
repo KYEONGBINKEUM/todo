@@ -42,7 +42,7 @@ function estimateTextBytes(text: string): number {
 }
 
 /** 모든 데이터의 실사용량 계산 (텍스트 + 첨부파일) */
-function calcStorageUsed(tasks: TaskData[], notes: NoteData[]): number {
+function calcStorageUsed(tasks: TaskData[], notes: NoteData[], mindmaps: MindMapData[]): number {
   let total = 0;
   for (const t of tasks) {
     total += estimateTextBytes(t.title || '');
@@ -55,6 +55,13 @@ function calcStorageUsed(tasks: TaskData[], notes: NoteData[]): number {
     for (const b of n.blocks ?? []) {
       total += estimateTextBytes(b.content || '');
       total += estimateTextBytes(b.children || '');
+    }
+  }
+  for (const m of mindmaps) {
+    total += estimateTextBytes(m.title || '');
+    for (const node of m.nodes ?? []) {
+      total += estimateTextBytes(node.text || '');
+      if (node.imageSize) total += node.imageSize;
     }
   }
   return total;
@@ -149,7 +156,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [user, authLoading]);
 
-  const storageUsed = calcStorageUsed(tasks, notes);
+  const storageUsed = calcStorageUsed(tasks, notes, mindmaps);
 
   return (
     <DataStoreContext.Provider value={{ tasks, lists, notes, folders, mindmaps, loading, storageUsed }}>

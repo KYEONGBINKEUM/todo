@@ -133,6 +133,7 @@ export interface MindMapNode {
   color: string;
   imageURL?: string;
   imagePath?: string;
+  imageSize?: number;
 }
 
 export interface MindMapEdge {

@@ -654,21 +654,37 @@ function NotesContent() {
     return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
   };
 
+  // 자동 높이 조절 textarea 헬퍼
+  const autoResize = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  };
+
   const renderBlock = (block: NoteBlock) => {
     const baseClass = 'w-full bg-transparent outline-none resize-none text-text-primary placeholder-text-inactive';
+    const taProps = (extra: string, placeholder: string) => ({
+      'data-block-id': block.id,
+      value: block.content,
+      onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => { handleBlockInput(block.id, e.target.value); autoResize(e.target); },
+      onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => handleBlockKeyDown(e, block),
+      onFocus: (e: React.FocusEvent<HTMLTextAreaElement>) => autoResize(e.target),
+      placeholder,
+      rows: 1,
+      className: `${baseClass} ${extra}`,
+    });
 
     switch (block.type) {
       case 'heading1':
-        return <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="제목 1" className={`${baseClass} text-3xl font-extrabold`} />;
+        return <textarea {...taProps('text-3xl font-extrabold', '제목 1')} />;
       case 'heading2':
-        return <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="제목 2" className={`${baseClass} text-xl font-bold`} />;
+        return <textarea {...taProps('text-xl font-bold', '제목 2')} />;
       case 'heading3':
-        return <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="제목 3" className={`${baseClass} text-lg font-semibold`} />;
+        return <textarea {...taProps('text-lg font-semibold', '제목 3')} />;
       case 'bullet':
         return (
           <div className="flex items-start gap-2">
             <span className="text-[#e94560] mt-1 select-none text-lg leading-none">•</span>
-            <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="리스트 항목" className={`${baseClass} text-sm flex-1`} />
+            <textarea {...taProps('text-sm flex-1', '리스트 항목')} />
           </div>
         );
       case 'numbered':
@@ -681,7 +697,7 @@ function NotesContent() {
                 return `${idx + 1}.`;
               })()}
             </span>
-            <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="번호 목록" className={`${baseClass} text-sm flex-1`} />
+            <textarea {...taProps('text-sm flex-1', '번호 목록')} />
           </div>
         );
       case 'todo':
@@ -694,14 +710,14 @@ function NotesContent() {
             >
               {block.checked && <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
             </button>
-            <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="할 일" className={`${baseClass} text-sm flex-1 ${block.checked ? 'line-through text-text-inactive' : ''}`} />
+            <textarea {...taProps(`text-sm flex-1 ${block.checked ? 'line-through text-text-inactive' : ''}`, '할 일')} />
           </div>
         );
       case 'quote':
         return (
           <div className="flex items-stretch gap-0 bg-[#e94560]/5 rounded-r-lg py-1">
             <div className="w-[3px] bg-gradient-to-b from-[#e94560] to-[#533483] rounded-full flex-shrink-0 mr-3" />
-            <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="인용문" className={`${baseClass} text-sm italic text-text-secondary flex-1 bg-transparent`} />
+            <textarea {...taProps('text-sm italic text-text-secondary flex-1 bg-transparent', '인용문')} />
           </div>
         );
       case 'divider':
@@ -717,14 +733,7 @@ function NotesContent() {
         return (
           <div className="flex items-center gap-2 p-2 bg-background border border-border rounded-lg group">
             <span className="text-[#3b82f6] flex-shrink-0">🔗</span>
-            <input
-              data-block-id={block.id}
-              value={block.content}
-              onChange={(e) => handleBlockInput(block.id, e.target.value)}
-              onKeyDown={(e) => handleBlockKeyDown(e, block)}
-              placeholder="링크 제목"
-              className={`${baseClass} text-sm text-[#3b82f6] underline flex-1`}
-            />
+            <textarea {...taProps('text-sm text-[#3b82f6] underline flex-1', '링크 제목')} />
             <input
               value={block.url ?? ''}
               onChange={(e) => updateBlockField(block.id, { url: e.target.value })}
@@ -746,13 +755,15 @@ function NotesContent() {
           <div className="rounded-lg overflow-hidden border border-border/60">
             <div className="flex items-center gap-2 px-3 py-2 bg-background/50 cursor-pointer group/toggle" onClick={() => setOpenToggleIds((prev) => { const next = new Set(prev); if (next.has(block.id)) next.delete(block.id); else next.add(block.id); return next; })}>
               <span className={`text-text-muted transition-transform text-xs ${openToggleIds.has(block.id) ? 'rotate-90' : ''}`}>▶</span>
-              <input
+              <textarea
                 data-block-id={block.id}
                 value={block.content}
-                onChange={(e) => { e.stopPropagation(); handleBlockInput(block.id, e.target.value); }}
+                onChange={(e) => { e.stopPropagation(); handleBlockInput(block.id, e.target.value); autoResize(e.target); }}
                 onKeyDown={(e) => { e.stopPropagation(); handleBlockKeyDown(e, block); }}
                 onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => autoResize(e.target)}
                 placeholder="토글 제목..."
+                rows={1}
                 className={`${baseClass} text-sm font-semibold flex-1`}
               />
             </div>
@@ -760,7 +771,8 @@ function NotesContent() {
               <div className="px-3 py-2 border-t border-border/40 bg-background/20">
                 <textarea
                   value={block.children ?? ''}
-                  onChange={(e) => updateBlockField(block.id, { children: e.target.value })}
+                  onChange={(e) => { updateBlockField(block.id, { children: e.target.value }); autoResize(e.target); }}
+                  onFocus={(e) => autoResize(e.target)}
                   placeholder="내용을 입력하세요..."
                   rows={Math.max(2, (block.children ?? '').split('\n').length)}
                   className={`${baseClass} text-sm resize-none leading-relaxed`}
@@ -770,7 +782,7 @@ function NotesContent() {
           </div>
         );
       default:
-        return <input data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => handleBlockKeyDown(e, block)} placeholder="텍스트를 입력하세요... ( / 로 블록 타입 선택)" className={`${baseClass} text-sm`} />;
+        return <textarea {...taProps('text-sm', '텍스트를 입력하세요... ( / 로 블록 타입 선택)')} />;
     }
   };
 
@@ -1178,8 +1190,15 @@ function NotesContent() {
                       'hover:bg-white/[0.02]'
                     }`}
                   >
-                    <div className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
-                      <span className="text-text-inactive text-[10px]">⋮⋮</span>
+                    <div className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                      <span className="text-text-inactive text-[10px] cursor-grab active:cursor-grabbing">⋮⋮</span>
+                      <button
+                        onClick={() => deleteBlock(block.id)}
+                        className="text-text-inactive hover:text-[#e94560] transition-colors text-[11px] leading-none"
+                        title="블록 삭제"
+                      >
+                        ×
+                      </button>
                     </div>
                     {renderBlock(block)}
 

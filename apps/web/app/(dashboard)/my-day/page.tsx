@@ -93,6 +93,10 @@ export default function MyDayPage() {
 
   // Detail panel
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // 기록 삭제 메뉴
+  const [showCleanup, setShowCleanup] = useState(false);
+  const [cleanupFrom, setCleanupFrom] = useState('');
+  const [cleanupTo, setCleanupTo] = useState('');
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
   const datePickerRef = useRef<HTMLInputElement>(null);
@@ -255,6 +259,48 @@ export default function MyDayPage() {
     await updateTask(user.uid, selectedTaskId, finalUpdates);
   };
 
+  // 과거 기록 삭제
+  const handleCleanupByDate = async (dateStr: string) => {
+    if (!user || !confirm(`${dateStr} 기록을 삭제하시겠습니까?`)) return;
+    const targets = storeTasks.filter((t) => t.myDay && getTaskCreatedDate(t) === dateStr);
+    for (const t of targets) {
+      if (t.attachments?.length) await deleteAttachmentsFromStorage(t.attachments);
+      await deleteTaskDB(user.uid, t.id!);
+    }
+  };
+
+  const handleCleanupByRange = async () => {
+    if (!user || !cleanupFrom || !cleanupTo) return;
+    if (!confirm(`${cleanupFrom} ~ ${cleanupTo} 기간의 기록을 삭제하시겠습니까?`)) return;
+    const targets = storeTasks.filter((t) => {
+      if (!t.myDay) return false;
+      const cd = getTaskCreatedDate(t);
+      return cd >= cleanupFrom && cd <= cleanupTo;
+    });
+    for (const t of targets) {
+      if (t.attachments?.length) await deleteAttachmentsFromStorage(t.attachments);
+      await deleteTaskDB(user.uid, t.id!);
+    }
+    setCleanupFrom(''); setCleanupTo(''); setShowCleanup(false);
+  };
+
+  const handleCleanupBeforeToday = async () => {
+    if (!user) return;
+    const todayDate = getTodayStr();
+    const targets = storeTasks.filter((t) => {
+      if (!t.myDay) return false;
+      const cd = getTaskCreatedDate(t);
+      return cd < todayDate && t.status === 'completed';
+    });
+    if (!targets.length) { alert('삭제할 완료된 과거 기록이 없습니다.'); return; }
+    if (!confirm(`오늘 이전 완료된 기록 ${targets.length}개를 삭제하시겠습니까?`)) return;
+    for (const t of targets) {
+      if (t.attachments?.length) await deleteAttachmentsFromStorage(t.attachments);
+      await deleteTaskDB(user.uid, t.id!);
+    }
+    setShowCleanup(false);
+  };
+
   const getListInfo = (listId: string) =>
     lists.find((l) => l.id === listId) || lists[0] || DEFAULT_LISTS[0];
 
@@ -285,6 +331,54 @@ export default function MyDayPage() {
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">☀️</span>
             <h2 className="text-3xl font-extrabold text-text-primary">{t('myDay.title')}</h2>
+            <div className="ml-auto relative">
+              <button
+                onClick={() => setShowCleanup(!showCleanup)}
+                className="px-3 py-1.5 text-[11px] text-text-muted hover:text-[#e94560] border border-border hover:border-[#e94560]/30 rounded-lg transition-colors"
+              >
+                🗑️ 기록 관리
+              </button>
+              {showCleanup && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-background-card border border-border rounded-xl shadow-2xl z-50 p-4 space-y-3">
+                  <p className="text-xs font-bold text-text-primary">과거 기록 삭제</p>
+
+                  {/* 선택 날짜 삭제 */}
+                  <button
+                    onClick={() => { handleCleanupByDate(selectedDate); setShowCleanup(false); }}
+                    className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-[#e94560]/10 hover:text-[#e94560] rounded-lg transition-colors"
+                  >
+                    📅 {selectedDate} 기록 삭제
+                  </button>
+
+                  {/* 기간 설정 삭제 */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] text-text-muted font-semibold">기간 설정 삭제</p>
+                    <div className="flex gap-1.5">
+                      <input type="date" value={cleanupFrom} onChange={(e) => setCleanupFrom(e.target.value)} className="flex-1 px-2 py-1.5 bg-background border border-border rounded-lg text-[11px] text-text-primary focus:outline-none focus:border-[#e94560]" />
+                      <span className="text-text-muted text-xs self-center">~</span>
+                      <input type="date" value={cleanupTo} onChange={(e) => setCleanupTo(e.target.value)} className="flex-1 px-2 py-1.5 bg-background border border-border rounded-lg text-[11px] text-text-primary focus:outline-none focus:border-[#e94560]" />
+                    </div>
+                    <button
+                      onClick={handleCleanupByRange}
+                      disabled={!cleanupFrom || !cleanupTo}
+                      className="w-full px-3 py-1.5 text-[11px] bg-[#e94560] text-white rounded-lg hover:bg-[#ff5a7a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      기간 내 기록 삭제
+                    </button>
+                  </div>
+
+                  {/* 오늘 이전 전체 삭제 */}
+                  <button
+                    onClick={handleCleanupBeforeToday}
+                    className="w-full text-left px-3 py-2 text-xs text-[#e94560] hover:bg-[#e94560]/10 rounded-lg transition-colors border border-[#e94560]/20"
+                  >
+                    🧹 오늘 이전 완료된 기록 전체 삭제
+                  </button>
+
+                  <button onClick={() => setShowCleanup(false)} className="w-full text-center text-[10px] text-text-muted py-1">닫기</button>
+                </div>
+              )}
+            </div>
           </div>
           <p className="text-text-secondary text-sm">{today}</p>
         </div>

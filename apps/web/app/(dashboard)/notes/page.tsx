@@ -36,6 +36,7 @@ interface Note {
   folderId: string | null;
   linkedTaskId?: string | null;
   linkedTaskIds?: string[];
+  starred: boolean;
 }
 
 interface Folder {
@@ -140,6 +141,7 @@ function NotesContent() {
       folderId: n.folderId,
       linkedTaskId: n.linkedTaskId || null,
       linkedTaskIds: n.linkedTaskIds || [],
+      starred: n.starred ?? false,
     }));
     setNotes(mappedNotes);
     const paramNoteId = searchParams.get('note');
@@ -175,6 +177,7 @@ function NotesContent() {
         icon: note.icon,
         blocks: note.blocks,
         pinned: note.pinned,
+        starred: note.starred,
         tags: note.tags,
         folderId: note.folderId,
         linkedTaskId: note.linkedTaskId,
@@ -303,6 +306,7 @@ function NotesContent() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       pinned: false,
+      starred: false,
       tags: [],
       folderId: folderId ?? null,
       linkedTaskId: null,
@@ -367,6 +371,15 @@ function NotesContent() {
   const togglePin = (id: string) => {
     setNotes((prev) => {
       const updated = prev.map((n) => (n.id === id ? { ...n, pinned: !n.pinned } : n));
+      const note = updated.find((n) => n.id === id);
+      if (note) saveNoteToFirestore(note);
+      return updated;
+    });
+  };
+
+  const toggleStar = (id: string) => {
+    setNotes((prev) => {
+      const updated = prev.map((n) => (n.id === id ? { ...n, starred: !n.starred } : n));
       const note = updated.find((n) => n.id === id);
       if (note) saveNoteToFirestore(note);
       return updated;
@@ -981,6 +994,7 @@ function NotesContent() {
                   onClick={() => setActiveNoteId(note.id)}
                   onDelete={() => deleteNote(note.id)}
                   onTogglePin={() => togglePin(note.id)}
+                  onToggleStar={() => toggleStar(note.id)}
                   getRelativeTime={getRelativeTime}
                   indent={0}
                 />
@@ -1094,7 +1108,7 @@ function NotesContent() {
                         </div>
                       )}
                       {isSubOpen && subNotes.map((note) => (
-                        <NoteTreeItem key={note.id} note={note} isActive={note.id === activeNoteId} onClick={() => setActiveNoteId(note.id)} onDelete={() => deleteNote(note.id)} onTogglePin={() => togglePin(note.id)} getRelativeTime={getRelativeTime} indent={2} />
+                        <NoteTreeItem key={note.id} note={note} isActive={note.id === activeNoteId} onClick={() => setActiveNoteId(note.id)} onDelete={() => deleteNote(note.id)} onTogglePin={() => togglePin(note.id)} onToggleStar={() => toggleStar(note.id)} getRelativeTime={getRelativeTime} indent={2} />
                       ))}
                       {isSubOpen && subNotes.length === 0 && <p className="text-[11px] text-text-inactive pl-16 py-0.5">{t('notes.noNotes')}</p>}
                     </div>
@@ -1103,7 +1117,7 @@ function NotesContent() {
 
                 {/* 폴더 내 노트 */}
                 {isOpen && fNotes.map((note) => (
-                  <NoteTreeItem key={note.id} note={note} isActive={note.id === activeNoteId} onClick={() => setActiveNoteId(note.id)} onDelete={() => deleteNote(note.id)} onTogglePin={() => togglePin(note.id)} getRelativeTime={getRelativeTime} indent={1} />
+                  <NoteTreeItem key={note.id} note={note} isActive={note.id === activeNoteId} onClick={() => setActiveNoteId(note.id)} onDelete={() => deleteNote(note.id)} onTogglePin={() => togglePin(note.id)} onToggleStar={() => toggleStar(note.id)} getRelativeTime={getRelativeTime} indent={1} />
                 ))}
                 {isOpen && fNotes.length === 0 && subFolders.length === 0 && (
                   <p className="text-[11px] text-text-inactive pl-12 py-1">{t('notes.noNotes')}</p>
@@ -1126,6 +1140,7 @@ function NotesContent() {
                   onClick={() => setActiveNoteId(note.id)}
                   onDelete={() => deleteNote(note.id)}
                   onTogglePin={() => togglePin(note.id)}
+                  onToggleStar={() => toggleStar(note.id)}
                   getRelativeTime={getRelativeTime}
                   indent={0}
                 />
@@ -1464,10 +1479,10 @@ export default function NotesPage() {
 // ============================================================================
 
 function NoteTreeItem({
-  note, isActive, onClick, onDelete, onTogglePin, getRelativeTime, indent,
+  note, isActive, onClick, onDelete, onTogglePin, onToggleStar, getRelativeTime, indent,
 }: {
   note: Note; isActive: boolean; onClick: () => void; onDelete: () => void;
-  onTogglePin: () => void; getRelativeTime: (d: string) => string; indent: number;
+  onTogglePin: () => void; onToggleStar: () => void; getRelativeTime: (d: string) => string; indent: number;
 }) {
   const preview = note.blocks.filter((b) => b.type !== 'divider' && b.content).slice(0, 1).map((b) => b.content).join('');
   return (
@@ -1484,6 +1499,7 @@ function NoteTreeItem({
         <p className="text-[9px] text-text-inactive">{getRelativeTime(note.updated_at)}</p>
       </div>
       <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-0.5">
+        <button onClick={(e) => { e.stopPropagation(); onToggleStar(); }} className={`w-5 h-5 flex items-center justify-center rounded text-[10px] ${note.starred ? 'text-amber-400' : 'text-text-muted hover:text-amber-400'}`}>{note.starred ? '★' : '☆'}</button>
         <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }} className={`w-5 h-5 flex items-center justify-center rounded text-[10px] ${note.pinned ? 'text-[#e94560]' : 'text-text-muted hover:text-[#e94560]'}`}>📌</button>
         <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="w-5 h-5 flex items-center justify-center rounded text-text-muted hover:text-[#e94560] text-xs">×</button>
       </div>

@@ -26,6 +26,7 @@ interface MindMap {
   viewportX: number;
   viewportY: number;
   zoom: number;
+  starred: boolean;
   createdAt: string;
 }
 
@@ -86,6 +87,7 @@ function MindmapContent() {
       viewportX: m.viewportX ?? 0,
       viewportY: m.viewportY ?? 0,
       zoom: m.zoom ?? 1,
+      starred: m.starred ?? false,
       createdAt: m.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
     }));
     setMindmaps(mapped);
@@ -155,6 +157,7 @@ function MindmapContent() {
       viewportX: 0,
       viewportY: 0,
       zoom: 1,
+      starred: false,
       createdAt: new Date().toISOString(),
     };
     setMindmaps((prev) => [newMap, ...prev]);
@@ -196,6 +199,16 @@ function MindmapContent() {
     }
     if (user) {
       try { await deleteMindmapDB(user.uid, id); } catch (err) { console.error(err); }
+    }
+  };
+
+  const toggleStar = async (id: string) => {
+    setMindmaps((prev) => prev.map((m) => (m.id === id ? { ...m, starred: !m.starred } : m)));
+    if (user) {
+      const map = mindmaps.find((m) => m.id === id);
+      if (map) {
+        try { await updateMindmapDB(user.uid, id, { starred: !map.starred }); } catch { /* ignore */ }
+      }
     }
   };
 
@@ -530,12 +543,16 @@ function MindmapContent() {
               <span className="text-base flex-shrink-0">🧠</span>
               <span className="flex-1 text-sm font-medium truncate">{m.title || '제목 없음'}</span>
               <span className="text-[10px] text-text-muted flex-shrink-0">{m.nodes.length}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteMindmap(m.id); }}
-                className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-sm flex-shrink-0"
-              >
-                ×
-              </button>
+              <div className="opacity-0 group-hover:opacity-100 flex gap-0.5 flex-shrink-0">
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleStar(m.id); }}
+                  className={`text-[10px] transition-all ${m.starred ? 'text-amber-400 !opacity-100' : 'text-text-muted hover:text-amber-400'}`}
+                >{m.starred ? '★' : '☆'}</button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteMindmap(m.id); }}
+                  className="text-text-inactive hover:text-[#e94560] transition-all text-sm"
+                >×</button>
+              </div>
             </div>
           ))}
           {searchFiltered.length === 0 && (

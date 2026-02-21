@@ -88,6 +88,7 @@ export interface NoteData {
   icon: string;
   blocks: NoteBlock[];
   pinned: boolean;
+  starred?: boolean;
   tags: string[];
   folderId: string | null;
   linkedTaskId?: string | null;
@@ -152,6 +153,7 @@ export interface MindMapData {
   viewportX: number;
   viewportY: number;
   zoom: number;
+  starred?: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }

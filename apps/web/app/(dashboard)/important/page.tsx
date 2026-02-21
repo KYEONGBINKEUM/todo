@@ -1,9 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
-import { addTask as addTaskDB, updateTask, type TaskData, type ListData } from '@/lib/firestore';
+import {
+  addTask as addTaskDB, updateTask,
+  updateNote, updateMindmap,
+  type TaskData, type ListData, type NoteData, type MindMapData,
+} from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 
 function priorityStyle(p: string) {
@@ -19,8 +24,12 @@ function priorityStyle(p: string) {
 export default function ImportantPage() {
   const { user } = useAuth();
   const { t } = useI18n();
-  const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
+  const router = useRouter();
+  const { tasks: storeTasks, lists: storeLists, notes: storeNotes, mindmaps: storeMindmaps, loading } = useDataStore();
   const tasks = storeTasks.filter((t) => t.starred);
+  const starredNotes = storeNotes.filter((n) => n.starred);
+  const starredMindmaps = storeMindmaps.filter((m) => m.starred);
+  const totalCount = tasks.length + starredNotes.length + starredMindmaps.length;
   const [lists, setLists] = useState<ListData[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
@@ -63,6 +72,16 @@ export default function ImportantPage() {
     await updateTask(user.uid, task.id, { starred: false });
   };
 
+  const handleUnstarNote = async (note: NoteData) => {
+    if (!user || !note.id) return;
+    await updateNote(user.uid, note.id, { starred: false });
+  };
+
+  const handleUnstarMindmap = async (mm: MindMapData) => {
+    if (!user || !mm.id) return;
+    await updateMindmap(user.uid, mm.id, { starred: false });
+  };
+
   const getListInfo = (listId: string) => lists.find((l) => l.id === listId) || { label: 'Tasks', color: '#e94560' };
 
   if (loading) {
@@ -80,7 +99,7 @@ export default function ImportantPage() {
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">⭐</span>
             <h2 className="text-3xl font-extrabold text-text-primary">{t('important.title')}</h2>
-            <span className="text-sm text-text-muted ml-2">{tasks.length}</span>
+            <span className="text-sm text-text-muted ml-2">{totalCount}</span>
           </div>
           <p className="text-text-secondary text-sm">{t('important.desc')}</p>
         </div>
@@ -113,71 +132,148 @@ export default function ImportantPage() {
           </button>
         </div>
 
-        {/* Active Tasks */}
-        <div className="space-y-2">
-          {tasks.filter((t) => t.status !== 'completed').map((task, index) => {
-            const ps = priorityStyle(task.priority);
-            const list = getListInfo(task.listId);
-            return (
-              <div key={task.id} className="group flex items-center gap-3 p-4 bg-background-card border border-border rounded-xl hover:border-border-hover transition-all" style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}>
-                <button
-                  onClick={() => handleToggleTask(task)}
-                  className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]"
-                  style={{ borderColor: 'var(--color-checkbox-border)' }}
-                />
-                <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-                <span className="flex-1 text-sm text-text-primary">{task.title}</span>
-                {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
-                <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
-                <button onClick={() => handleUnstar(task)} className="text-lg text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] hover:text-amber-300 transition-all flex-shrink-0" title={t('important.unstar')}>★</button>
-              </div>
-            );
-          })}
-        </div>
+        {/* ===== Tasks Section ===== */}
+        {tasks.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">📋</span>
+              <span className="text-sm font-bold text-text-primary">{t('nav.tasks')}</span>
+              <span className="text-[10px] bg-border px-2 py-0.5 rounded-full text-text-muted">{tasks.filter((t) => t.status !== 'completed').length}</span>
+            </div>
+            <div className="space-y-2 mb-6">
+              {tasks.filter((t) => t.status !== 'completed').map((task, index) => {
+                const ps = priorityStyle(task.priority);
+                const list = getListInfo(task.listId);
+                return (
+                  <div key={task.id} className="group flex items-center gap-3 p-4 bg-background-card border border-border rounded-xl hover:border-border-hover transition-all" style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}>
+                    <button
+                      onClick={() => handleToggleTask(task)}
+                      className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 hover:border-[#e94560] hover:shadow-[0_0_8px_rgba(233,69,96,0.3)]"
+                      style={{ borderColor: 'var(--color-checkbox-border)' }}
+                    />
+                    <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                    <span className="flex-1 text-sm text-text-primary">{task.title}</span>
+                    {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
+                    <button onClick={() => handleUnstar(task)} className="text-lg text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] hover:text-amber-300 transition-all flex-shrink-0" title={t('important.unstar')}>★</button>
+                  </div>
+                );
+              })}
+            </div>
 
-        {tasks.length === 0 && (
+            {/* Completed Tasks */}
+            {tasks.filter((t) => t.status === 'completed').length > 0 && (
+              <div className="mb-6">
+                <button
+                  onClick={() => setShowCompleted(!showCompleted)}
+                  className="flex items-center gap-2 text-text-muted text-sm mb-3 hover:text-text-secondary transition-colors w-full"
+                >
+                  <span className={`transition-transform duration-200 text-xs ${showCompleted ? 'rotate-90' : ''}`}>▶</span>
+                  <span className="font-semibold">{t('status.completed')}</span>
+                  <span className="text-[10px] bg-border px-2 py-0.5 rounded-full">{tasks.filter((t) => t.status === 'completed').length}</span>
+                </button>
+                {showCompleted && (
+                  <div className="space-y-2">
+                    {tasks.filter((t) => t.status === 'completed').map((task, index) => {
+                      const ps = priorityStyle(task.priority);
+                      const list = getListInfo(task.listId);
+                      return (
+                        <div key={task.id} className="group flex items-center gap-3 p-4 bg-background-card border border-border/50 rounded-xl opacity-60 hover:opacity-80 transition-all" style={{ animation: 'fadeUp 0.3s ease-out both', animationDelay: `${index * 0.03}s` }}>
+                          <button
+                            onClick={() => handleToggleTask(task)}
+                            className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                          </button>
+                          <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                          <span className="flex-1 text-sm line-through text-text-inactive">{task.title}</span>
+                          {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
+                          <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ===== Notes Section ===== */}
+        {starredNotes.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 mb-3 mt-4">
+              <span className="text-base">📝</span>
+              <span className="text-sm font-bold text-text-primary">{t('nav.notes')}</span>
+              <span className="text-[10px] bg-border px-2 py-0.5 rounded-full text-text-muted">{starredNotes.length}</span>
+            </div>
+            <div className="space-y-2 mb-6">
+              {starredNotes.map((note, index) => {
+                const preview = (note.blocks || []).filter((b: { type: string; content: string }) => b.type !== 'divider' && b.content).slice(0, 1).map((b: { content: string }) => b.content).join('');
+                return (
+                  <div
+                    key={note.id}
+                    className="group flex items-center gap-3 p-4 bg-background-card border border-border rounded-xl hover:border-border-hover transition-all cursor-pointer"
+                    style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
+                    onClick={() => router.push(`/notes?note=${note.id}`)}
+                  >
+                    <span className="text-lg flex-shrink-0">{note.icon || '📝'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-text-primary truncate">{note.title || '제목 없음'}</p>
+                      {preview && <p className="text-[11px] text-text-inactive truncate">{preview}</p>}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleUnstarNote(note); }}
+                      className="text-lg text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] hover:text-amber-300 transition-all flex-shrink-0"
+                      title={t('important.unstar')}
+                    >★</button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* ===== Mindmaps Section ===== */}
+        {starredMindmaps.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 mb-3 mt-4">
+              <span className="text-base">🧠</span>
+              <span className="text-sm font-bold text-text-primary">{t('nav.mindmap')}</span>
+              <span className="text-[10px] bg-border px-2 py-0.5 rounded-full text-text-muted">{starredMindmaps.length}</span>
+            </div>
+            <div className="space-y-2 mb-6">
+              {starredMindmaps.map((mm, index) => (
+                <div
+                  key={mm.id}
+                  className="group flex items-center gap-3 p-4 bg-background-card border border-border rounded-xl hover:border-border-hover transition-all cursor-pointer"
+                  style={{ animation: 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.05}s` }}
+                  onClick={() => router.push('/mindmap')}
+                >
+                  <span className="text-lg flex-shrink-0">🧠</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-text-primary truncate">{mm.title || '제목 없음'}</p>
+                    <p className="text-[11px] text-text-inactive">{(mm.nodes || []).length} nodes</p>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleUnstarMindmap(mm); }}
+                    className="text-lg text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] hover:text-amber-300 transition-all flex-shrink-0"
+                    title={t('important.unstar')}
+                  >★</button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Empty State */}
+        {totalCount === 0 && (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">⭐</div>
             <p className="text-text-secondary font-semibold">{t('important.empty')}</p>
             <p className="text-text-muted text-sm mt-1">{t('important.emptyHint')}</p>
-          </div>
-        )}
-
-        {/* 완료됨 Section */}
-        {tasks.filter((t) => t.status === 'completed').length > 0 && (
-          <div className="mt-6">
-            <button
-              onClick={() => setShowCompleted(!showCompleted)}
-              className="flex items-center gap-2 text-text-muted text-sm mb-3 hover:text-text-secondary transition-colors w-full"
-            >
-              <span className={`transition-transform duration-200 text-xs ${showCompleted ? 'rotate-90' : ''}`}>▶</span>
-              <span className="font-semibold">{t('status.completed')}</span>
-              <span className="text-[10px] bg-border px-2 py-0.5 rounded-full">{tasks.filter((t) => t.status === 'completed').length}</span>
-            </button>
-            {showCompleted && (
-              <div className="space-y-2">
-                {tasks.filter((t) => t.status === 'completed').map((task, index) => {
-                  const ps = priorityStyle(task.priority);
-                  const list = getListInfo(task.listId);
-                  return (
-                    <div key={task.id} className="group flex items-center gap-3 p-4 bg-background-card border border-border/50 rounded-xl opacity-60 hover:opacity-80 transition-all" style={{ animation: 'fadeUp 0.3s ease-out both', animationDelay: `${index * 0.03}s` }}>
-                      <button
-                        onClick={() => handleToggleTask(task)}
-                        className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 bg-gradient-to-br from-[#e94560] to-[#533483] border-transparent"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                      </button>
-                      <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-                      <span className="flex-1 text-sm line-through text-text-inactive">{task.title}</span>
-                      {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
-                      <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         )}
       </div>

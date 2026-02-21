@@ -98,6 +98,15 @@ function NotesContent() {
   // Subfolder move
   const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
 
+  // Read-only mode
+  const [readOnly, setReadOnly] = useState(false);
+
+  // Undo / Redo history (per active note)
+  const historyRef = useRef<Map<string, { past: NoteBlock[][]; future: NoteBlock[][] }>>(new Map());
+  const skipHistoryRef = useRef(false);
+  const historyTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSnapshotRef = useRef<string>(''); // JSON of last saved snapshot to avoid duplicates
+
   // Folder toggle tree
   const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(new Set());
   // Toggle blocks
@@ -192,6 +201,95 @@ function NotesContent() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => { saveNoteToFirestore(note); }, 400);
   }, [saveNoteToFirestore]);
+
+  // ========== Undo / Redo ==========
+
+  const getHistory = (noteId: string) => {
+    if (!historyRef.current.has(noteId)) {
+      historyRef.current.set(noteId, { past: [], future: [] });
+    }
+    return historyRef.current.get(noteId)!;
+  };
+
+  /** 현재 블록 상태를 히스토리에 push (변경 전 호출) */
+  const pushHistory = (noteId: string, blocks: NoteBlock[], immediate = false) => {
+    if (skipHistoryRef.current) return;
+    const snapshot = JSON.stringify(blocks);
+    if (snapshot === lastSnapshotRef.current) return; // 중복 방지
+
+    const doPush = () => {
+      const h = getHistory(noteId);
+      h.past.push(JSON.parse(snapshot));
+      if (h.past.length > 50) h.past.shift();
+      h.future = [];
+      lastSnapshotRef.current = snapshot;
+    };
+
+    if (immediate) {
+      // 구조 변경(블록 추가/삭제/이동/타입변경)은 즉시 저장
+      if (historyTimerRef.current) { clearTimeout(historyTimerRef.current); historyTimerRef.current = null; }
+      doPush();
+    } else {
+      // 텍스트 입력은 500ms 디바운스 — 타이핑 중 매 글자마다 저장 방지
+      if (!historyTimerRef.current) {
+        doPush(); // 타이핑 시작 시점 저장
+      }
+      if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = setTimeout(() => { historyTimerRef.current = null; }, 500);
+    }
+  };
+
+  const undo = () => {
+    if (!activeNote) return;
+    const h = getHistory(activeNote.id);
+    if (!h.past.length) return;
+    const prev = h.past.pop()!;
+    h.future.push(JSON.parse(JSON.stringify(activeNote.blocks)));
+    skipHistoryRef.current = true;
+    setNotes((ns) => {
+      const updated = ns.map((n) => n.id === activeNote.id ? { ...n, blocks: prev, updated_at: new Date().toISOString() } : n);
+      const note = updated.find((n) => n.id === activeNote.id);
+      if (note) debouncedSave(note);
+      return updated;
+    });
+    skipHistoryRef.current = false;
+  };
+
+  const redo = () => {
+    if (!activeNote) return;
+    const h = getHistory(activeNote.id);
+    if (!h.future.length) return;
+    const next = h.future.pop()!;
+    h.past.push(JSON.parse(JSON.stringify(activeNote.blocks)));
+    skipHistoryRef.current = true;
+    setNotes((ns) => {
+      const updated = ns.map((n) => n.id === activeNote.id ? { ...n, blocks: next, updated_at: new Date().toISOString() } : n);
+      const note = updated.find((n) => n.id === activeNote.id);
+      if (note) debouncedSave(note);
+      return updated;
+    });
+    skipHistoryRef.current = false;
+  };
+
+  const canUndo = activeNote ? (getHistory(activeNote.id).past.length > 0) : false;
+  const canRedo = activeNote ? (getHistory(activeNote.id).future.length > 0) : false;
+
+  // Ctrl+Z / Ctrl+Shift+Z 글로벌 키보드 단축키
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!activeNote || readOnly) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  });
 
   // ========== Note CRUD ==========
 
@@ -402,6 +500,8 @@ function NotesContent() {
 
   const updateBlock = (blockId: string, content: string) => {
     setNotes((prev) => {
+      const cur = prev.find((n) => n.id === activeNoteId);
+      if (cur) pushHistory(activeNoteId, cur.blocks);
       const updated = prev.map((n) =>
         n.id === activeNoteId
           ? { ...n, updated_at: new Date().toISOString(), blocks: n.blocks.map((b) => (b.id === blockId ? { ...b, content } : b)) }
@@ -415,6 +515,8 @@ function NotesContent() {
 
   const updateBlockField = (blockId: string, fields: Partial<NoteBlock>) => {
     setNotes((prev) => {
+      const cur = prev.find((n) => n.id === activeNoteId);
+      if (cur) pushHistory(activeNoteId, cur.blocks);
       const updated = prev.map((n) =>
         n.id === activeNoteId
           ? { ...n, blocks: n.blocks.map((b) => (b.id === blockId ? { ...b, ...fields } : b)) }
@@ -428,6 +530,8 @@ function NotesContent() {
 
   const toggleTodo = (blockId: string) => {
     setNotes((prev) => {
+      const cur = prev.find((n) => n.id === activeNoteId);
+      if (cur) pushHistory(activeNoteId, cur.blocks, true);
       const updated = prev.map((n) =>
         n.id === activeNoteId
           ? { ...n, blocks: n.blocks.map((b) => (b.id === blockId ? { ...b, checked: !b.checked } : b)) }
@@ -449,6 +553,8 @@ function NotesContent() {
     };
 
     setNotes((prev) => {
+      const cur = prev.find((n) => n.id === activeNoteId);
+      if (cur) pushHistory(activeNoteId, cur.blocks, true);
       const updated = prev.map((n) => {
         if (n.id !== activeNoteId) return n;
         const idx = n.blocks.findIndex((b) => b.id === blockId);
@@ -469,6 +575,8 @@ function NotesContent() {
 
   const deleteBlock = (blockId: string) => {
     setNotes((prev) => {
+      const cur = prev.find((n) => n.id === activeNoteId);
+      if (cur) pushHistory(activeNoteId, cur.blocks, true);
       const updated = prev.map((n) => {
         if (n.id !== activeNoteId) return n;
         if (n.blocks.length <= 1) return n;
@@ -482,6 +590,8 @@ function NotesContent() {
 
   const changeBlockType = (blockId: string, newType: NoteBlock['type']) => {
     setNotes((prev) => {
+      const cur = prev.find((n) => n.id === activeNoteId);
+      if (cur) pushHistory(activeNoteId, cur.blocks, true);
       const updated = prev.map((n) =>
         n.id === activeNoteId
           ? {
@@ -626,6 +736,8 @@ function NotesContent() {
     if (srcIdx === null || srcIdx === dstIdx || !activeNote) return;
 
     setNotes((prev) => {
+      const cur = prev.find((n) => n.id === activeNoteId);
+      if (cur) pushHistory(activeNoteId, cur.blocks, true);
       const updated = prev.map((n) => {
         if (n.id !== activeNoteId) return n;
         const newBlocks = [...n.blocks];
@@ -668,9 +780,10 @@ function NotesContent() {
       onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => { handleBlockInput(block.id, e.target.value); autoResize(e.target); },
       onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => handleBlockKeyDown(e, block),
       onFocus: (e: React.FocusEvent<HTMLTextAreaElement>) => autoResize(e.target),
-      placeholder,
+      placeholder: readOnly ? '' : placeholder,
       rows: 1,
-      className: `${baseClass} ${extra}`,
+      readOnly,
+      className: `${baseClass} ${extra} ${readOnly ? 'cursor-default' : ''}`,
     });
 
     switch (block.type) {
@@ -1112,27 +1225,70 @@ function NotesContent() {
               <span>{activeNote.blocks.length} 블록</span>
             </div>
             <div className="flex items-center gap-1">
-              {/* Block type buttons */}
-              {[
-                { type: 'text' as const, label: 'T', title: '텍스트' },
-                { type: 'heading2' as const, label: 'H', title: '제목' },
-                { type: 'bullet' as const, label: '•', title: '글머리' },
-                { type: 'todo' as const, label: '☑', title: '할 일' },
-                { type: 'quote' as const, label: '"', title: '인용' },
-                { type: 'code' as const, label: '</>', title: '코드' },
-                { type: 'link' as const, label: '🔗', title: '링크 ([[)' },
-                { type: 'toggle' as const, label: '▶', title: '토글 (>>)' },
-                { type: 'divider' as const, label: '—', title: '구분선' },
-              ].map((item) => (
-                <button
-                  key={item.type}
-                  onClick={() => { const lastBlock = activeNote.blocks[activeNote.blocks.length - 1]; addBlockAfter(lastBlock.id, item.type); }}
-                  title={item.title}
-                  className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors text-[11px] font-mono"
-                >
-                  {item.label}
-                </button>
-              ))}
+              {/* Undo / Redo */}
+              <button
+                onClick={undo}
+                disabled={!canUndo || readOnly}
+                title="되돌리기 (Ctrl+Z)"
+                className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              </button>
+              <button
+                onClick={redo}
+                disabled={!canRedo || readOnly}
+                title="다시 실행 (Ctrl+Shift+Z)"
+                className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+              </button>
+
+              <div className="w-px h-4 bg-border mx-1" />
+
+              {/* Read / Write toggle */}
+              <button
+                onClick={() => setReadOnly(!readOnly)}
+                title={readOnly ? '쓰기 모드로 전환' : '읽기 모드로 전환'}
+                className={`h-7 px-2.5 flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                  readOnly
+                    ? 'bg-[#8b5cf6]/15 text-[#8b5cf6] border border-[#8b5cf6]/30'
+                    : 'bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30'
+                }`}
+              >
+                {readOnly ? (
+                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> 읽기</>
+                ) : (
+                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> 쓰기</>
+                )}
+              </button>
+
+              {!readOnly && (
+                <>
+                  <div className="w-px h-4 bg-border mx-1" />
+
+                  {/* Block type buttons */}
+                  {[
+                    { type: 'text' as const, label: 'T', title: '텍스트' },
+                    { type: 'heading2' as const, label: 'H', title: '제목' },
+                    { type: 'bullet' as const, label: '•', title: '글머리' },
+                    { type: 'todo' as const, label: '☑', title: '할 일' },
+                    { type: 'quote' as const, label: '"', title: '인용' },
+                    { type: 'code' as const, label: '</>', title: '코드' },
+                    { type: 'link' as const, label: '🔗', title: '링크 ([[)' },
+                    { type: 'toggle' as const, label: '▶', title: '토글 (>>)' },
+                    { type: 'divider' as const, label: '—', title: '구분선' },
+                  ].map((item) => (
+                    <button
+                      key={item.type}
+                      onClick={() => { const lastBlock = activeNote.blocks[activeNote.blocks.length - 1]; addBlockAfter(lastBlock.id, item.type); }}
+                      title={item.title}
+                      className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors text-[11px] font-mono"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </>
+              )}
 
               {/* Folder move */}
               <div className="w-px h-4 bg-border mx-1" />
@@ -1153,7 +1309,7 @@ function NotesContent() {
               {/* Icon + Title */}
               <div className="mb-6">
                 <div className="relative inline-block mb-2">
-                  <button onClick={() => setShowIconPicker(!showIconPicker)} className="text-4xl hover:scale-110 transition-transform">
+                  <button onClick={() => !readOnly && setShowIconPicker(!showIconPicker)} className={`text-4xl transition-transform ${readOnly ? '' : 'hover:scale-110'}`}>
                     {activeNote.icon}
                   </button>
                   {showIconPicker && (
@@ -1166,7 +1322,7 @@ function NotesContent() {
                     </div>
                   )}
                 </div>
-                <input value={activeNote.title} onChange={(e) => updateNoteTitle(e.target.value)} placeholder="제목 없음" className="w-full bg-transparent text-3xl font-extrabold text-text-primary placeholder-text-inactive outline-none" />
+                <input value={activeNote.title} onChange={(e) => updateNoteTitle(e.target.value)} placeholder="제목 없음" readOnly={readOnly} className={`w-full bg-transparent text-3xl font-extrabold text-text-primary placeholder-text-inactive outline-none ${readOnly ? 'cursor-default' : ''}`} />
                 <div className="flex items-center gap-2 mt-3 flex-wrap">
                   {activeNote.tags.map((tag) => (
                     <span key={tag} className="px-2.5 py-0.5 bg-[#e94560]/10 text-[#e94560] text-[10px] font-semibold rounded-full border border-[#e94560]/20">{tag}</span>
@@ -1179,10 +1335,10 @@ function NotesContent() {
                 {activeNote.blocks.map((block, idx) => (
                   <div
                     key={block.id}
-                    draggable
-                    onDragStart={(e) => handleBlockDragStart(e, idx)}
-                    onDragOver={(e) => handleBlockDragOver(e, idx)}
-                    onDrop={(e) => handleBlockDrop(e, idx)}
+                    draggable={!readOnly}
+                    onDragStart={(e) => !readOnly && handleBlockDragStart(e, idx)}
+                    onDragOver={(e) => !readOnly && handleBlockDragOver(e, idx)}
+                    onDrop={(e) => !readOnly && handleBlockDrop(e, idx)}
                     onDragEnd={handleBlockDragEnd}
                     className={`group relative py-1.5 px-1 -mx-1 rounded transition-colors ${
                       dragBlockSrcIdx === idx ? 'opacity-40 scale-95' :
@@ -1190,14 +1346,16 @@ function NotesContent() {
                       'hover:bg-white/[0.02]'
                     }`}
                   >
-                    <div className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center">
-                      <span className="text-text-inactive text-[10px] cursor-grab active:cursor-grabbing">⋮⋮</span>
-                    </div>
+                    {!readOnly && (
+                      <div className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center">
+                        <span className="text-text-inactive text-[10px] cursor-grab active:cursor-grabbing">⋮⋮</span>
+                      </div>
+                    )}
                     <div className="flex items-start gap-1">
                       <div className="flex-1 min-w-0">{renderBlock(block)}</div>
-                      {activeNote.blocks.length > 1 && (
+                      {!readOnly && activeNote.blocks.length > 1 && (
                         <button
-                          onClick={() => { if (confirm('이 블록을 삭제하시겠습니까?')) deleteBlock(block.id); }}
+                          onClick={() => deleteBlock(block.id)}
                           className="flex-shrink-0 w-6 h-6 mt-0.5 flex items-center justify-center rounded-md text-text-inactive/50 hover:text-[#e94560] hover:bg-[#e94560]/10 active:text-[#e94560] active:bg-[#e94560]/10 transition-colors text-sm md:opacity-0 md:group-hover:opacity-100"
                           title="블록 삭제"
                         >

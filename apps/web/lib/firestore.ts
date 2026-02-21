@@ -123,6 +123,38 @@ export interface FolderData {
   createdAt?: Timestamp;
 }
 
+export interface MindMapNode {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  imageURL?: string;
+  imagePath?: string;
+}
+
+export interface MindMapEdge {
+  id: string;
+  from: string;
+  to: string;
+  style: 'straight' | 'curved';
+  color?: string;
+}
+
+export interface MindMapData {
+  id?: string;
+  title: string;
+  nodes: MindMapNode[];
+  edges: MindMapEdge[];
+  viewportX: number;
+  viewportY: number;
+  zoom: number;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
 // ============================================================================
 // Tasks
 // ============================================================================
@@ -313,6 +345,36 @@ export async function restoreFolder(uid: string, folderId: string): Promise<void
 export async function permanentDeleteFolder(uid: string, folderId: string): Promise<void> {
   invalidateCache(uid, 'folders');
   await deleteDoc(doc(db, 'users', uid, 'folders', folderId));
+}
+
+// ============================================================================
+// Mind Maps
+// ============================================================================
+
+function mindmapsRef(uid: string) {
+  return collection(db, 'users', uid, 'mindmaps');
+}
+
+export async function addMindmap(uid: string, data: Omit<MindMapData, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  invalidateCache(uid, 'mindmaps');
+  const docRef = await addDoc(mindmapsRef(uid), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateMindmap(uid: string, id: string, updates: Partial<MindMapData>): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'mindmaps', id), {
+    ...updates,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteMindmap(uid: string, id: string): Promise<void> {
+  invalidateCache(uid, 'mindmaps');
+  await deleteDoc(doc(db, 'users', uid, 'mindmaps', id));
 }
 
 // ============================================================================

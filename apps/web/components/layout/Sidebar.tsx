@@ -37,6 +37,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { icon: '📋', labelKey: 'nav.allTasks', href: '/tasks' },
     { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
     { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
+    { icon: '🧠', labelKey: 'nav.mindmap', href: '/mindmap' },
     // { icon: '👥', labelKey: 'nav.shared', href: '/shared' }, // TODO: Firestore 권한 규칙 수정 후 부활
     { icon: '⭐', labelKey: 'nav.important', href: '/important' },
   ];

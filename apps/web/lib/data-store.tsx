@@ -14,13 +14,14 @@ import {
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAuth } from './auth-context';
-import type { TaskData, ListData, NoteData, FolderData } from './firestore';
+import type { TaskData, ListData, NoteData, FolderData, MindMapData } from './firestore';
 
 interface DataStore {
   tasks: TaskData[];
   lists: ListData[];
   notes: NoteData[];
   folders: FolderData[];
+  mindmaps: MindMapData[];
   loading: boolean;
   storageUsed: number; // bytes — 텍스트 + 파일 총 사용량
 }
@@ -30,6 +31,7 @@ const DataStoreContext = createContext<DataStore>({
   lists: [],
   notes: [],
   folders: [],
+  mindmaps: [],
   loading: true,
   storageUsed: 0,
 });
@@ -64,6 +66,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   const [lists, setLists] = useState<ListData[]>([]);
   const [notes, setNotes] = useState<NoteData[]>([]);
   const [folders, setFolders] = useState<FolderData[]>([]);
+  const [mindmaps, setMindmaps] = useState<MindMapData[]>([]);
   const [loading, setLoading] = useState(true);
   const unsubsRef = useRef<Array<() => void>>([]);
 
@@ -77,7 +80,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     unsubsRef.current = [];
 
     if (!user) {
-      setTasks([]); setLists([]); setNotes([]); setFolders([]);
+      setTasks([]); setLists([]); setNotes([]); setFolders([]); setMindmaps([]);
       setLoading(false);
       return;
     }
@@ -85,7 +88,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     const uid = user.uid;
     let loadedCount = 0;
-    const total = 4;
+    const total = 5;
     const markLoaded = () => { if (++loadedCount >= total) setLoading(false); };
 
     // Tasks — 생성순 desc
@@ -128,7 +131,17 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
       () => markLoaded()
     );
 
-    unsubsRef.current = [unsubTasks, unsubLists, unsubNotes, unsubFolders];
+    // Mind Maps — 생성순 desc
+    const unsubMindmaps = onSnapshot(
+      query(collection(db, 'users', uid, 'mindmaps'), orderBy('createdAt', 'desc')),
+      (snap) => {
+        setMindmaps(snap.docs.map((d) => ({ id: d.id, ...d.data() } as MindMapData)));
+        markLoaded();
+      },
+      () => markLoaded()
+    );
+
+    unsubsRef.current = [unsubTasks, unsubLists, unsubNotes, unsubFolders, unsubMindmaps];
 
     return () => {
       unsubsRef.current.forEach((u) => u());
@@ -139,7 +152,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   const storageUsed = calcStorageUsed(tasks, notes);
 
   return (
-    <DataStoreContext.Provider value={{ tasks, lists, notes, folders, loading, storageUsed }}>
+    <DataStoreContext.Provider value={{ tasks, lists, notes, folders, mindmaps, loading, storageUsed }}>
       {children}
     </DataStoreContext.Provider>
   );

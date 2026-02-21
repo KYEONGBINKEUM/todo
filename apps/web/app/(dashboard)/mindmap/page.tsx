@@ -54,7 +54,7 @@ function MindmapContent() {
   const [zoom, setZoom] = useState(1);
 
   // Interaction state
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -71,8 +71,23 @@ function MindmapContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingNodeId, setUploadingNodeId] = useState<string | null>(null);
 
+  // Touch state
+  const touchRef = useRef<{
+    startX: number; startY: number;
+    lastDist: number; // pinch-zoom
+    isPan: boolean;
+    isNodeDrag: boolean;
+    nodeId: string | null;
+    offsetX: number; offsetY: number;
+    moved: boolean;
+    longPressTimer: NodeJS.Timeout | null;
+  }>({ startX: 0, startY: 0, lastDist: 0, isPan: false, isNodeDrag: false, nodeId: null, offsetX: 0, offsetY: 0, moved: false, longPressTimer: null });
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Helper: first selected node id
+  const selectedNodeId = selectedNodeIds.size === 1 ? [...selectedNodeIds][0] : null;
 
   // ========== Init ==========
   useEffect(() => {
@@ -183,7 +198,6 @@ function MindmapContent() {
 
   const deleteMindmap = async (id: string) => {
     if (!confirm('이 마인드맵을 삭제하시겠습니까?')) return;
-    // Delete node images from storage
     const map = mindmaps.find((m) => m.id === id);
     if (map) {
       for (const node of map.nodes) {
@@ -232,7 +246,7 @@ function MindmapContent() {
       color: NODE_COLORS[activeMap.nodes.length % NODE_COLORS.length],
     };
     updateMap((m) => ({ ...m, nodes: [...m.nodes, newNode] }));
-    setSelectedNodeId(newNode.id);
+    setSelectedNodeIds(new Set([newNode.id]));
     setEditingNodeId(newNode.id);
   };
 
@@ -247,7 +261,36 @@ function MindmapContent() {
       nodes: m.nodes.filter((n) => n.id !== nodeId),
       edges: m.edges.filter((e) => e.from !== nodeId && e.to !== nodeId),
     }));
-    if (selectedNodeId === nodeId) setSelectedNodeId(null);
+    setSelectedNodeIds((prev) => { const next = new Set(prev); next.delete(nodeId); return next; });
+  };
+
+  const deleteSelectedNodes = async () => {
+    if (!activeMap || selectedNodeIds.size === 0) return;
+    for (const nid of selectedNodeIds) {
+      const node = activeMap.nodes.find((n) => n.id === nid);
+      if (node?.imagePath) {
+        try { await deleteObject(ref(storage, node.imagePath)); } catch { /* ignore */ }
+      }
+    }
+    updateMap((m) => ({
+      ...m,
+      nodes: m.nodes.filter((n) => !selectedNodeIds.has(n.id)),
+      edges: m.edges.filter((e) => !selectedNodeIds.has(e.from) && !selectedNodeIds.has(e.to)),
+    }));
+    setSelectedNodeIds(new Set());
+  };
+
+  const connectSelectedNodes = () => {
+    if (!activeMap || selectedNodeIds.size < 2) return;
+    const ids = [...selectedNodeIds];
+    for (let i = 0; i < ids.length - 1; i++) {
+      const from = ids[i];
+      const to = ids[i + 1];
+      if (!activeMap.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))) {
+        const newEdge: MindMapEdge = { id: `e-${Date.now()}-${i}`, from, to, style: edgeStyle, color: '#888' };
+        updateMap((m) => ({ ...m, edges: [...m.edges, newEdge] }));
+      }
+    }
   };
 
   const updateNodeText = (nodeId: string, text: string) => {
@@ -360,7 +403,6 @@ function MindmapContent() {
     if (style === 'straight') {
       return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
     }
-    // curved (bezier)
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -374,10 +416,10 @@ function MindmapContent() {
     return `M ${from.x} ${from.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${to.x} ${to.y}`;
   };
 
-  // ========== Canvas Interaction ==========
+  // ========== Canvas Interaction (Mouse) ==========
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.target !== canvasRef.current && !(e.target as HTMLElement).classList.contains('canvas-bg')) return;
-    setSelectedNodeId(null);
+    setSelectedNodeIds(new Set());
     setSelectedEdgeId(null);
     setEditingNodeId(null);
     setIsPanning(true);
@@ -437,11 +479,26 @@ function MindmapContent() {
     });
   };
 
-  // Node interactions
+  // Node interactions (Mouse)
   const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
     e.stopPropagation();
     if (connectingFrom) return;
-    setSelectedNodeId(nodeId);
+
+    // Multi-select with Ctrl/Cmd
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedNodeIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+        return next;
+      });
+      return;
+    }
+
+    // Single select
+    if (!selectedNodeIds.has(nodeId)) {
+      setSelectedNodeIds(new Set([nodeId]));
+    }
     setSelectedEdgeId(null);
     const rect = canvasRef.current?.getBoundingClientRect();
     const node = activeMap?.nodes.find((n) => n.id === nodeId);
@@ -466,6 +523,143 @@ function MindmapContent() {
     setConnectingFrom({ nodeId, side });
   };
 
+  // ========== Touch Handlers ==========
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = touchRef.current;
+    if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
+
+    if (e.touches.length === 2) {
+      // Pinch zoom
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      t.lastDist = Math.sqrt(dx * dx + dy * dy);
+      t.isPan = false;
+      t.isNodeDrag = false;
+      return;
+    }
+
+    const touch = e.touches[0];
+    t.startX = touch.clientX;
+    t.startY = touch.clientY;
+    t.moved = false;
+
+    // Check if touching a node
+    const target = e.target as HTMLElement;
+    const nodeEl = target.closest('[data-node-id]') as HTMLElement | null;
+    if (nodeEl) {
+      const nodeId = nodeEl.getAttribute('data-node-id')!;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const node = activeMap?.nodes.find((n) => n.id === nodeId);
+      if (node && rect) {
+        t.isNodeDrag = true;
+        t.nodeId = nodeId;
+        t.offsetX = (touch.clientX - rect.left - viewportX) / zoom - node.x;
+        t.offsetY = (touch.clientY - rect.top - viewportY) / zoom - node.y;
+        if (!selectedNodeIds.has(nodeId)) {
+          setSelectedNodeIds(new Set([nodeId]));
+        }
+        setSelectedEdgeId(null);
+
+        // Long press = multi-select toggle
+        t.longPressTimer = setTimeout(() => {
+          setSelectedNodeIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(nodeId) && next.size > 1) next.delete(nodeId);
+            else next.add(nodeId);
+            return next;
+          });
+          t.isNodeDrag = false; // cancel drag after long press
+        }, 500);
+      }
+      return;
+    }
+
+    // Pan canvas
+    t.isPan = true;
+    t.isNodeDrag = false;
+    setPanStart({ x: touch.clientX - viewportX, y: touch.clientY - viewportY });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const t = touchRef.current;
+    if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
+
+    if (e.touches.length === 2) {
+      // Pinch zoom
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (t.lastDist > 0) {
+        const scale = dist / t.lastDist;
+        setZoom((z) => {
+          const nz = Math.max(0.25, Math.min(2.5, z * scale));
+          updateMap((m) => ({ ...m, zoom: nz }));
+          return nz;
+        });
+      }
+      t.lastDist = dist;
+      return;
+    }
+
+    const touch = e.touches[0];
+    const dx = touch.clientX - t.startX;
+    const dy = touch.clientY - t.startY;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) t.moved = true;
+
+    if (t.isNodeDrag && t.nodeId) {
+      e.preventDefault();
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const newX = (touch.clientX - rect.left - viewportX) / zoom - t.offsetX;
+      const newY = (touch.clientY - rect.top - viewportY) / zoom - t.offsetY;
+      setMindmaps((prev) =>
+        prev.map((m) =>
+          m.id === activeMapId
+            ? { ...m, nodes: m.nodes.map((n) => (n.id === t.nodeId ? { ...n, x: newX, y: newY } : n)) }
+            : m
+        )
+      );
+      return;
+    }
+
+    if (t.isPan) {
+      setViewportX(touch.clientX - panStart.x);
+      setViewportY(touch.clientY - panStart.y);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const t = touchRef.current;
+    if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
+
+    if (t.isPan) {
+      t.isPan = false;
+      updateMap((m) => ({ ...m, viewportX, viewportY }));
+    }
+    if (t.isNodeDrag && t.nodeId) {
+      if (!t.moved) {
+        // Tap on node = select
+        setSelectedNodeIds(new Set([t.nodeId]));
+      } else {
+        // Dragged node — save
+        const map = mindmaps.find((m) => m.id === activeMapId);
+        if (map) debouncedSave(map);
+      }
+      t.isNodeDrag = false;
+      t.nodeId = null;
+    }
+    if (!t.moved && !t.isNodeDrag && !t.isPan) {
+      // Tap on empty canvas
+      const target = e.target as HTMLElement;
+      if (target === canvasRef.current || target.classList.contains('canvas-bg')) {
+        setSelectedNodeIds(new Set());
+        setSelectedEdgeId(null);
+        setEditingNodeId(null);
+      }
+    }
+    t.lastDist = 0;
+  };
+
   // Reset view
   const resetView = () => {
     setViewportX(0);
@@ -480,10 +674,10 @@ function MindmapContent() {
       if (editingNodeId) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedEdgeId) { deleteEdge(selectedEdgeId); }
-        else if (selectedNodeId) { deleteNode(selectedNodeId); }
+        else if (selectedNodeIds.size > 0) { deleteSelectedNodes(); }
       }
       if (e.key === 'Escape') {
-        setSelectedNodeId(null);
+        setSelectedNodeIds(new Set());
         setSelectedEdgeId(null);
         setEditingNodeId(null);
         setConnectingFrom(null);
@@ -569,43 +763,44 @@ function MindmapContent() {
       {activeMap ? (
         <div className="flex-1 flex flex-col min-w-0">
           {/* Toolbar */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-background/80 flex-shrink-0">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between px-3 md:px-4 py-2 border-b border-border bg-background/80 flex-shrink-0 gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => setActiveMapId('')}
-                className="md:hidden flex items-center text-text-secondary hover:text-text-primary mr-1"
+                className="md:hidden flex items-center text-text-secondary hover:text-text-primary mr-1 flex-shrink-0"
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </button>
               <input
                 value={activeMap.title}
                 onChange={(e) => updateTitle(e.target.value)}
-                className="bg-transparent text-sm font-bold text-text-primary outline-none w-40"
+                className="bg-transparent text-sm font-bold text-text-primary outline-none w-28 md:w-40 min-w-0"
                 placeholder="마인드맵 제목..."
               />
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-shrink-0">
               {/* Add node */}
               <button
                 onClick={addNode}
                 title="노드 추가"
-                className="h-7 px-2.5 flex items-center gap-1 bg-[#e94560]/10 text-[#e94560] rounded-lg text-[11px] font-semibold hover:bg-[#e94560]/20 transition-colors"
+                className="h-7 px-2 md:px-2.5 flex items-center gap-1 bg-[#e94560]/10 text-[#e94560] rounded-lg text-[11px] font-semibold hover:bg-[#e94560]/20 transition-colors"
               >
-                + 노드
+                <span className="md:hidden">+</span>
+                <span className="hidden md:inline">+ 노드</span>
               </button>
 
-              <div className="w-px h-4 bg-border mx-1" />
+              <div className="w-px h-4 bg-border mx-0.5 hidden md:block" />
 
-              {/* Line style */}
+              {/* Line style — hidden on mobile */}
               <button
                 onClick={() => setEdgeStyle(edgeStyle === 'curved' ? 'straight' : 'curved')}
                 title={edgeStyle === 'curved' ? '직선으로 전환' : '곡선으로 전환'}
-                className="h-7 px-2 flex items-center gap-1 text-text-muted hover:text-text-primary rounded-lg text-[11px] hover:bg-border transition-colors"
+                className="hidden md:flex h-7 px-2 items-center gap-1 text-text-muted hover:text-text-primary rounded-lg text-[11px] hover:bg-border transition-colors"
               >
                 {edgeStyle === 'curved' ? '〰️ 곡선' : '📏 직선'}
               </button>
 
-              <div className="w-px h-4 bg-border mx-1" />
+              <div className="w-px h-4 bg-border mx-0.5 hidden md:block" />
 
               {/* Zoom */}
               <button
@@ -615,7 +810,7 @@ function MindmapContent() {
               >
                 +
               </button>
-              <span className="text-[10px] text-text-muted w-10 text-center">{Math.round(zoom * 100)}%</span>
+              <span className="text-[10px] text-text-muted w-8 md:w-10 text-center">{Math.round(zoom * 100)}%</span>
               <button
                 onClick={() => { const nz = Math.max(0.25, zoom * 0.8); setZoom(nz); updateMap((m) => ({ ...m, zoom: nz })); }}
                 className="w-7 h-7 flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors text-xs"
@@ -625,24 +820,58 @@ function MindmapContent() {
               </button>
               <button
                 onClick={resetView}
-                className="h-7 px-2 text-[10px] text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors"
+                className="hidden md:flex h-7 px-2 text-[10px] text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors items-center"
                 title="뷰 초기화"
               >
                 초기화
               </button>
 
-              {/* Delete selected */}
-              {(selectedNodeId || selectedEdgeId) && (
+              {/* Multi-select actions */}
+              {selectedNodeIds.size >= 2 && (
                 <>
-                  <div className="w-px h-4 bg-border mx-1" />
+                  <div className="w-px h-4 bg-border mx-0.5" />
                   <button
-                    onClick={() => {
-                      if (selectedEdgeId) deleteEdge(selectedEdgeId);
-                      else if (selectedNodeId) deleteNode(selectedNodeId);
-                    }}
-                    className="h-7 px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors"
+                    onClick={connectSelectedNodes}
+                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 bg-[#8b5cf6]/10 text-[#8b5cf6] rounded-lg text-[11px] font-semibold hover:bg-[#8b5cf6]/20 transition-colors"
+                    title="선택된 노드 연결"
                   >
-                    🗑 삭제
+                    <span className="hidden md:inline">🔗 연결</span>
+                    <span className="md:hidden">🔗</span>
+                  </button>
+                  <button
+                    onClick={deleteSelectedNodes}
+                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors"
+                    title="선택된 노드 삭제"
+                  >
+                    <span className="hidden md:inline">🗑 삭제</span>
+                    <span className="md:hidden">🗑</span>
+                  </button>
+                </>
+              )}
+
+              {/* Single select delete */}
+              {selectedNodeIds.size === 1 && (
+                <>
+                  <div className="w-px h-4 bg-border mx-0.5" />
+                  <button
+                    onClick={() => { if (selectedNodeId) deleteNode(selectedNodeId); }}
+                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors"
+                  >
+                    <span className="hidden md:inline">🗑 삭제</span>
+                    <span className="md:hidden">🗑</span>
+                  </button>
+                </>
+              )}
+
+              {/* Edge delete */}
+              {selectedEdgeId && (
+                <>
+                  <div className="w-px h-4 bg-border mx-0.5" />
+                  <button
+                    onClick={() => deleteEdge(selectedEdgeId)}
+                    className="h-7 px-2 md:px-2.5 flex items-center gap-1 text-[#e94560] hover:bg-[#e94560]/10 rounded-lg text-[11px] font-semibold transition-colors"
+                  >
+                    🗑
                   </button>
                 </>
               )}
@@ -658,6 +887,9 @@ function MindmapContent() {
             onMouseUp={handleCanvasMouseUp}
             onMouseLeave={handleCanvasMouseUp}
             onWheel={handleWheel}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             style={{ touchAction: 'none' }}
           >
             {/* Grid background */}
@@ -693,14 +925,13 @@ function MindmapContent() {
                   const path = calcEdgePath(fromNode, toNode, edge.style);
                   return (
                     <g key={edge.id}>
-                      {/* Invisible wider path for easier clicking */}
                       <path
                         d={path}
                         fill="none"
                         stroke="transparent"
                         strokeWidth="16"
                         style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                        onClick={(e) => { e.stopPropagation(); setSelectedEdgeId(edge.id); setSelectedNodeId(null); }}
+                        onClick={(e) => { e.stopPropagation(); setSelectedEdgeId(edge.id); setSelectedNodeIds(new Set()); }}
                       />
                       <path
                         d={path}
@@ -710,7 +941,6 @@ function MindmapContent() {
                         strokeLinecap="round"
                         style={{ pointerEvents: 'none' }}
                       />
-                      {/* Arrow head */}
                       {(() => {
                         const toSide = getClosestSide(toNode, fromNode.x + fromNode.width / 2, fromNode.y + fromNode.height / 2);
                         const pt = getConnectionPoint(toNode, toSide);
@@ -748,11 +978,12 @@ function MindmapContent() {
 
               {/* Node layer */}
               {activeMap.nodes.map((node) => {
-                const isSelected = selectedNodeId === node.id;
+                const isSelected = selectedNodeIds.has(node.id);
                 const isEditing = editingNodeId === node.id;
                 return (
                   <div
                     key={node.id}
+                    data-node-id={node.id}
                     style={{
                       position: 'absolute',
                       left: `${node.x}px`,
@@ -764,7 +995,7 @@ function MindmapContent() {
                     className={`rounded-xl shadow-lg transition-shadow ${isSelected ? 'ring-2 ring-[#e94560] shadow-xl' : 'hover:shadow-xl'}`}
                     onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                     onMouseUp={() => handleNodeMouseUp(node.id)}
-                    onDoubleClick={() => { setEditingNodeId(node.id); setSelectedNodeId(node.id); }}
+                    onDoubleClick={() => { setEditingNodeId(node.id); setSelectedNodeIds(new Set([node.id])); }}
                   >
                     {/* Node background */}
                     <div
@@ -789,8 +1020,8 @@ function MindmapContent() {
                         );
                       })}
 
-                      {/* Action buttons */}
-                      {isSelected && !isEditing && (
+                      {/* Action buttons — single select only */}
+                      {isSelected && selectedNodeIds.size === 1 && !isEditing && (
                         <div className="absolute -top-8 left-0 flex gap-1 z-50">
                           {NODE_COLORS.map((c) => (
                             <button
@@ -850,6 +1081,7 @@ function MindmapContent() {
                           onChange={(e) => updateNodeText(node.id, e.target.value)}
                           onBlur={() => setEditingNodeId(null)}
                           onMouseDown={(e) => e.stopPropagation()}
+                          onTouchStart={(e) => e.stopPropagation()}
                           onKeyDown={(e) => { if (e.key === 'Escape') setEditingNodeId(null); }}
                           autoFocus
                           className="w-full bg-transparent text-white outline-none resize-none text-sm placeholder-white/50"
@@ -871,12 +1103,24 @@ function MindmapContent() {
               })}
             </div>
 
+            {/* Multi-select indicator */}
+            {selectedNodeIds.size >= 2 && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-[#8b5cf6] text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg z-50">
+                {selectedNodeIds.size}개 선택됨
+              </div>
+            )}
+
             {/* Connection guide */}
             {connectingFrom && (
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-background-card border border-border px-4 py-2 rounded-full text-xs text-text-muted shadow-lg z-50">
                 다른 노드에 드롭하여 연결 · <span className="text-text-inactive">Esc로 취소</span>
               </div>
             )}
+
+            {/* Mobile help */}
+            <div className="absolute bottom-3 right-3 md:hidden text-[9px] text-text-inactive bg-background/80 px-2 py-1 rounded-full">
+              길게 눌러 다중선택
+            </div>
 
             {/* Hidden file input */}
             <input

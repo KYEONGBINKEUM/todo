@@ -101,6 +101,7 @@ function NotesContent() {
 
   // Read-only mode
   const [readOnly, setReadOnly] = useState(false);
+  const [showMobileToolbar, setShowMobileToolbar] = useState(false);
 
   // Undo / Redo history (per active note)
   const historyRef = useRef<Map<string, { past: NoteBlock[][]; future: NoteBlock[][] }>>(new Map());
@@ -1226,96 +1227,147 @@ function NotesContent() {
       {activeNote ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Editor Toolbar */}
-          <div className="flex items-center justify-between px-6 py-2.5 border-b border-border bg-background/50">
-            <div className="flex items-center gap-3 text-xs text-text-muted">
-              <button
-                onClick={() => setActiveNoteId('')}
-                className="md:hidden flex items-center gap-1 text-text-secondary hover:text-text-primary transition-colors mr-1"
-                title="목록으로"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </button>
-              <span>수정됨 {getRelativeTime(activeNote.updated_at)}</span>
-              <span>·</span>
-              <span>{activeNote.blocks.length} 블록</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {/* Undo / Redo */}
-              <button
-                onClick={undo}
-                disabled={!canUndo || readOnly}
-                title="되돌리기 (Ctrl+Z)"
-                className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-              </button>
-              <button
-                onClick={redo}
-                disabled={!canRedo || readOnly}
-                title="다시 실행 (Ctrl+Shift+Z)"
-                className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
-              </button>
+          <div className="border-b border-border bg-background/50">
+            {/* Main toolbar row */}
+            <div className="flex items-center justify-between px-4 md:px-6 py-2">
+              <div className="flex items-center gap-2 md:gap-3 text-xs text-text-muted min-w-0">
+                <button
+                  onClick={() => setActiveNoteId('')}
+                  className="md:hidden flex items-center text-text-secondary hover:text-text-primary transition-colors flex-shrink-0"
+                  title="목록으로"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </button>
+                <span className="truncate hidden md:inline">수정됨 {getRelativeTime(activeNote.updated_at)}</span>
+                <span className="hidden md:inline">·</span>
+                <span className="hidden md:inline">{activeNote.blocks.length} 블록</span>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {/* Undo / Redo */}
+                <button
+                  onClick={undo}
+                  disabled={!canUndo || readOnly}
+                  title="되돌리기 (Ctrl+Z)"
+                  className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                </button>
+                <button
+                  onClick={redo}
+                  disabled={!canRedo || readOnly}
+                  title="다시 실행 (Ctrl+Shift+Z)"
+                  className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+                </button>
 
-              <div className="w-px h-4 bg-border mx-1" />
+                <div className="w-px h-4 bg-border mx-1" />
 
-              {/* Read / Write toggle */}
-              <button
-                onClick={() => setReadOnly(!readOnly)}
-                title={readOnly ? '쓰기 모드로 전환' : '읽기 모드로 전환'}
-                className={`h-7 px-2.5 flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-all ${
-                  readOnly
-                    ? 'bg-[#8b5cf6]/15 text-[#8b5cf6] border border-[#8b5cf6]/30'
-                    : 'bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30'
-                }`}
-              >
-                {readOnly ? (
-                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> 읽기</>
-                ) : (
-                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> 쓰기</>
+                {/* Read / Write toggle */}
+                <button
+                  onClick={() => setReadOnly(!readOnly)}
+                  title={readOnly ? '쓰기 모드로 전환' : '읽기 모드로 전환'}
+                  className={`h-7 px-2 md:px-2.5 flex items-center gap-1 md:gap-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                    readOnly
+                      ? 'bg-[#8b5cf6]/15 text-[#8b5cf6] border border-[#8b5cf6]/30'
+                      : 'bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30'
+                  }`}
+                >
+                  {readOnly ? (
+                    <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span className="hidden md:inline"> 읽기</span></>
+                  ) : (
+                    <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span className="hidden md:inline"> 쓰기</span></>
+                  )}
+                </button>
+
+                {/* Desktop: inline block type buttons */}
+                {!readOnly && (
+                  <>
+                    <div className="w-px h-4 bg-border mx-1 hidden md:block" />
+                    <div className="hidden md:flex items-center gap-0.5">
+                      {[
+                        { type: 'text' as const, label: 'T', title: '텍스트' },
+                        { type: 'heading2' as const, label: 'H', title: '제목' },
+                        { type: 'bullet' as const, label: '•', title: '글머리' },
+                        { type: 'todo' as const, label: '☑', title: '할 일' },
+                        { type: 'quote' as const, label: '"', title: '인용' },
+                        { type: 'code' as const, label: '</>', title: '코드' },
+                        { type: 'link' as const, label: '🔗', title: '링크 ([[)' },
+                        { type: 'toggle' as const, label: '▶', title: '토글 (>>)' },
+                        { type: 'divider' as const, label: '—', title: '구분선' },
+                      ].map((item) => (
+                        <button
+                          key={item.type}
+                          onClick={() => { const lastBlock = activeNote.blocks[activeNote.blocks.length - 1]; addBlockAfter(lastBlock.id, item.type); }}
+                          title={item.title}
+                          className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors text-[11px] font-mono"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 )}
-              </button>
 
-              {!readOnly && (
-                <>
-                  <div className="w-px h-4 bg-border mx-1" />
+                {/* Mobile: toggle toolbar button */}
+                {!readOnly && (
+                  <button
+                    onClick={() => setShowMobileToolbar(!showMobileToolbar)}
+                    className={`md:hidden w-7 h-7 flex items-center justify-center rounded transition-colors text-[11px] ${
+                      showMobileToolbar ? 'bg-[#e94560]/15 text-[#e94560]' : 'text-text-inactive hover:text-text-primary hover:bg-border'
+                    }`}
+                    title="블록 추가"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                )}
 
-                  {/* Block type buttons */}
-                  {[
-                    { type: 'text' as const, label: 'T', title: '텍스트' },
-                    { type: 'heading2' as const, label: 'H', title: '제목' },
-                    { type: 'bullet' as const, label: '•', title: '글머리' },
-                    { type: 'todo' as const, label: '☑', title: '할 일' },
-                    { type: 'quote' as const, label: '"', title: '인용' },
-                    { type: 'code' as const, label: '</>', title: '코드' },
-                    { type: 'link' as const, label: '🔗', title: '링크 ([[)' },
-                    { type: 'toggle' as const, label: '▶', title: '토글 (>>)' },
-                    { type: 'divider' as const, label: '—', title: '구분선' },
-                  ].map((item) => (
-                    <button
-                      key={item.type}
-                      onClick={() => { const lastBlock = activeNote.blocks[activeNote.blocks.length - 1]; addBlockAfter(lastBlock.id, item.type); }}
-                      title={item.title}
-                      className="w-7 h-7 flex items-center justify-center text-text-inactive hover:text-text-primary hover:bg-border rounded transition-colors text-[11px] font-mono"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </>
-              )}
-
-              {/* Folder move */}
-              <div className="w-px h-4 bg-border mx-1" />
-              <select
-                value={activeNote.folderId || ''}
-                onChange={(e) => moveToFolder(activeNote.id, e.target.value || null)}
-                className="h-7 px-2 bg-background-card text-text-muted text-[10px] border border-border rounded-lg focus:outline-none cursor-pointer"
-              >
-                <option value="">폴더 없음</option>
-                {folders.map((f) => (<option key={f.id} value={f.id}>{f.icon} {f.name}</option>))}
-              </select>
+                {/* Folder move */}
+                <div className="w-px h-4 bg-border mx-1 hidden md:block" />
+                <select
+                  value={activeNote.folderId || ''}
+                  onChange={(e) => moveToFolder(activeNote.id, e.target.value || null)}
+                  className="hidden md:block h-7 px-2 bg-background-card text-text-muted text-[10px] border border-border rounded-lg focus:outline-none cursor-pointer"
+                >
+                  <option value="">폴더 없음</option>
+                  {folders.map((f) => (<option key={f.id} value={f.id}>{f.icon} {f.name}</option>))}
+                </select>
+              </div>
             </div>
+
+            {/* Mobile expanded toolbar */}
+            {showMobileToolbar && !readOnly && (
+              <div className="md:hidden flex items-center gap-1 px-4 pb-2 flex-wrap">
+                {[
+                  { type: 'text' as const, label: 'T', title: '텍스트' },
+                  { type: 'heading2' as const, label: 'H', title: '제목' },
+                  { type: 'bullet' as const, label: '•', title: '글머리' },
+                  { type: 'todo' as const, label: '☑', title: '할 일' },
+                  { type: 'quote' as const, label: '"', title: '인용' },
+                  { type: 'code' as const, label: '</>', title: '코드' },
+                  { type: 'link' as const, label: '🔗', title: '링크' },
+                  { type: 'toggle' as const, label: '▶', title: '토글' },
+                  { type: 'divider' as const, label: '—', title: '구분선' },
+                ].map((item) => (
+                  <button
+                    key={item.type}
+                    onClick={() => { const lastBlock = activeNote.blocks[activeNote.blocks.length - 1]; addBlockAfter(lastBlock.id, item.type); setShowMobileToolbar(false); }}
+                    className="h-8 px-2.5 flex items-center gap-1.5 text-text-inactive hover:text-text-primary bg-background-card hover:bg-border border border-border rounded-lg transition-colors text-[11px]"
+                  >
+                    <span className="font-mono">{item.label}</span>
+                    <span className="text-[10px] text-text-muted">{item.title}</span>
+                  </button>
+                ))}
+                <select
+                  value={activeNote.folderId || ''}
+                  onChange={(e) => moveToFolder(activeNote.id, e.target.value || null)}
+                  className="h-8 px-2 bg-background-card text-text-muted text-[10px] border border-border rounded-lg focus:outline-none cursor-pointer"
+                >
+                  <option value="">폴더 없음</option>
+                  {folders.map((f) => (<option key={f.id} value={f.id}>{f.icon} {f.name}</option>))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Editor Content */}

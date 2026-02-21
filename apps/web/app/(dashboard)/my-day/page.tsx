@@ -301,6 +301,18 @@ export default function MyDayPage() {
     setShowCleanup(false);
   };
 
+  const handleCleanupAll = async () => {
+    if (!user) return;
+    const targets = storeTasks.filter((t) => t.myDay);
+    if (!targets.length) { alert('삭제할 기록이 없습니다.'); return; }
+    if (!confirm(`My Day 전체 기록 ${targets.length}개를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+    for (const t of targets) {
+      if (t.attachments?.length) await deleteAttachmentsFromStorage(t.attachments);
+      await deleteTaskDB(user.uid, t.id!);
+    }
+    setShowCleanup(false);
+  };
+
   const getListInfo = (listId: string) =>
     lists.find((l) => l.id === listId) || lists[0] || DEFAULT_LISTS[0];
 
@@ -367,12 +379,20 @@ export default function MyDayPage() {
                     </button>
                   </div>
 
-                  {/* 오늘 이전 전체 삭제 */}
+                  {/* 오늘 이전 완료 삭제 */}
                   <button
                     onClick={handleCleanupBeforeToday}
                     className="w-full text-left px-3 py-2 text-xs text-[#e94560] hover:bg-[#e94560]/10 rounded-lg transition-colors border border-[#e94560]/20"
                   >
                     🧹 오늘 이전 완료된 기록 전체 삭제
+                  </button>
+
+                  {/* 전체 삭제 */}
+                  <button
+                    onClick={handleCleanupAll}
+                    className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-500/10 rounded-lg transition-colors border border-red-500/20 font-semibold"
+                  >
+                    ⚠️ My Day 전체 기록 삭제
                   </button>
 
                   <button onClick={() => setShowCleanup(false)} className="w-full text-center text-[10px] text-text-muted py-1">닫기</button>

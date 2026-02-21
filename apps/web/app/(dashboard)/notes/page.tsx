@@ -1190,17 +1190,21 @@ function NotesContent() {
                       'hover:bg-white/[0.02]'
                     }`}
                   >
-                    <div className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                    <div className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center">
                       <span className="text-text-inactive text-[10px] cursor-grab active:cursor-grabbing">⋮⋮</span>
-                      <button
-                        onClick={() => deleteBlock(block.id)}
-                        className="text-text-inactive hover:text-[#e94560] transition-colors text-[11px] leading-none"
-                        title="블록 삭제"
-                      >
-                        ×
-                      </button>
                     </div>
-                    {renderBlock(block)}
+                    <div className="flex items-start gap-1">
+                      <div className="flex-1 min-w-0">{renderBlock(block)}</div>
+                      {activeNote.blocks.length > 1 && (
+                        <button
+                          onClick={() => { if (confirm('이 블록을 삭제하시겠습니까?')) deleteBlock(block.id); }}
+                          className="flex-shrink-0 w-6 h-6 mt-0.5 flex items-center justify-center rounded-md text-text-inactive/50 hover:text-[#e94560] hover:bg-[#e94560]/10 active:text-[#e94560] active:bg-[#e94560]/10 transition-colors text-sm md:opacity-0 md:group-hover:opacity-100"
+                          title="블록 삭제"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
 
                     {/* Slash command menu - rendered relative to the active block */}
                     {slashMenuVisible && slashMenuBlockId === block.id && (

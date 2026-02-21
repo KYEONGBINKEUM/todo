@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
 import { updateUserSettings, getUserSettings, getStorageLimit, type FontSize, type Plan, type Language } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -35,11 +36,11 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t, language, setLanguage } = useI18n();
+  const { storageUsed } = useDataStore();
   const [activeTab, setActiveTab] = useState<Tab>('account');
   const [fontSize, setFontSizeState] = useState<FontSize>('medium');
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [storageUsed, setStorageUsed] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -49,7 +50,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       applyFontSize(fs);
       setUserPlan(s.plan || 'free');
       setIsAdmin(s.isAdmin || false);
-      setStorageUsed(s.storageUsed ?? 0);
     });
   }, [user]);
 

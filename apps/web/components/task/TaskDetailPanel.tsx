@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { TaskData, SubTask, TaskAttachment, NoteData, updateStorageUsed } from '@/lib/firestore';
+import { TaskData, SubTask, TaskAttachment, NoteData } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
 import { requestNotificationPermission } from '@/lib/use-reminders';
@@ -123,9 +123,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     memoTimer.current = setTimeout(() => onUpdate({ memo: value }), 500);
   };
 
-  // ── Attachments (IndexedDB) ─────────────────────────────────────────────────
+  // ── Attachments ────────────────────────────────────────────────────────────
 
   const attachments: TaskAttachment[] = task.attachments ?? [];
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ name: string; percent: number }[]>([]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const allFiles = Array.from(e.target.files ?? []);
@@ -141,10 +143,19 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     });
     if (!files.length) return;
 
+    setUploading(true);
+    setUploadProgress(files.map((f) => ({ name: f.name, percent: 0 })));
+
     const newAtts: TaskAttachment[] = [];
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const { downloadURL, storagePath } = await uploadAttachment(user.uid, task.id, file, id);
+      const { downloadURL, storagePath } = await uploadAttachment(
+        user.uid, task.id, file, id,
+        (percent) => {
+          setUploadProgress((prev) => prev.map((p, j) => j === i ? { ...p, percent } : p));
+        },
+      );
       newAtts.push({
         id,
         name: file.name,
@@ -154,11 +165,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
         downloadURL,
         storagePath,
       });
+      setUploadProgress((prev) => prev.map((p, j) => j === i ? { ...p, percent: 100 } : p));
     }
     onUpdate({ attachments: [...attachments, ...newAtts] });
-    // 스토리지 사용량 증가
-    const totalAdded = newAtts.reduce((sum, a) => sum + a.size, 0);
-    if (totalAdded > 0) updateStorageUsed(user.uid, totalAdded).catch(() => {});
+    setUploading(false);
+    setUploadProgress([]);
   };
 
   const deleteAttachment = async (att: TaskAttachment) => {
@@ -168,8 +179,6 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
       await deleteAttachments([att.id]); // 구형 IndexedDB
     }
     onUpdate({ attachments: attachments.filter((a) => a.id !== att.id) });
-    // 스토리지 사용량 감소
-    if (user && att.size > 0) updateStorageUsed(user.uid, -att.size).catch(() => {});
   };
 
   const handleOpenAttachment = (att: TaskAttachment) => {
@@ -438,9 +447,29 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               </button>
               <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
             </div>
-            <p className="text-[10px] text-text-muted mb-3">최대 2 MB · 클릭하면 열기/다운로드</p>
+            <p className="text-[10px] text-text-muted mb-3">최대 10 MB · 클릭하면 열기/다운로드</p>
 
-            {attachments.length === 0 ? (
+            {/* 업로드 진행률 */}
+            {uploading && uploadProgress.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {uploadProgress.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-text-secondary truncate mb-1">{p.name}</p>
+                      <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#e94560] to-[#533483] rounded-full transition-all duration-300"
+                          style={{ width: `${p.percent}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-text-muted flex-shrink-0 w-8 text-right">{p.percent}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {attachments.length === 0 && !uploading ? (
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full py-4 border-2 border-dashed border-border rounded-lg text-center text-text-inactive text-xs hover:border-[#e94560]/40 hover:text-text-muted transition-colors"

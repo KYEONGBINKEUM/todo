@@ -22,6 +22,7 @@ interface DataStore {
   notes: NoteData[];
   folders: FolderData[];
   loading: boolean;
+  storageUsed: number; // bytes — 텍스트 + 파일 총 사용량
 }
 
 const DataStoreContext = createContext<DataStore>({
@@ -30,7 +31,32 @@ const DataStoreContext = createContext<DataStore>({
   notes: [],
   folders: [],
   loading: true,
+  storageUsed: 0,
 });
+
+/** 텍스트의 UTF-8 바이트 크기 추정 */
+function estimateTextBytes(text: string): number {
+  return new Blob([text]).size;
+}
+
+/** 모든 데이터의 실사용량 계산 (텍스트 + 첨부파일) */
+function calcStorageUsed(tasks: TaskData[], notes: NoteData[]): number {
+  let total = 0;
+  for (const t of tasks) {
+    total += estimateTextBytes(t.title || '');
+    total += estimateTextBytes(t.memo || '');
+    for (const st of t.subTasks ?? []) total += estimateTextBytes(st.title || '');
+    for (const att of t.attachments ?? []) total += att.size;
+  }
+  for (const n of notes) {
+    total += estimateTextBytes(n.title || '');
+    for (const b of n.blocks ?? []) {
+      total += estimateTextBytes(b.content || '');
+      total += estimateTextBytes(b.children || '');
+    }
+  }
+  return total;
+}
 
 export function DataStoreProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
@@ -110,8 +136,10 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [user, authLoading]);
 
+  const storageUsed = calcStorageUsed(tasks, notes);
+
   return (
-    <DataStoreContext.Provider value={{ tasks, lists, notes, folders, loading }}>
+    <DataStoreContext.Provider value={{ tasks, lists, notes, folders, loading, storageUsed }}>
       {children}
     </DataStoreContext.Provider>
   );

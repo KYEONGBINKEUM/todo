@@ -23,7 +23,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
-  const { lists: storeLists } = useDataStore();
+  const { lists: storeLists, storageUsed } = useDataStore();
   const [lists, setLists] = useState<ListData[]>([]);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -31,7 +31,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [newListLabel, setNewListLabel] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [userPlan, setUserPlan] = useState<Plan>('free');
-  const [storageUsed, setStorageUsed] = useState(0);
 
   const NAV_ITEMS = [
     { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
@@ -57,7 +56,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   useEffect(() => {
     if (!user) return;
     getUserSettings(user.uid)
-      .then((s) => { setUserPlan(s.plan || 'free'); setStorageUsed(s.storageUsed ?? 0); })
+      .then((s) => { setUserPlan(s.plan || 'free'); })
       .catch(() => {});
   }, [user]);
 

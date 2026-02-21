@@ -18,12 +18,26 @@ export async function uploadAttachment(
   taskId: string,
   file: File,
   attachmentId: string,
+  onProgress?: (percent: number) => void,
 ): Promise<{ downloadURL: string; storagePath: string }> {
   const path = `users/${uid}/tasks/${taskId}/${attachmentId}/${file.name}`;
   const storageRef = ref(storage, path);
-  const snapshot = await uploadBytesResumable(storageRef, file);
-  const downloadURL = await getDownloadURL(snapshot.ref);
-  return { downloadURL, storagePath: path };
+  const uploadTask = uploadBytesResumable(storageRef, file);
+
+  return new Promise((resolve, reject) => {
+    uploadTask.on(
+      'state_changed',
+      (snap) => {
+        const percent = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        onProgress?.(percent);
+      },
+      (err) => reject(err),
+      async () => {
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+        resolve({ downloadURL, storagePath: path });
+      },
+    );
+  });
 }
 
 /** Firebase Storage 단일 파일 삭제 */

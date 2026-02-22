@@ -1,6 +1,6 @@
 {
   "productName": "AI Todo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.aitodo.desktop",
   "build": {
     "frontendDist": "../out",
@@ -57,7 +57,7 @@
       "endpoints": [
         "https://github.com/KYEONGBINKEUM/todo/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU3NjNDRDVEQUMyNzMyNTIKUldSU01pZXNYYzFqNTg1L2F1S3dqT3AvRURYTFpnQzRPVnFVRkRFdmFwZmZ5VGh3Z2h2VU8zVE0K"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMwMDc1QTYxMUZBRTNFMEUKUldRT1BxNGZZVm9ITU9aYVRFbkk4RGFObjZmZGsyWGwrYVdnZzJ4SWh1ajdMTDh6VnhUeDI0bkUK"
     }
   }
 }

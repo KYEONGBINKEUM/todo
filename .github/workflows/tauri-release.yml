@@ -57,6 +57,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          tauriScript: pnpm tauri
           projectPath: apps/web
           tagName: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', github.event.inputs.version) }}
           releaseName: 'AI Todo v__VERSION__'

@@ -31,6 +31,26 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [newListLabel, setNewListLabel] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [userPlan, setUserPlan] = useState<Plan>('free');
+  const [hasUpdate, setHasUpdate] = useState(false);
+
+  // Tauri: 앱 시작 시 백그라운드 업데이트 확인
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+    if (!isTauri) return;
+
+    const checkUpdate = async () => {
+      try {
+        const { check } = await import('@tauri-apps/plugin-updater');
+        const update = await check();
+        if (update) setHasUpdate(true);
+      } catch {
+        // 업데이트 확인 실패 — 무시
+      }
+    };
+    // 3초 후 확인 (앱 로딩 완료 후)
+    const timer = setTimeout(checkUpdate, 3000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const NAV_ITEMS = [
     { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
@@ -286,13 +306,16 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             {/* Settings button */}
             <button
               onClick={() => setShowSettings(true)}
-              className="text-text-inactive hover:text-text-secondary transition-colors flex-shrink-0"
+              className="relative text-text-inactive hover:text-text-secondary transition-colors flex-shrink-0"
               title={t('settings.title')}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
+              {hasUpdate && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#e94560] rounded-full border border-surface" />
+              )}
             </button>
             {/* Sign out button */}
             <button

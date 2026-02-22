@@ -4,22 +4,34 @@ import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase
 import { auth, googleProvider } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isTauriEnv, setIsTauriEnv] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const unlistenRef = useRef<(() => void) | null>(null);
 
-  // 이미 로그인된 상태면 바로 리다이렉트 (onAuthStateChanged 감지)
+  // Tauri 환경 감지
+  useEffect(() => {
+    const detected = typeof window !== 'undefined' && (
+      '__TAURI__' in window ||
+      '__TAURI_INTERNALS__' in window ||
+      navigator.userAgent.includes('Tauri')
+    );
+    setIsTauriEnv(detected);
+  }, []);
+
+  // 이미 로그인된 상태면 바로 리다이렉트
   useEffect(() => {
     if (!authLoading && user) {
       router.replace('/my-day');
     }
   }, [user, authLoading, router]);
 
-  // 리다이렉트 폴백 결과 확인
+  // 리다이렉트 폴백 결과 확인 (웹 전용)
   useEffect(() => {
     getRedirectResult(auth)
       .then((result) => {
@@ -35,16 +47,94 @@ export default function LoginPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleGoogleLogin = async () => {
+  // 컴포넌트 언마운트 시 리스너 정리
+  useEffect(() => {
+    return () => {
+      if (unlistenRef.current) {
+        unlistenRef.current();
+      }
+    };
+  }, []);
+
+  // Tauri: 시스템 브라우저 인증 → localStorage 주입
+  const handleTauriLogin = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { open } = await import('@tauri-apps/plugin-shell');
+      const { listen } = await import('@tauri-apps/api/event');
+
+      // 로컬 OAuth 서버 시작
+      const port = await invoke<number>('start_oauth_server');
+
+      // OAuth 콜백 이벤트 리스너 등록
+      const unlisten = await listen<string>('oauth-callback', async (event) => {
+        unlisten();
+        unlistenRef.current = null;
+        try {
+          // event.payload is the raw JSON string of user data
+          const userData = JSON.parse(event.payload);
+
+          if (!userData || !userData.uid) {
+            setError('인증 정보를 받지 못했습니다. 다시 시도해주세요.');
+            setLoading(false);
+            return;
+          }
+
+          // Firebase Auth의 localStorage 키에 직접 유저 데이터 주입
+          // Firebase Auth v9 browserLocalPersistence 형식
+          const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
+          const storageKey = `firebase:authUser:${apiKey}:[DEFAULT]`;
+          localStorage.setItem(storageKey, JSON.stringify(userData));
+
+          // 페이지 리로드하여 Firebase Auth가 localStorage에서 유저를 로드하도록 함
+          window.location.href = '/my-day';
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
+          setError(message);
+          setLoading(false);
+        }
+      });
+      unlistenRef.current = unlisten;
+
+      // Firebase 설정값을 URL 파라미터로 전달하여 시스템 브라우저 열기
+      const params = new URLSearchParams({
+        apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
+        authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
+        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
+      });
+
+      await open(`http://localhost:${port}/login?${params.toString()}`);
+
+      // 120초 타임아웃
+      setTimeout(() => {
+        if (unlistenRef.current) {
+          unlistenRef.current();
+          unlistenRef.current = null;
+          setError('로그인 시간이 초과되었습니다. 다시 시도해주세요.');
+          setLoading(false);
+        }
+      }, 120000);
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
+      console.error('Tauri login error:', err);
+      setError(`데스크톱 로그인 오류: ${message}`);
+      setLoading(false);
+    }
+  }, []);
+
+  // 웹: 기존 Firebase signInWithPopup
+  const handleWebLogin = async () => {
     setLoading(true);
     setError(null);
     try {
-      // 팝업 우선 시도 (EXE/데스크톱에서 가장 안정적)
       await signInWithPopup(auth, googleProvider);
       router.replace('/my-day');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
-      // 팝업이 차단된 경우에만 리다이렉트로 폴백
       if (message.includes('auth/popup-blocked') || message.includes('auth/popup-closed-by-browser')) {
         try {
           await signInWithRedirect(auth, googleProvider);
@@ -58,6 +148,14 @@ export default function LoginPage() {
         setError(message);
       }
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    if (isTauriEnv) {
+      handleTauriLogin();
+    } else {
+      handleWebLogin();
     }
   };
 
@@ -79,6 +177,11 @@ export default function LoginPage() {
             <p className="text-[#94a3b8] text-sm">
               구글 계정으로 간편하게 시작하세요
             </p>
+            {isTauriEnv && (
+              <p className="text-[#4a4a6a] text-xs">
+                시스템 브라우저에서 로그인이 진행됩니다
+              </p>
+            )}
           </div>
 
           {error && (

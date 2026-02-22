@@ -1,11 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
 import { updateUserSettings, getUserSettings, getStorageLimit, type FontSize, type Plan, type Language } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
+
+type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'error';
+
+function isTauriEnv(): boolean {
+  return typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+}
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -41,6 +47,79 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [fontSize, setFontSizeState] = useState<FontSize>('medium');
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isTauri, setIsTauri] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [updateVersion, setUpdateVersion] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [updateError, setUpdateError] = useState('');
+
+  useEffect(() => {
+    setIsTauri(isTauriEnv());
+  }, []);
+
+  const checkForUpdates = useCallback(async () => {
+    if (!isTauriEnv()) return;
+    setUpdateStatus('checking');
+    setUpdateError('');
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+      if (update) {
+        setUpdateVersion(update.version);
+        setUpdateStatus('available');
+      } else {
+        setUpdateStatus('up-to-date');
+      }
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : '업데이트 확인 실패');
+      setUpdateStatus('error');
+    }
+  }, []);
+
+  const downloadAndInstall = useCallback(async () => {
+    if (!isTauriEnv()) return;
+    setUpdateStatus('downloading');
+    setDownloadProgress(0);
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+      if (!update) return;
+
+      let downloaded = 0;
+      let totalSize = 0;
+
+      await update.downloadAndInstall((event) => {
+        if (event.event === 'Started') {
+          totalSize = (event.data as { contentLength?: number }).contentLength || 0;
+          downloaded = 0;
+        } else if (event.event === 'Progress') {
+          downloaded += (event.data as { chunkLength?: number }).chunkLength || 0;
+          if (totalSize > 0) {
+            setDownloadProgress(Math.min(100, Math.round((downloaded / totalSize) * 100)));
+          } else {
+            setDownloadProgress((prev) => Math.min(99, prev + 1));
+          }
+        } else if (event.event === 'Finished') {
+          setDownloadProgress(100);
+        }
+      });
+
+      setUpdateStatus('ready');
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : '업데이트 다운로드 실패');
+      setUpdateStatus('error');
+    }
+  }, []);
+
+  const restartApp = useCallback(async () => {
+    try {
+      const core = await import('@tauri-apps/api/core');
+      await core.invoke('plugin:updater|restart');
+    } catch {
+      // Fallback: reload the page
+      window.location.reload();
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -351,15 +430,104 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   <div className="text-center py-4">
                     <div className="text-4xl mb-3">✅</div>
                     <h3 className="text-lg font-extrabold text-text-primary mb-1">AI Todo</h3>
-                    <p className="text-xs text-text-muted">버전 0.1.0 — MVP</p>
+                    <p className="text-xs text-text-muted">버전 1.0.0{isTauri ? ' (Desktop)' : ' (Web)'}</p>
                   </div>
+
+                  {/* 업데이트 섹션 — Tauri 전용 */}
+                  {isTauri && (
+                    <div className="p-4 bg-background rounded-xl border border-border space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase tracking-wider font-semibold text-text-muted">소프트웨어 업데이트</span>
+                      </div>
+
+                      {updateStatus === 'idle' && (
+                        <button
+                          onClick={checkForUpdates}
+                          className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold bg-[#e94560] hover:bg-[#d63b55] text-white transition-all"
+                        >
+                          업데이트 확인
+                        </button>
+                      )}
+
+                      {updateStatus === 'checking' && (
+                        <div className="flex items-center justify-center gap-2 py-2.5">
+                          <div className="w-4 h-4 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
+                          <span className="text-xs text-text-secondary">업데이트 확인 중...</span>
+                        </div>
+                      )}
+
+                      {updateStatus === 'up-to-date' && (
+                        <div className="flex items-center justify-center gap-2 py-2.5">
+                          <span className="text-[#22c55e] text-sm">✓</span>
+                          <span className="text-xs text-text-secondary">최신 버전입니다 (v1.0.0)</span>
+                        </div>
+                      )}
+
+                      {updateStatus === 'available' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="text-[#f59e0b] text-sm">●</span>
+                            <span className="text-xs text-text-primary font-semibold">v{updateVersion} 업데이트 가능</span>
+                          </div>
+                          <button
+                            onClick={downloadAndInstall}
+                            className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold bg-[#22c55e] hover:bg-[#16a34a] text-white transition-all"
+                          >
+                            지금 업데이트
+                          </button>
+                        </div>
+                      )}
+
+                      {updateStatus === 'downloading' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs text-text-secondary">
+                            <span>다운로드 중...</span>
+                            <span>{downloadProgress}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-border rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-[#e94560] rounded-full transition-all duration-300"
+                              style={{ width: `${downloadProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {updateStatus === 'ready' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="text-[#22c55e] text-sm">✓</span>
+                            <span className="text-xs text-text-primary">업데이트 설치 완료</span>
+                          </div>
+                          <button
+                            onClick={restartApp}
+                            className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold bg-[#8b5cf6] hover:bg-[#7c3aed] text-white transition-all"
+                          >
+                            재시작하여 적용
+                          </button>
+                        </div>
+                      )}
+
+                      {updateStatus === 'error' && (
+                        <div className="space-y-2">
+                          <p className="text-xs text-red-400 text-center">{updateError}</p>
+                          <button
+                            onClick={checkForUpdates}
+                            className="w-full py-2 px-4 rounded-xl text-xs font-semibold border border-border hover:border-border-hover text-text-secondary transition-all"
+                          >
+                            다시 시도
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="space-y-2 text-xs text-text-secondary">
                     {[
                       { label: '프레임워크', value: 'Next.js 14 (App Router)' },
                       { label: '데이터베이스', value: 'Firebase Firestore' },
                       { label: '인증', value: 'Firebase Auth' },
-                      { label: '배포', value: 'Cloudflare Pages' },
+                      { label: '배포', value: isTauri ? 'Tauri 2 (Desktop)' : 'Cloudflare Pages' },
                     ].map((item) => (
                       <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/50">
                         <span className="text-text-muted">{item.label}</span>

@@ -86,6 +86,7 @@ jobs:
           includeUpdaterJson: true
 
   build-android:
+    needs: build-desktop
     runs-on: ubuntu-latest
 
     steps:

@@ -1,5 +1,8 @@
+#[cfg(not(target_os = "android"))]
 use tauri::Emitter;
+#[cfg(not(target_os = "android"))]
 use std::io::{Read, Write};
+#[cfg(not(target_os = "android"))]
 use std::net::TcpListener;
 
 const LOGIN_HTML: &str = r##"<!DOCTYPE html>
@@ -152,6 +155,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> String {
     String::from_utf8_lossy(&buf).to_string()
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn start_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
@@ -200,10 +204,19 @@ fn start_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(not(target_os = "android"))]
+    let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![start_oauth_server])
+        .invoke_handler(tauri::generate_handler![start_oauth_server]);
+
+    #[cfg(target_os = "android")]
+    let builder = builder
+        .invoke_handler(tauri::generate_handler![]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

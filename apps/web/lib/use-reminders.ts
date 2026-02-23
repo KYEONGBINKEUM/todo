@@ -5,18 +5,62 @@ import { TaskData } from './firestore';
 
 const MAX_TIMEOUT = 2_147_483_647; // ~24.8일 (setTimeout 최대 안전 값)
 
+function isTauriEnv(): boolean {
+  return typeof window !== 'undefined' && (
+    '__TAURI__' in window ||
+    '__TAURI_INTERNALS__' in window
+  );
+}
+
+function showInAppAlert(title: string, body: string) {
+  // 인앱 알림 표시 (Tauri 환경이거나 Notification API 사용 불가 시)
+  const container = document.createElement('div');
+  container.style.cssText = `
+    position: fixed; top: 20px; right: 20px; z-index: 99999;
+    background: #111128; border: 1px solid #e94560; border-radius: 12px;
+    padding: 16px 20px; max-width: 360px; box-shadow: 0 8px 32px rgba(233,69,96,0.3);
+    animation: slideIn 0.3s ease-out; color: #e2e8f0; font-family: system-ui, sans-serif;
+  `;
+  container.innerHTML = `
+    <style>@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}</style>
+    <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${title}</div>
+    <div style="font-size:12px;color:#94a3b8;">${body}</div>
+  `;
+  document.body.appendChild(container);
+  setTimeout(() => {
+    container.style.transition = 'opacity 0.3s, transform 0.3s';
+    container.style.opacity = '0';
+    container.style.transform = 'translateX(100%)';
+    setTimeout(() => container.remove(), 300);
+  }, 5000);
+}
+
+function fireNotification(title: string, body: string) {
+  if (typeof window === 'undefined') return;
+
+  // 브라우저 Notification API 사용 가능하면 사용
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification(title, { body, tag: title });
+      return;
+    } catch {
+      // fallback to in-app
+    }
+  }
+
+  // Tauri 환경이거나 Notification 불가 → 인앱 알림
+  showInAppAlert(title, body);
+}
+
 /**
- * 할일의 reminder 필드를 기반으로 브라우저 알림을 예약합니다.
- * 페이지를 떠나거나 컴포넌트가 언마운트되면 타이머가 정리됩니다.
+ * 할일의 reminder 필드를 기반으로 알림을 예약합니다.
  */
 export function useTaskReminders(tasks: TaskData[]) {
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
+    if (typeof window === 'undefined') return;
 
-    // 기존 타이머 전부 해제 후 재스케줄
     timers.current.forEach(clearTimeout);
     timers.current.clear();
 
@@ -29,14 +73,7 @@ export function useTaskReminders(tasks: TaskData[]) {
       if (delay <= 0 || delay > MAX_TIMEOUT) continue;
 
       const timer = setTimeout(() => {
-        try {
-          new Notification(`⏰ ${task.title}`, {
-            body: task.memo || '알림 시간이 되었습니다.',
-            tag: `task-${task.id}`,
-          });
-        } catch (err) {
-          console.warn('Notification 오류:', err);
-        }
+        fireNotification(`⏰ ${task.title}`, task.memo || '알림 시간이 되었습니다.');
         timers.current.delete(task.id!);
       }, delay);
 
@@ -50,9 +87,11 @@ export function useTaskReminders(tasks: TaskData[]) {
   }, [tasks]);
 }
 
-/** 알림 권한을 요청합니다. 이미 granted이면 바로 true 반환. */
+/** 알림 권한을 요청합니다. Tauri 환경에서는 항상 true 반환. */
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (typeof window === 'undefined' || !('Notification' in window)) return false;
+  if (typeof window === 'undefined') return false;
+  if (isTauriEnv()) return true; // Tauri에서는 인앱 알림 사용
+  if (!('Notification' in window)) return false;
   if (Notification.permission === 'granted') return true;
   if (Notification.permission === 'denied') return false;
   const result = await Notification.requestPermission();

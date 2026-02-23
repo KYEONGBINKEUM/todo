@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { TaskData, SubTask, TaskAttachment, NoteData } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
@@ -45,6 +45,8 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   // ── Memo ───────────────────────────────────────────────────────────────────
   const [memoValue, setMemoValue] = useState(task.memo ?? '');
   const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const memoRef = useRef<HTMLTextAreaElement>(null);
+  const [memoFocused, setMemoFocused] = useState(false);
 
   // ── Linked Notes ───────────────────────────────────────────────────────────
   const { notes: allNotes } = useDataStore();
@@ -121,6 +123,63 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     setMemoValue(value);
     if (memoTimer.current) clearTimeout(memoTimer.current);
     memoTimer.current = setTimeout(() => onUpdate({ memo: value }), 500);
+  };
+
+  const autoResizeMemo = useCallback(() => {
+    const el = memoRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, 80)}px`;
+  }, []);
+
+  useEffect(() => {
+    autoResizeMemo();
+  }, [memoValue, autoResizeMemo]);
+
+  const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/g;
+
+  const handleLinkClick = (url: string) => {
+    if (confirm(`이 링크를 브라우저에서 열까요?\n\n${url}`)) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const renderMemoWithLinks = (text: string) => {
+    if (!text) return null;
+    const parts: (string | { url: string; key: number })[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let keyCounter = 0;
+    const regex = new RegExp(URL_REGEX.source, 'g');
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index));
+      }
+      parts.push({ url: match[0], key: keyCounter++ });
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
+    }
+    if (parts.length === 1 && typeof parts[0] === 'string') return null;
+    return (
+      <div className="mt-2 text-xs text-text-primary leading-relaxed whitespace-pre-wrap break-words">
+        {parts.map((part) =>
+          typeof part === 'string' ? (
+            part
+          ) : (
+            <a
+              key={part.key}
+              onClick={(e) => { e.preventDefault(); handleLinkClick(part.url); }}
+              href={part.url}
+              className="text-[#60a5fa] hover:text-[#93bbfc] underline cursor-pointer break-all"
+            >
+              {part.url}
+            </a>
+          )
+        )}
+      </div>
+    );
   };
 
   // ── Attachments ────────────────────────────────────────────────────────────
@@ -316,7 +375,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               </div>
             </div>
 
-            {task.reminder && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied' && (
+            {task.reminder && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied' && !('__TAURI__' in window || '__TAURI_INTERNALS__' in window) && (
               <p className="text-[10px] text-amber-400 flex items-center gap-1">
                 <span>⚠️</span>
                 <span>브라우저 알림이 차단되어 있습니다. 브라우저 설정에서 허용해 주세요.</span>
@@ -423,12 +482,17 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               <span className="text-xs font-bold text-text-primary">메모</span>
             </div>
             <textarea
+              ref={memoRef}
               value={memoValue}
               onChange={(e) => handleMemoChange(e.target.value)}
+              onFocus={() => setMemoFocused(true)}
+              onBlur={() => setMemoFocused(false)}
               placeholder="메모를 입력하세요..."
-              rows={4}
+              rows={1}
+              style={{ minHeight: '80px', overflow: 'hidden' }}
               className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-text-primary placeholder-text-inactive resize-none focus:outline-none focus:border-[#e94560] transition-colors leading-relaxed"
             />
+            {!memoFocused && memoValue && renderMemoWithLinks(memoValue)}
           </div>
 
           {/* ── Attachments (IndexedDB) ──────────────────────────────────────── */}

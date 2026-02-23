@@ -50,11 +50,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [isTauri, setIsTauri] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [updateVersion, setUpdateVersion] = useState('');
+  const [currentVersion, setCurrentVersion] = useState('');
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [updateError, setUpdateError] = useState('');
 
   useEffect(() => {
-    setIsTauri(isTauriEnv());
+    const isTauriApp = isTauriEnv();
+    setIsTauri(isTauriApp);
+    if (isTauriApp) {
+      import('@tauri-apps/api/app').then(({ getVersion }) => {
+        getVersion().then(setCurrentVersion).catch(() => {});
+      });
+    }
   }, []);
 
   const checkForUpdates = useCallback(async () => {
@@ -430,7 +437,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   <div className="text-center py-4">
                     <div className="text-4xl mb-3">✅</div>
                     <h3 className="text-lg font-extrabold text-text-primary mb-1">AI Todo</h3>
-                    <p className="text-xs text-text-muted">버전 1.0.0{isTauri ? ' (Desktop)' : ' (Web)'}</p>
+                    <p className="text-xs text-text-muted">버전 {currentVersion || '1.0.0'}{isTauri ? ' (Desktop)' : ' (Web)'}</p>
                   </div>
 
                   {/* 업데이트 섹션 — Tauri 전용 */}
@@ -459,7 +466,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       {updateStatus === 'up-to-date' && (
                         <div className="flex items-center justify-center gap-2 py-2.5">
                           <span className="text-[#22c55e] text-sm">✓</span>
-                          <span className="text-xs text-text-secondary">최신 버전입니다 (v1.0.0)</span>
+                          <span className="text-xs text-text-secondary">최신 버전입니다 {currentVersion ? `(v${currentVersion})` : ''}</span>
                         </div>
                       )}
 

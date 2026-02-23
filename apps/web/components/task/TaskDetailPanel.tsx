@@ -2,6 +2,29 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+
+/** 메모 텍스트에서 URL을 파싱해 클릭 가능한 ReactNode 배열로 반환 */
+function parseMemoLinks(
+  text: string,
+  onLinkClick: (e: React.MouseEvent<HTMLAnchorElement>, url: string) => void,
+): React.ReactNode[] {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return parts.map((part, i) => {
+    if (/^https?:\/\/[^\s]+$/.test(part)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          onClick={(e) => onLinkClick(e, part)}
+          className="text-blue-400 underline hover:text-blue-300 break-all cursor-pointer"
+        >
+          {part}
+        </a>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
 import { TaskData, SubTask, TaskAttachment, NoteData } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
@@ -44,6 +67,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
   // ── Memo ───────────────────────────────────────────────────────────────────
   const [memoValue, setMemoValue] = useState(task.memo ?? '');
+  const [memoFocused, setMemoFocused] = useState(false);
   const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Linked Notes ───────────────────────────────────────────────────────────
@@ -58,6 +82,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     setTitleValue(task.title);
     setMemoValue(task.memo ?? '');
     setEditingSubId(null);
+    setMemoFocused(false);
   }, [task.id]);
 
   useEffect(() => {
@@ -121,6 +146,35 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     setMemoValue(value);
     if (memoTimer.current) clearTimeout(memoTimer.current);
     memoTimer.current = setTimeout(() => onUpdate({ memo: value }), 500);
+  };
+
+  /** 메모 내 링크 클릭: 경고창 → Tauri shell.open 또는 window.open */
+  const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`다음 링크로 이동하시겠습니까?\n\n${url}\n\n⚠️ 외부 링크는 위험할 수 있습니다.`)) return;
+    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    if (isTauri) {
+      import('@tauri-apps/plugin-shell').then(({ open }) => open(url)).catch(() => {
+        window.open(url, '_blank', 'noopener noreferrer');
+      });
+    } else {
+      window.open(url, '_blank', 'noopener noreferrer');
+    }
+  };
+
+  /** 알림 권한 차단 시: Tauri=Windows 설정 열기, 웹=재요청 */
+  const handleRequestNotificationPermission = () => {
+    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    if (isTauri) {
+      import('@tauri-apps/plugin-shell')
+        .then(({ open }) => open('ms-settings:notifications'))
+        .catch(() => alert('Windows 설정 > 알림 에서 "AI Todo" 앱의 알림을 허용해 주세요.'));
+    } else {
+      requestNotificationPermission().then((granted) => {
+        if (!granted) alert('브라우저 설정에서 이 사이트의 알림을 허용해 주세요.');
+      });
+    }
   };
 
   // ── Attachments ────────────────────────────────────────────────────────────
@@ -317,10 +371,18 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             </div>
 
             {task.reminder && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied' && (
-              <p className="text-[10px] text-amber-400 flex items-center gap-1">
-                <span>⚠️</span>
-                <span>브라우저 알림이 차단되어 있습니다. 브라우저 설정에서 허용해 주세요.</span>
-              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-[10px] text-amber-400 flex items-center gap-1">
+                  <span>⚠️</span>
+                  <span>알림이 차단되어 있습니다.</span>
+                </p>
+                <button
+                  onClick={handleRequestNotificationPermission}
+                  className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded hover:bg-amber-500/30 transition-colors"
+                >
+                  알림 허용하기
+                </button>
+              </div>
             )}
           </div>
 
@@ -422,13 +484,27 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               <span className="text-sm">📝</span>
               <span className="text-xs font-bold text-text-primary">메모</span>
             </div>
-            <textarea
-              value={memoValue}
-              onChange={(e) => handleMemoChange(e.target.value)}
-              placeholder="메모를 입력하세요..."
-              rows={4}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-text-primary placeholder-text-inactive resize-none focus:outline-none focus:border-[#e94560] transition-colors leading-relaxed"
-            />
+            {memoFocused ? (
+              <textarea
+                autoFocus
+                value={memoValue}
+                onChange={(e) => handleMemoChange(e.target.value)}
+                onBlur={() => setMemoFocused(false)}
+                placeholder="메모를 입력하세요..."
+                rows={4}
+                className="w-full bg-background border border-[#e94560] rounded-lg px-3 py-2.5 text-xs text-text-primary placeholder-text-inactive resize-y focus:outline-none transition-colors leading-relaxed min-h-[96px]"
+              />
+            ) : (
+              <div
+                onClick={() => setMemoFocused(true)}
+                className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-text-primary min-h-[96px] cursor-text leading-relaxed break-words whitespace-pre-wrap hover:border-border-hover transition-colors"
+              >
+                {memoValue
+                  ? parseMemoLinks(memoValue, handleLinkClick)
+                  : <span className="text-text-inactive">메모를 입력하세요...</span>
+                }
+              </div>
+            )}
           </div>
 
           {/* ── Attachments (IndexedDB) ──────────────────────────────────────── */}

@@ -195,7 +195,7 @@ export default function MyDayPage() {
     newTasks.splice(dstIdx, 0, moved);
 
     const withOrder = newTasks.map((t, i) => ({ ...t, order: (i + 1) * 1000 }));
-    setTasks(withOrder);
+    setTasks([...withOrder, ...completedTasks]);
 
     if (user) {
       savingOrder.current = true;

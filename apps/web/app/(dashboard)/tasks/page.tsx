@@ -125,12 +125,13 @@ function TasksContent() {
     handleDragEnd();
     if (srcIdx === null || srcIdx === dstIdx || savingOrder.current) return;
 
-    const newTasks = [...filtered];
-    const [moved] = newTasks.splice(srcIdx, 1);
-    newTasks.splice(dstIdx, 0, moved);
+    // activeTasks 인덱스 기준으로 재정렬 (filtered에는 완료 항목이 섞여 인덱스 불일치 버그 발생)
+    const newActive = [...activeTasks];
+    const [moved] = newActive.splice(srcIdx, 1);
+    newActive.splice(dstIdx, 0, moved);
 
-    const withOrder = newTasks.map((t, i) => ({ ...t, order: (i + 1) * 1000 }));
-    setTasks(withOrder);
+    const withOrder = newActive.map((t, i) => ({ ...t, order: (i + 1) * 1000 }));
+    setTasks([...withOrder, ...completedTasks]);
 
     if (user) {
       savingOrder.current = true;

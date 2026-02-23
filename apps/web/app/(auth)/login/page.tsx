@@ -182,32 +182,64 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Tauri Mobile: 시스템 브라우저에서 Firebase 인증 → 딥링크로 돌아오기
+  // Tauri Mobile: 로컬 서버 인증 → signInWithRedirect → oauth-callback 이벤트
+  // Firebase는 localhost를 기본 허용 도메인으로 인정하므로 외부 호스팅 불필요
   const handleTauriMobileLogin = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const { invoke } = await import('@tauri-apps/api/core');
       const { open } = await import('@tauri-apps/plugin-shell');
+      const { listen } = await import('@tauri-apps/api/event');
+
+      const port = await invoke<number>('start_oauth_server');
+
+      const unlisten = await listen<string>('oauth-callback', async (event) => {
+        unlisten();
+        unlistenRef.current = null;
+        try {
+          const userData = JSON.parse(event.payload);
+          if (!userData || !userData.uid) {
+            setError('인증 정보를 받지 못했습니다. 다시 시도해주세요.');
+            setLoading(false);
+            return;
+          }
+          const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
+          const storageKey = `firebase:authUser:${apiKey}:[DEFAULT]`;
+          localStorage.setItem(storageKey, JSON.stringify(userData));
+          window.location.href = '/my-day';
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
+          setLoading(false);
+        }
+      });
+      unlistenRef.current = unlisten;
 
       const params = new URLSearchParams({
         apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
         authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
         projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
-        mode: 'deeplink',
+        mode: 'redirect',
       });
 
-      // Firebase Auth Domain의 로그인 페이지를 시스템 브라우저에서 열기
-      // 이 페이지에서 인증 후 aitodo://auth-callback 딥링크로 리다이렉트
-      const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '';
-      await open(`https://${authDomain}/mobile-auth.html?${params.toString()}`);
+      // 로컬 서버를 시스템 브라우저에서 열기 (redirect 모드)
+      // Firebase는 localhost를 허용 도메인으로 인정 → signInWithRedirect 동작
+      await open(`http://localhost:${port}/login?${params.toString()}`);
 
+      // 타임아웃: 5분 내 인증 없으면 취소
       setTimeout(() => {
-        setLoading(false);
-      }, 3000);
+        if (unlistenRef.current) {
+          unlistenRef.current();
+          unlistenRef.current = null;
+          setError('로그인 시간이 초과되었습니다. 다시 시도해주세요.');
+          setLoading(false);
+        }
+      }, 300000);
 
     } catch (err) {
-      const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
+      const message = err instanceof Error ? err.message : String(err);
       console.error('Mobile login error:', err);
       setError(`로그인 오류: ${message}`);
       setLoading(false);

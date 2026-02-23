@@ -1,11 +1,7 @@
-#[cfg(not(target_os = "android"))]
 use tauri::Emitter;
-#[cfg(not(target_os = "android"))]
 use std::io::{Read, Write};
-#[cfg(not(target_os = "android"))]
 use std::net::TcpListener;
 
-#[cfg(not(target_os = "android"))]
 const LOGIN_HTML: &str = r##"<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -30,7 +26,7 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
   <h1>AI Todo</h1>
   <p>Google 계정으로 로그인 중...</p>
   <div class="spinner" id="spinner"></div>
-  <div id="status">팝업 창에서 Google 계정을 선택해주세요</div>
+  <div id="status">잠시만 기다려주세요</div>
   <div class="error" id="error"></div>
 </div>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -43,22 +39,12 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
     authDomain: params.get('authDomain'),
     projectId: params.get('projectId'),
   };
+  var mode = params.get('mode') || 'popup'; // 'popup' | 'redirect'
   var statusEl = document.getElementById('status');
   var errorEl = document.getElementById('error');
   var spinnerEl = document.getElementById('spinner');
 
-  try {
-    firebase.initializeApp(config);
-    var provider = new firebase.auth.GoogleAuthProvider();
-    var result = await firebase.auth().signInWithPopup(provider);
-    var user = result.user;
-
-    statusEl.textContent = '인증 정보를 전송 중...';
-
-    // Force token refresh to get fresh tokens
-    var accessToken = await user.getIdToken(true);
-
-    // Build user data object matching Firebase Auth v9 localStorage format
+  async function sendCallback(user, accessToken) {
     var userData = {
       uid: user.uid,
       email: user.email,
@@ -87,7 +73,6 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
       appName: '[DEFAULT]'
     };
 
-    // POST user data to callback endpoint
     await fetch('/callback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -97,10 +82,48 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
     spinnerEl.style.display = 'none';
     statusEl.innerHTML = '<span class="success">&#10003; 로그인 완료!</span><br><br>이 창을 닫고 앱으로 돌아가세요.';
     setTimeout(function() { window.close(); }, 2000);
+  }
+
+  try {
+    firebase.initializeApp(config);
+    var auth = firebase.auth();
+    var provider = new firebase.auth.GoogleAuthProvider();
+
+    if (mode === 'redirect') {
+      // 모바일: signInWithRedirect 방식
+      // 먼저 리다이렉트 결과가 있는지 확인
+      statusEl.textContent = '로그인 정보를 확인하는 중...';
+      var result = null;
+      try {
+        result = await auth.getRedirectResult();
+      } catch(e) {
+        result = null;
+      }
+
+      if (result && result.user) {
+        // 리다이렉트 후 로그인 성공
+        statusEl.textContent = '인증 정보를 앱으로 전달하는 중...';
+        var accessToken = await result.user.getIdToken(true);
+        await sendCallback(result.user, accessToken);
+      } else {
+        // 리다이렉트 시작 (Google 로그인 페이지로 이동)
+        statusEl.textContent = 'Google 로그인 페이지로 이동 중...';
+        await auth.signInWithRedirect(provider);
+        // 이후 Google 인증 완료 시 이 페이지로 다시 돌아옴
+      }
+
+    } else {
+      // 데스크톱: signInWithPopup 방식
+      statusEl.textContent = '팝업 창에서 Google 계정을 선택해주세요';
+      var result = await auth.signInWithPopup(provider);
+      var accessToken = await result.user.getIdToken(true);
+      await sendCallback(result.user, accessToken);
+    }
+
   } catch (err) {
     spinnerEl.style.display = 'none';
     statusEl.textContent = '';
-    errorEl.textContent = '로그인 실패: ' + (err.message || err);
+    errorEl.textContent = '로그인 실패: ' + (err.message || String(err));
     console.error(err);
   }
 })();
@@ -108,10 +131,8 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
 </body>
 </html>"##;
 
-#[cfg(not(target_os = "android"))]
 const SUCCESS_HTML: &str = r#"{"ok":true}"#;
 
-#[cfg(not(target_os = "android"))]
 fn send_response(stream: &mut std::net::TcpStream, status: &str, content_type: &str, body: &str) {
     let response = format!(
         "HTTP/1.1 {}\r\nContent-Type: {}; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n{}",
@@ -121,7 +142,6 @@ fn send_response(stream: &mut std::net::TcpStream, status: &str, content_type: &
     let _ = stream.flush();
 }
 
-#[cfg(not(target_os = "android"))]
 fn read_request(stream: &mut std::net::TcpStream) -> String {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
@@ -131,10 +151,8 @@ fn read_request(stream: &mut std::net::TcpStream) -> String {
             Ok(0) => break,
             Ok(n) => {
                 buf.extend_from_slice(&tmp[..n]);
-                // Check if we've received the full request
                 let s = String::from_utf8_lossy(&buf);
                 if let Some(header_end) = s.find("\r\n\r\n") {
-                    // Check for Content-Length to see if there's a body
                     let headers = &s[..header_end];
                     if let Some(cl_line) = headers.lines().find(|l| l.to_lowercase().starts_with("content-length:")) {
                         if let Ok(cl) = cl_line.split(':').nth(1).unwrap_or("0").trim().parse::<usize>() {
@@ -142,14 +160,13 @@ fn read_request(stream: &mut std::net::TcpStream) -> String {
                             if buf.len() >= body_start + cl {
                                 break;
                             }
-                            // Need more data, continue reading
                             continue;
                         }
                     }
-                    break; // No Content-Length, request is complete
+                    break;
                 }
                 if buf.len() > 65536 {
-                    break; // Safety limit
+                    break;
                 }
             }
             Err(_) => break,
@@ -159,14 +176,13 @@ fn read_request(stream: &mut std::net::TcpStream) -> String {
     String::from_utf8_lossy(&buf).to_string()
 }
 
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn start_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
     std::thread::spawn(move || {
-        for _ in 0..10 {
+        for _ in 0..20 {
             if let Ok((mut stream, _)) = listener.accept() {
                 let request = read_request(&mut stream);
 
@@ -175,13 +191,11 @@ fn start_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
                 let path = first_line.split_whitespace().nth(1).unwrap_or("/");
 
                 if method == "OPTIONS" {
-                    // CORS preflight
                     send_response(&mut stream, "204 No Content", "text/plain", "");
                     continue;
                 }
 
-                if method == "POST" && path == "/callback" {
-                    // Extract JSON body
+                if method == "POST" && path.starts_with("/callback") {
                     let body = if let Some(pos) = request.find("\r\n\r\n") {
                         request[pos + 4..].to_string()
                     } else {
@@ -189,14 +203,12 @@ fn start_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
                     };
 
                     send_response(&mut stream, "200 OK", "application/json", SUCCESS_HTML);
-
-                    // Emit user data to frontend
                     let _ = app_handle.emit("oauth-callback", body);
-                    break; // Done
+                    break;
                 } else if path == "/favicon.ico" {
                     send_response(&mut stream, "204 No Content", "text/plain", "");
                 } else {
-                    // Serve login page
+                    // /login 및 기타 GET 요청 → 로그인 페이지 서빙
                     send_response(&mut stream, "200 OK", "text/html", LOGIN_HTML);
                 }
             }
@@ -211,16 +223,12 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_os::init());
+        .plugin(tauri_plugin_os::init())
+        .invoke_handler(tauri::generate_handler![start_oauth_server]);
 
     #[cfg(not(target_os = "android"))]
     let builder = builder
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![start_oauth_server]);
-
-    #[cfg(target_os = "android")]
-    let builder = builder
-        .invoke_handler(tauri::generate_handler![]);
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
         .run(tauri::generate_context!())

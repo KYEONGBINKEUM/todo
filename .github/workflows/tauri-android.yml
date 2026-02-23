@@ -3,7 +3,7 @@ name: Tauri Android Release
 on:
   push:
     tags:
-      - 'v*-android'
+      - 'v*-android*'
   workflow_dispatch:
     inputs:
       version:

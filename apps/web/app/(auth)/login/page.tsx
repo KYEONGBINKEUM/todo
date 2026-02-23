@@ -14,14 +14,16 @@ export default function LoginPage() {
   const router = useRouter();
   const unlistenRef = useRef<(() => void) | null>(null);
 
-  // Tauri 환경 감지
+  // Tauri 데스크톱 환경 감지 (Android/iOS 제외)
   useEffect(() => {
-    const detected = typeof window !== 'undefined' && (
+    const isTauri = typeof window !== 'undefined' && (
       '__TAURI__' in window ||
       '__TAURI_INTERNALS__' in window ||
       navigator.userAgent.includes('Tauri')
     );
-    setIsTauriEnv(detected);
+    // 모바일 기기에서는 일반 웹 로그인 사용
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    setIsTauriEnv(isTauri && !isMobile);
   }, []);
 
   // 이미 로그인된 상태면 바로 리다이렉트

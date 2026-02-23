@@ -210,7 +210,8 @@ fn start_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_deep_link::init());
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_os::init());
 
     #[cfg(not(target_os = "android"))]
     let builder = builder

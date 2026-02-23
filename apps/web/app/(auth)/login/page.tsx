@@ -20,15 +20,28 @@ export default function LoginPage() {
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (
       '__TAURI__' in window ||
-      '__TAURI_INTERNALS__' in window ||
-      navigator.userAgent.includes('Tauri')
+      '__TAURI_INTERNALS__' in window
     );
     if (!isTauri) {
       setTauriMode('web');
-    } else {
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      setTauriMode(isMobile ? 'mobile' : 'desktop');
+      return;
     }
+    // Tauri API로 OS 타입 확인
+    (async () => {
+      try {
+        const { type } = await import('@tauri-apps/plugin-os');
+        const osType = type();
+        if (osType === 'android' || osType === 'ios') {
+          setTauriMode('mobile');
+        } else {
+          setTauriMode('desktop');
+        }
+      } catch {
+        // OS 플러그인 없으면 UA로 폴백
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        setTauriMode(isMobile ? 'mobile' : 'desktop');
+      }
+    })();
   }, []);
 
   // 이미 로그인된 상태면 바로 리다이렉트

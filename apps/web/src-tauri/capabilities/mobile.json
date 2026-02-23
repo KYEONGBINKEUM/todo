@@ -1,0 +1,9 @@
+{
+  "identifier": "mobile",
+  "description": "Capability for mobile",
+  "platforms": ["android", "iOS"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open"
+  ]
+}

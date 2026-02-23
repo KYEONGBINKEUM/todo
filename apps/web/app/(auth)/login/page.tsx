@@ -6,24 +6,29 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+type TauriMode = 'web' | 'desktop' | 'mobile';
+
 export default function LoginPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isTauriEnv, setIsTauriEnv] = useState(false);
+  const [tauriMode, setTauriMode] = useState<TauriMode>('web');
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const unlistenRef = useRef<(() => void) | null>(null);
 
-  // Tauri 데스크톱 환경 감지 (Android/iOS 제외)
+  // Tauri 환경 감지 (데스크톱 vs 모바일 vs 웹)
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (
       '__TAURI__' in window ||
       '__TAURI_INTERNALS__' in window ||
       navigator.userAgent.includes('Tauri')
     );
-    // 모바일 기기에서는 일반 웹 로그인 사용
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    setIsTauriEnv(isTauri && !isMobile);
+    if (!isTauri) {
+      setTauriMode('web');
+    } else {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      setTauriMode(isMobile ? 'mobile' : 'desktop');
+    }
   }, []);
 
   // 이미 로그인된 상태면 바로 리다이렉트
@@ -49,6 +54,53 @@ export default function LoginPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Android Tauri: 딥링크로 돌아온 인증 데이터 처리
+  useEffect(() => {
+    if (tauriMode !== 'mobile') return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { onOpenUrl } = await import('@tauri-apps/plugin-deep-link');
+        const unlisten = await onOpenUrl((urls: string[]) => {
+          if (cancelled) return;
+          for (const url of urls) {
+            try {
+              // aitodo://auth-callback#data=base64encodedJSON
+              const hashPart = url.split('#')[1];
+              if (!hashPart) continue;
+              const params = new URLSearchParams(hashPart);
+              const data = params.get('data');
+              if (!data) continue;
+
+              const userData = JSON.parse(atob(data));
+              if (!userData || !userData.uid) continue;
+
+              const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
+              const storageKey = `firebase:authUser:${apiKey}:[DEFAULT]`;
+              localStorage.setItem(storageKey, JSON.stringify(userData));
+              window.location.href = '/my-day';
+              return;
+            } catch {
+              // skip invalid URLs
+            }
+          }
+        });
+        unlistenRef.current = unlisten;
+      } catch {
+        // deep-link not available
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unlistenRef.current) {
+        unlistenRef.current();
+      }
+    };
+  }, [tauriMode]);
+
   // 컴포넌트 언마운트 시 리스너 정리
   useEffect(() => {
     return () => {
@@ -58,8 +110,8 @@ export default function LoginPage() {
     };
   }, []);
 
-  // Tauri: 시스템 브라우저 인증 → localStorage 주입
-  const handleTauriLogin = useCallback(async () => {
+  // Tauri Desktop: 시스템 브라우저 인증 → 로컬 서버 → localStorage 주입
+  const handleTauriDesktopLogin = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -68,30 +120,21 @@ export default function LoginPage() {
       const { open } = await import('@tauri-apps/plugin-shell');
       const { listen } = await import('@tauri-apps/api/event');
 
-      // 로컬 OAuth 서버 시작
       const port = await invoke<number>('start_oauth_server');
 
-      // OAuth 콜백 이벤트 리스너 등록
       const unlisten = await listen<string>('oauth-callback', async (event) => {
         unlisten();
         unlistenRef.current = null;
         try {
-          // event.payload is the raw JSON string of user data
           const userData = JSON.parse(event.payload);
-
           if (!userData || !userData.uid) {
             setError('인증 정보를 받지 못했습니다. 다시 시도해주세요.');
             setLoading(false);
             return;
           }
-
-          // Firebase Auth의 localStorage 키에 직접 유저 데이터 주입
-          // Firebase Auth v9 browserLocalPersistence 형식
           const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
           const storageKey = `firebase:authUser:${apiKey}:[DEFAULT]`;
           localStorage.setItem(storageKey, JSON.stringify(userData));
-
-          // 페이지 리로드하여 Firebase Auth가 localStorage에서 유저를 로드하도록 함
           window.location.href = '/my-day';
         } catch (err) {
           const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
@@ -101,7 +144,6 @@ export default function LoginPage() {
       });
       unlistenRef.current = unlisten;
 
-      // Firebase 설정값을 URL 파라미터로 전달하여 시스템 브라우저 열기
       const params = new URLSearchParams({
         apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
         authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
@@ -110,7 +152,6 @@ export default function LoginPage() {
 
       await open(`http://localhost:${port}/login?${params.toString()}`);
 
-      // 120초 타임아웃
       setTimeout(() => {
         if (unlistenRef.current) {
           unlistenRef.current();
@@ -124,6 +165,38 @@ export default function LoginPage() {
       const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
       console.error('Tauri login error:', err);
       setError(`데스크톱 로그인 오류: ${message}`);
+      setLoading(false);
+    }
+  }, []);
+
+  // Tauri Mobile: 시스템 브라우저에서 Firebase 인증 → 딥링크로 돌아오기
+  const handleTauriMobileLogin = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { open } = await import('@tauri-apps/plugin-shell');
+
+      const params = new URLSearchParams({
+        apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
+        authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
+        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
+        mode: 'deeplink',
+      });
+
+      // Firebase Auth Domain의 로그인 페이지를 시스템 브라우저에서 열기
+      // 이 페이지에서 인증 후 aitodo://auth-callback 딥링크로 리다이렉트
+      const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '';
+      await open(`https://${authDomain}/mobile-auth.html?${params.toString()}`);
+
+      setTimeout(() => {
+        setLoading(false);
+      }, 3000);
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
+      console.error('Mobile login error:', err);
+      setError(`로그인 오류: ${message}`);
       setLoading(false);
     }
   }, []);
@@ -154,8 +227,10 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = () => {
-    if (isTauriEnv) {
-      handleTauriLogin();
+    if (tauriMode === 'desktop') {
+      handleTauriDesktopLogin();
+    } else if (tauriMode === 'mobile') {
+      handleTauriMobileLogin();
     } else {
       handleWebLogin();
     }
@@ -179,7 +254,7 @@ export default function LoginPage() {
             <p className="text-[#94a3b8] text-sm">
               구글 계정으로 간편하게 시작하세요
             </p>
-            {isTauriEnv && (
+            {tauriMode !== 'web' && (
               <p className="text-[#4a4a6a] text-xs">
                 시스템 브라우저에서 로그인이 진행됩니다
               </p>

@@ -148,33 +148,26 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     memoTimer.current = setTimeout(() => onUpdate({ memo: value }), 500);
   };
 
-  /** 메모 내 링크 클릭: 경고창 → Tauri shell.open 또는 window.open */
+  /** 메모 내 링크 클릭: 경고창 → Tauri shell.open 시도, 실패 시 window.open */
   const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm(`다음 링크로 이동하시겠습니까?\n\n${url}\n\n⚠️ 외부 링크는 위험할 수 있습니다.`)) return;
-    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-    if (isTauri) {
-      import('@tauri-apps/plugin-shell').then(({ open }) => open(url)).catch(() => {
-        window.open(url, '_blank', 'noopener noreferrer');
-      });
-    } else {
-      window.open(url, '_blank', 'noopener noreferrer');
-    }
+    // Tauri 환경이면 plugin-shell open이 성공, 웹 브라우저면 __TAURI_INTERNALS__ 없어 실패 → catch
+    import('@tauri-apps/plugin-shell')
+      .then(({ open }) => open(url))
+      .catch(() => window.open(url, '_blank', 'noopener noreferrer'));
   };
 
-  /** 알림 권한 차단 시: Tauri=Windows 설정 열기, 웹=재요청 */
+  /** 알림 권한 차단 시: Tauri=Windows 알림 설정 열기, 웹=재요청 */
   const handleRequestNotificationPermission = () => {
-    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-    if (isTauri) {
-      import('@tauri-apps/plugin-shell')
-        .then(({ open }) => open('ms-settings:notifications'))
-        .catch(() => alert('Windows 설정 > 알림 에서 "AI Todo" 앱의 알림을 허용해 주세요.'));
-    } else {
-      requestNotificationPermission().then((granted) => {
-        if (!granted) alert('브라우저 설정에서 이 사이트의 알림을 허용해 주세요.');
+    import('@tauri-apps/plugin-shell')
+      .then(({ open }) => open('ms-settings:notifications'))
+      .catch(() => {
+        requestNotificationPermission().then((granted) => {
+          if (!granted) alert('브라우저 설정에서 이 사이트의 알림을 허용해 주세요.');
+        });
       });
-    }
   };
 
   // ── Attachments ────────────────────────────────────────────────────────────

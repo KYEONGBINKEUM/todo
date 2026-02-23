@@ -1,6 +1,6 @@
 {
   "productName": "AI Todo",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "identifier": "com.aitodo.desktop",
   "build": {
     "frontendDist": "../out",
@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["msi"],
     "icon": [
       "icons/32x32.png",

@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { initializeAuth, getAuth, browserLocalPersistence, GoogleAuthProvider } from 'firebase/auth';
+import { initializeAuth, getAuth, browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -21,6 +21,7 @@ export const auth = (() => {
   try {
     return initializeAuth(app, {
       persistence: browserLocalPersistence,
+      popupRedirectResolver: browserPopupRedirectResolver,
     });
   } catch {
     // Already initialized (e.g., hot reload in dev mode)

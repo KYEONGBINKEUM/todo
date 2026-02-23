@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 #[cfg(not(target_os = "android"))]
 use std::net::TcpListener;
 
+#[cfg(not(target_os = "android"))]
 const LOGIN_HTML: &str = r##"<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -107,8 +108,10 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
 </body>
 </html>"##;
 
+#[cfg(not(target_os = "android"))]
 const SUCCESS_HTML: &str = r#"{"ok":true}"#;
 
+#[cfg(not(target_os = "android"))]
 fn send_response(stream: &mut std::net::TcpStream, status: &str, content_type: &str, body: &str) {
     let response = format!(
         "HTTP/1.1 {}\r\nContent-Type: {}; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n{}",
@@ -118,6 +121,7 @@ fn send_response(stream: &mut std::net::TcpStream, status: &str, content_type: &
     let _ = stream.flush();
 }
 
+#[cfg(not(target_os = "android"))]
 fn read_request(stream: &mut std::net::TcpStream) -> String {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];

@@ -43,7 +43,9 @@ yarn-error.log*
 
 # Tauri
 apps/web/src-tauri/target/
-apps/web/src-tauri/gen/
+apps/web/src-tauri/gen/android/app/build/
+apps/web/src-tauri/gen/android/.gradle/
+apps/web/src-tauri/gen/android/local.properties
 
 # Turbo
 .turbo

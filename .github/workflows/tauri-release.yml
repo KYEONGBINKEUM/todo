@@ -178,9 +178,7 @@ jobs:
             /tmp/aligned.apk
 
       - name: Upload APK to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', github.event.inputs.version) }}
-          files: /tmp/AI-Todo.apk
+        run: gh release upload "$TAG_NAME" /tmp/AI-Todo.apk --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', github.event.inputs.version) }}

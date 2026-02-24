@@ -12,7 +12,8 @@
     "tauri:build": "tauri build",
     "tauri:icon": "tauri icon",
     "tauri:android": "tauri android dev",
-    "tauri:android:build": "tauri android build"
+    "tauri:android:build": "tauri android build",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",

@@ -5,7 +5,7 @@
   "platforms": ["android", "iOS"],
   "permissions": [
     "core:default",
-    "shell:allow-open",
+    "opener:default",
     "deep-link:default",
     "os:default"
   ]

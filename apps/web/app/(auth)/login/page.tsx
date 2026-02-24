@@ -200,9 +200,9 @@ export default function LoginPage() {
     }
 
     try {
-      const { open } = await import('@tauri-apps/plugin-shell');
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
       const params = new URLSearchParams({ apiKey, authDomain, projectId });
-      await open(`https://${authDomain}/mobile-auth.html?${params.toString()}`);
+      await openUrl(`https://${authDomain}/mobile-auth.html?${params.toString()}`);
       // 브라우저가 열리면 로딩 해제 (실제 로그인 완료는 딥링크 onOpenUrl이 처리)
       setTimeout(() => setLoading(false), 3000);
     } catch (err) {

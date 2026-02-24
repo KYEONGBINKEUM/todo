@@ -1,4 +1,4 @@
-package com.aitodo.desktop
+package aitodo.firstb.aitodo
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

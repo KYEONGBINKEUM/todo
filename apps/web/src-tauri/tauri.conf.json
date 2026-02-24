@@ -1,7 +1,7 @@
 {
   "productName": "AI Todo",
-  "version": "1.1.5",
-  "identifier": "com.aitodo.desktop",
+  "version": "1.1.6",
+  "identifier": "aitodo.firstb.aitodo",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",

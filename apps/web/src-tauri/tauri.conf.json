@@ -1,6 +1,6 @@
 {
   "productName": "AI Todo",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "identifier": "com.aitodo.desktop",
   "build": {
     "frontendDist": "../out",
@@ -56,9 +56,6 @@
   },
   "plugins": {
     "deep-link": {
-      "mobile": [
-        { "schemes": ["aitodo"] }
-      ],
       "desktop": {
         "schemes": ["aitodo"]
       }

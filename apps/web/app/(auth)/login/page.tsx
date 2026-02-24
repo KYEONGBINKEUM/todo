@@ -182,62 +182,29 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Tauri Mobile: 로컬 서버 인증 → signInWithRedirect → oauth-callback 이벤트
-  // Firebase는 localhost를 기본 허용 도메인으로 인정하므로 외부 호스팅 불필요
+  // Tauri Mobile: Firebase Hosting의 mobile-auth.html 열기
+  // signInWithRedirect → Google 인증 → aitodo:// 딥링크로 앱 복귀
+  // 딥링크 콜백은 위의 onOpenUrl 핸들러(useEffect)가 처리
   const handleTauriMobileLogin = useCallback(async () => {
     setLoading(true);
     setError(null);
 
+    const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '';
+    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '';
+
+    if (!authDomain || !apiKey || !projectId) {
+      setError('앱 설정 오류: Firebase 환경 변수가 설정되지 않았습니다.');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
       const { open } = await import('@tauri-apps/plugin-shell');
-      const { listen } = await import('@tauri-apps/api/event');
-
-      const port = await invoke<number>('start_oauth_server');
-
-      const unlisten = await listen<string>('oauth-callback', async (event) => {
-        unlisten();
-        unlistenRef.current = null;
-        try {
-          const userData = JSON.parse(event.payload);
-          if (!userData || !userData.uid) {
-            setError('인증 정보를 받지 못했습니다. 다시 시도해주세요.');
-            setLoading(false);
-            return;
-          }
-          const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '';
-          const storageKey = `firebase:authUser:${apiKey}:[DEFAULT]`;
-          localStorage.setItem(storageKey, JSON.stringify(userData));
-          window.location.href = '/my-day';
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          setError(message);
-          setLoading(false);
-        }
-      });
-      unlistenRef.current = unlisten;
-
-      const params = new URLSearchParams({
-        apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
-        authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
-        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
-        mode: 'redirect',
-      });
-
-      // 로컬 서버를 시스템 브라우저에서 열기 (redirect 모드)
-      // Firebase는 localhost를 허용 도메인으로 인정 → signInWithRedirect 동작
-      await open(`http://localhost:${port}/login?${params.toString()}`);
-
-      // 타임아웃: 5분 내 인증 없으면 취소
-      setTimeout(() => {
-        if (unlistenRef.current) {
-          unlistenRef.current();
-          unlistenRef.current = null;
-          setError('로그인 시간이 초과되었습니다. 다시 시도해주세요.');
-          setLoading(false);
-        }
-      }, 300000);
-
+      const params = new URLSearchParams({ apiKey, authDomain, projectId });
+      await open(`https://${authDomain}/mobile-auth.html?${params.toString()}`);
+      // 브라우저가 열리면 로딩 해제 (실제 로그인 완료는 딥링크 onOpenUrl이 처리)
+      setTimeout(() => setLoading(false), 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('Mobile login error:', err);

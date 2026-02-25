@@ -654,6 +654,7 @@ function MindmapContent() {
     const nodeEl = target.closest('[data-node-id]') as HTMLElement | null;
 
     if (nodeEl) {
+      e.preventDefault(); // 브라우저 기본 long-press(텍스트 복사) 방지
       const nodeId = nodeEl.getAttribute('data-node-id')!;
       if (!selectedNodeIdsRef.current.has(nodeId)) {
         setSelectedNodeIds(new Set([nodeId]));
@@ -935,6 +936,7 @@ function MindmapContent() {
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
+            onContextMenu={(e) => e.preventDefault()}
             style={{ touchAction: 'none' }}
           >
             {/* Grid background */}
@@ -1002,11 +1004,14 @@ function MindmapContent() {
                       width: `${node.width}px`,
                       minHeight: `${node.height}px`,
                       zIndex: isSelected ? 100 : 10,
+                      WebkitTouchCallout: 'none',
+                      userSelect: 'none',
                     }}
                     className={`rounded-xl shadow-lg transition-shadow ${isSelected ? 'ring-2 ring-[#e94560] shadow-xl' : 'hover:shadow-xl'}`}
                     onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                     onMouseUp={() => handleNodeMouseUp(node.id)}
                     onDoubleClick={() => { setEditingNodeId(node.id); setSelectedNodeIds(new Set([node.id])); }}
+                    onContextMenu={(e) => e.preventDefault()}
                   >
                     <div className="w-full h-full rounded-xl p-3 relative" style={{ backgroundColor: node.color, minHeight: `${node.height}px` }}>
                       {/* Connector dots */}

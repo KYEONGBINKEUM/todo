@@ -125,6 +125,10 @@ function NotesContent() {
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const slashMenuRef = useRef<HTMLDivElement>(null);
 
+  // Block type change menu
+  const [blockTypeMenuId, setBlockTypeMenuId] = useState<string | null>(null);
+  const blockTypeMenuRef = useRef<HTMLDivElement>(null);
+
   // Initialize from global data store (once on first load)
   useEffect(() => {
     if (storeLoading || initializedRef.current) return;
@@ -935,6 +939,18 @@ function NotesContent() {
     return () => document.removeEventListener('mousedown', handler);
   }, [slashMenuVisible]);
 
+  // Close block type menu when clicking outside
+  useEffect(() => {
+    if (!blockTypeMenuId) return;
+    const handler = (e: MouseEvent) => {
+      if (blockTypeMenuRef.current && !blockTypeMenuRef.current.contains(e.target as Node)) {
+        setBlockTypeMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [blockTypeMenuId]);
+
   if (pageLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -1414,23 +1430,52 @@ function NotesContent() {
                     onDragOver={(e) => !readOnly && handleBlockDragOver(e, idx)}
                     onDrop={(e) => !readOnly && handleBlockDrop(e, idx)}
                     onDragEnd={handleBlockDragEnd}
-                    className={`group relative py-1.5 px-1 -mx-1 rounded transition-colors ${
+                    className={`group relative py-1.5 rounded transition-colors ${
                       dragBlockSrcIdx === idx ? 'opacity-40 scale-95' :
                       dragBlockOverIdx === idx ? 'bg-[#e94560]/5 border border-dashed border-[#e94560]/30 rounded-lg' :
                       'hover:bg-white/[0.02]'
                     }`}
                   >
-                    {!readOnly && (
-                      <div
-                        draggable
-                        onDragStart={(e) => handleBlockDragStart(e, idx)}
-                        className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center cursor-grab active:cursor-grabbing"
-                        title="드래그하여 순서 변경"
-                      >
-                        <span className="text-text-inactive text-[10px]">⋮⋮</span>
-                      </div>
-                    )}
                     <div className="flex items-start gap-1">
+                      {!readOnly && (
+                        <div
+                          draggable
+                          onDragStart={(e) => handleBlockDragStart(e, idx)}
+                          className="hidden md:flex flex-shrink-0 items-center justify-center w-5 self-stretch opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                          title="드래그하여 순서 변경"
+                        >
+                          <span className="text-text-inactive text-[10px]">⋮⋮</span>
+                        </div>
+                      )}
+                      {!readOnly && (
+                        <div className="relative flex-shrink-0">
+                          <button
+                            onClick={() => setBlockTypeMenuId(blockTypeMenuId === block.id ? null : block.id)}
+                            className="opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded text-text-inactive hover:text-text-secondary hover:bg-white/5 text-[10px] font-mono mt-0.5"
+                            title="블록 타입 변경"
+                          >
+                            {SLASH_COMMANDS.find(c => c.type === block.type)?.icon ?? 'T'}
+                          </button>
+                          {blockTypeMenuId === block.id && (
+                            <div
+                              ref={blockTypeMenuRef}
+                              className="absolute left-0 top-full z-50 mt-1 w-52 bg-background-card border border-border rounded-xl shadow-2xl overflow-y-auto"
+                              style={{ maxHeight: '240px' }}
+                            >
+                              {SLASH_COMMANDS.map((cmd) => (
+                                <button
+                                  key={cmd.type}
+                                  onClick={() => { changeBlockType(block.id, cmd.type); setBlockTypeMenuId(null); }}
+                                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${block.type === cmd.type ? 'bg-[#e94560]/10 text-[#e94560]' : 'text-text-secondary hover:bg-background-hover'}`}
+                                >
+                                  <span className="w-6 h-6 flex items-center justify-center bg-border/50 rounded text-[10px] font-mono flex-shrink-0">{cmd.icon}</span>
+                                  {cmd.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">{renderBlock(block)}</div>
                       {!readOnly && activeNote.blocks.length > 1 && (
                         <button

@@ -1,6 +1,6 @@
 {
   "productName": "AI Todo",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "identifier": "aitodo.firstb.aitodo",
   "build": {
     "frontendDist": "../out",

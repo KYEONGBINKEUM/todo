@@ -1,15 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
-
-function isTauriApp(): boolean {
-  return typeof window !== 'undefined' && (
-    '__TAURI__' in window || '__TAURI_INTERNALS__' in window
-  );
-}
 
 function LandingPage() {
   return (
@@ -69,25 +63,33 @@ function LandingPage() {
 export default function RootPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const tauri = isTauriApp();
+  // null = 아직 환경 감지 전, true = Tauri 앱, false = 웹
+  const [isTauri, setIsTauri] = useState<boolean | null>(null);
 
+  // 클라이언트 마운트 시 Tauri 환경 감지
   useEffect(() => {
-    if (loading) return;
-    if (!tauri) return; // 웹에서는 랜딩 페이지 유지
+    const detected = typeof window !== 'undefined' && (
+      '__TAURI__' in window || '__TAURI_INTERNALS__' in window
+    );
+    setIsTauri(detected);
+  }, []);
+
+  // Tauri 앱: 로그인 상태에 따라 리다이렉트
+  useEffect(() => {
+    if (isTauri === null || loading) return;
+    if (!isTauri) return; // 웹은 랜딩 페이지 표시
 
     if (user) {
-      // 로그인 상태: 마지막 방문 페이지로 이동
       const lastPage = localStorage.getItem('lastPage') || '/my-day';
       router.replace(lastPage);
     } else {
-      // 미로그인: 로그인 페이지로 바로 이동
       router.replace('/login');
     }
-  }, [user, loading, tauri, router]);
+  }, [isTauri, user, loading, router]);
 
-  // Tauri 앱에서는 리다이렉트 중 빈 화면
-  if (tauri) return null;
+  // 환경 감지 전 또는 Tauri 앱이면 빈 화면 (리다이렉트 중)
+  if (isTauri === null || isTauri) return null;
 
-  // 웹: 기존 랜딩 페이지
+  // 웹 전용: 랜딩 페이지
   return <LandingPage />;
 }

@@ -248,36 +248,31 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   style={{ backgroundColor: list.color }}
                 />
                 {editingListId === list.id ? (
-                  <div className="flex-1 flex flex-col gap-1.5">
+                  <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                    <input
+                      type="color"
+                      value={editingColor}
+                      onChange={(e) => setEditingColor(e.target.value)}
+                      className="w-6 h-6 rounded cursor-pointer border border-border flex-shrink-0 p-0 bg-transparent"
+                      title="색상 선택"
+                    />
                     <input
                       value={editingLabel}
                       onChange={(e) => setEditingLabel(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
                       autoFocus
-                      className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
+                      className="flex-1 min-w-0 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
                     />
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {LIST_COLORS.map((c) => (
-                        <button
-                          key={c}
-                          onClick={() => setEditingColor(c)}
-                          className={`w-4 h-4 rounded-full flex-shrink-0 transition-all ${editingColor === c ? 'ring-2 ring-white ring-offset-1 ring-offset-background scale-110' : ''}`}
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                      <button
-                        onClick={() => handleRenameList(list.id!)}
-                        className="ml-auto text-[10px] px-2 py-0.5 bg-[#e94560]/20 text-[#e94560] rounded hover:bg-[#e94560]/30 transition-colors"
-                      >
-                        저장
-                      </button>
-                      <button
-                        onClick={() => setEditingListId(null)}
-                        className="text-[10px] px-2 py-0.5 text-text-muted hover:text-text-secondary transition-colors"
-                      >
-                        취소
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleRenameList(list.id!)}
+                      className="flex-shrink-0 text-[11px] text-[#e94560] hover:text-[#ff5a7a] transition-colors font-semibold"
+                      title="저장"
+                    >✓</button>
+                    <button
+                      onClick={() => setEditingListId(null)}
+                      className="flex-shrink-0 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+                      title="취소"
+                    >✕</button>
                   </div>
                 ) : (
                   <>

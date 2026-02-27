@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
-import { addList, updateList, deleteList, addNote, deleteNote, getUserSettings, getStorageLimit, type ListData, type Plan } from '@/lib/firestore';
+import { addList, updateList, deleteList, getUserSettings, getStorageLimit, type ListData, type Plan } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 import SettingsModal from '@/components/settings/SettingsModal';
 
@@ -23,7 +23,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
-  const { lists: storeLists, notes: storeNotes, storageUsed } = useDataStore();
+  const { lists: storeLists, storageUsed } = useDataStore();
   const [lists, setLists] = useState<ListData[]>([]);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -33,10 +33,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [hasUpdate, setHasUpdate] = useState(false);
-
-  // Notes sidebar state
-  const [notesExpanded, setNotesExpanded] = useState(false);
-  const [addingNote, setAddingNote] = useState(false);
 
   // Tauri: 앱 시작 시 백그라운드 업데이트 확인
   useEffect(() => {
@@ -110,38 +106,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       await updateList(user.uid, listId, { label, color });
     } catch (err) {
       console.error('Failed to rename list:', err);
-    }
-  };
-
-  const handleAddNote = async () => {
-    if (!user || addingNote) return;
-    setAddingNote(true);
-    try {
-      const noteId = await addNote(user.uid, {
-        title: '새 노트',
-        icon: '📝',
-        blocks: [{ id: `${Date.now()}-b1`, type: 'text', content: '' }],
-        pinned: false,
-        tags: [],
-        folderId: null,
-        linkedTaskId: null,
-        linkedTaskIds: [],
-      });
-      router.push(`/notes?note=${noteId}`);
-      if (onClose) onClose();
-    } catch (err) {
-      console.error('Failed to create note:', err);
-    } finally {
-      setAddingNote(false);
-    }
-  };
-
-  const handleDeleteNote = async (noteId: string) => {
-    if (!user) return;
-    try {
-      await deleteNote(user.uid, noteId);
-    } catch (err) {
-      console.error('Failed to delete note:', err);
     }
   };
 
@@ -317,63 +281,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               </div>
             )}
           </div>
-        </div>
-
-        {/* Notes Section */}
-        <div className="mt-3 pt-3 border-t border-border flex-shrink-0">
-          <div className="flex items-center justify-between mb-1">
-            <button
-              onClick={() => setNotesExpanded(!notesExpanded)}
-              className="flex items-center gap-1.5 text-[10px] text-text-muted uppercase tracking-widest font-semibold hover:text-text-secondary transition-colors"
-            >
-              <span className={`text-[9px] transition-transform duration-200 ${notesExpanded ? 'rotate-90' : ''}`}>▶</span>
-              📝 {t('nav.notes')}
-              <span className="ml-1 text-[9px] bg-border px-1 rounded-full">{storeNotes.length}</span>
-            </button>
-            <button
-              onClick={handleAddNote}
-              disabled={addingNote}
-              className="text-text-inactive hover:text-[#e94560] transition-colors text-sm disabled:opacity-50"
-              title="새 노트 추가"
-            >
-              +
-            </button>
-          </div>
-          {notesExpanded && (
-            <div className="space-y-0.5 max-h-48 overflow-y-auto">
-              {storeNotes.slice(0, 20).map((note) => (
-                <div key={note.id} className="group flex items-center gap-1.5 px-1 py-1 rounded-lg hover:bg-background-card transition-colors">
-                  <Link
-                    href={`/notes?note=${note.id}`}
-                    onClick={() => onClose?.()}
-                    className="flex items-center gap-1.5 flex-1 min-w-0"
-                  >
-                    <span className="text-xs flex-shrink-0">{note.icon || '📝'}</span>
-                    <span className="text-[11px] text-text-secondary truncate hover:text-text-primary transition-colors">{note.title || '제목 없음'}</span>
-                  </Link>
-                  <button
-                    onClick={() => handleDeleteNote(note.id!)}
-                    className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-text-inactive hover:text-[#e94560] transition-all text-xs flex-shrink-0"
-                    title="삭제"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {storeNotes.length === 0 && (
-                <p className="text-[10px] text-text-inactive px-2 py-1">노트가 없습니다</p>
-              )}
-              {storeNotes.length > 0 && (
-                <Link
-                  href="/notes"
-                  onClick={() => onClose?.()}
-                  className="block text-[10px] text-text-inactive hover:text-[#e94560] transition-colors px-2 py-1"
-                >
-                  전체 보기 →
-                </Link>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Theme Toggle */}

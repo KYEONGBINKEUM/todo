@@ -38,8 +38,6 @@ function TasksContent() {
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
@@ -94,15 +92,13 @@ function TasksContent() {
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterStatus || t.status === filterStatus)
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
-    .filter((t) => !filterDateFrom || (t.dueDate && t.dueDate >= filterDateFrom))
-    .filter((t) => !filterDateTo || (t.dueDate && t.dueDate <= filterDateTo))
     .filter((t) => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const activeTasks = filtered.filter((t) => t.status !== 'completed');
   const completedTasks = filtered.filter((t) => t.status === 'completed');
 
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
-  const canDrag = !filterList && !filterStatus && !filterTag && !searchQuery && !filterDateFrom && !filterDateTo;
+  const canDrag = !filterList && !filterStatus && !filterTag && !searchQuery;
 
   const relatedNotes = storeNotes.map((n) => ({ id: n.id!, title: n.title, icon: n.icon, tags: n.tags }));
   const tagRelatedNotes = filterTag
@@ -317,34 +313,6 @@ function TasksContent() {
               <button key={key} onClick={() => setFilterStatus(filterStatus === key ? null : key)} className={`px-2.5 py-1 rounded-lg text-xs transition-all ${filterStatus === key ? '' : 'text-text-secondary hover:bg-background-card'}`} style={filterStatus === key ? { color: val.color } : undefined}>{val.label}</button>
             ))}
           </div>
-        </div>
-
-        {/* 기간 필터 */}
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider">📅 기간</span>
-          <input
-            type="date"
-            value={filterDateFrom}
-            onChange={(e) => setFilterDateFrom(e.target.value)}
-            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
-            title="시작일"
-          />
-          <span className="text-text-muted text-xs">~</span>
-          <input
-            type="date"
-            value={filterDateTo}
-            onChange={(e) => setFilterDateTo(e.target.value)}
-            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
-            title="종료일"
-          />
-          {(filterDateFrom || filterDateTo) && (
-            <button
-              onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); }}
-              className="px-2 py-0.5 text-[10px] text-[#e94560] border border-[#e94560]/30 rounded-lg hover:bg-[#e94560]/10 transition-colors"
-            >
-              초기화
-            </button>
-          )}
         </div>
 
         {/* @Tags */}

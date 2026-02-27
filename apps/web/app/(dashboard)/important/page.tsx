@@ -11,6 +11,15 @@ import {
 } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 
+function getCreatedDate(task: TaskData): string {
+  if (task.createdDate) return task.createdDate;
+  if (task.createdAt && typeof task.createdAt.toDate === 'function') {
+    const d = task.createdAt.toDate();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  return '1970-01-01';
+}
+
 function priorityStyle(p: string) {
   const map: Record<string, { bg: string; text: string; border: string }> = {
     urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
@@ -26,15 +35,6 @@ export default function ImportantPage() {
   const { t } = useI18n();
   const router = useRouter();
   const { tasks: storeTasks, lists: storeLists, notes: storeNotes, mindmaps: storeMindmaps, loading } = useDataStore();
-  const tasks = storeTasks.filter((t) => {
-    if (!t.starred) return false;
-    if (filterDateFrom && (!t.dueDate || t.dueDate < filterDateFrom)) return false;
-    if (filterDateTo && (!t.dueDate || t.dueDate > filterDateTo)) return false;
-    return true;
-  });
-  const starredNotes = storeNotes.filter((n) => n.starred);
-  const starredMindmaps = storeMindmaps.filter((m) => m.starred);
-  const totalCount = tasks.length + starredNotes.length + starredMindmaps.length;
   const [lists, setLists] = useState<ListData[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
@@ -43,6 +43,17 @@ export default function ImportantPage() {
   const [showCompleted, setShowCompleted] = useState(true);
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
+
+  const tasks = storeTasks.filter((t) => {
+    if (!t.starred) return false;
+    const cd = getCreatedDate(t);
+    if (filterDateFrom && cd < filterDateFrom) return false;
+    if (filterDateTo && cd > filterDateTo) return false;
+    return true;
+  });
+  const starredNotes = storeNotes.filter((n) => n.starred);
+  const starredMindmaps = storeMindmaps.filter((m) => m.starred);
+  const totalCount = tasks.length + starredNotes.length + starredMindmaps.length;
 
   useEffect(() => {
     if (storeLists.length > 0) {
@@ -113,7 +124,7 @@ export default function ImportantPage() {
 
         {/* Date Range Filter */}
         <div className="mb-4 flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-text-muted">기간:</span>
+          <span className="text-xs text-text-muted">등록일:</span>
           <input
             type="date"
             value={filterDateFrom}

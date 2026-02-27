@@ -179,8 +179,8 @@ export default function MyDayPage() {
   const filteredTasks = tasks
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
-    .filter((t) => !filterDateFrom || (t.dueDate && t.dueDate >= filterDateFrom))
-    .filter((t) => !filterDateTo || (t.dueDate && t.dueDate <= filterDateTo));
+    .filter((t) => !filterDateFrom || getTaskCreatedDate(t) >= filterDateFrom)
+    .filter((t) => !filterDateTo || getTaskCreatedDate(t) <= filterDateTo);
 
   const activeTasks = filteredTasks.filter((t) => !completedOnDateIds.has(t.id!));
   const completedTasks = filteredTasks.filter((t) => completedOnDateIds.has(t.id!));
@@ -643,7 +643,7 @@ export default function MyDayPage() {
 
         {/* 기간 필터 */}
         <div className="mb-4 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider">📅 기간</span>
+          <span className="text-[10px] text-text-muted uppercase tracking-wider">📅 등록일</span>
           <input
             type="date"
             value={filterDateFrom}

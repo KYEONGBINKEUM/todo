@@ -10,9 +10,10 @@
   --font-size-base: 14px;
 
   /* Background */
-  --color-bg-base:  #08081a;
-  --color-bg-card:  #111128;
-  --color-bg-hover: #1a1a40;
+  --color-bg-base:    #08081a;
+  --color-bg-card:    #111128;
+  --color-bg-hover:   #1a1a40;
+  --color-bg-sidebar: #111128;
 
   /* Border */
   --color-border:       #1e1e3a;
@@ -33,9 +34,10 @@
 }
 
 html.light {
-  --color-bg-base:  #f1f5f9;
-  --color-bg-card:  #ffffff;
-  --color-bg-hover: #e2e8f0;
+  --color-bg-base:    #ffffff;
+  --color-bg-card:    #f8fafc;
+  --color-bg-hover:   #e8edf5;
+  --color-bg-sidebar: #dde3ef;
 
   --color-border:       #cbd5e1;
   --color-border-hover: #94a3b8;

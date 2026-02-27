@@ -14,6 +14,7 @@ const config: Config = {
           DEFAULT: 'var(--color-bg-base)',
           card: 'var(--color-bg-card)',
           hover: 'var(--color-bg-hover)',
+          sidebar: 'var(--color-bg-sidebar)',
         },
         border: {
           DEFAULT: 'var(--color-border)',

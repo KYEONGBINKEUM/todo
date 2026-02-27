@@ -148,7 +148,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       )}
 
       <aside className={`
-        w-64 border-r border-border bg-background p-6 flex flex-col flex-shrink-0
+        w-64 border-r border-border bg-background-sidebar p-6 flex flex-col flex-shrink-0
         fixed top-0 left-0 h-full z-50
         md:static md:h-full md:z-auto
         transition-transform duration-300 ease-in-out
@@ -177,7 +177,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
                   isActive
                     ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
-                    : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
                 }`}
               >
                 <span className="text-base">{item.icon}</span>
@@ -205,7 +205,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             {lists.map((list) => (
               <div
                 key={list.id}
-                className="group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-background-card hover:text-text-primary transition-all"
+                className="group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary transition-all"
               >
                 <span
                   className="w-3 h-3 rounded-full flex-shrink-0"
@@ -295,7 +295,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-xs transition-all ${
                   theme === opt.value
                     ? 'bg-[#e94560]/15 text-[#e94560] font-semibold'
-                    : 'text-text-secondary hover:bg-background-card hover:text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
                 }`}
               >
                 <span>{opt.icon}</span>

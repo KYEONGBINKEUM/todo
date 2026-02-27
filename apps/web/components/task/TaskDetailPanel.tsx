@@ -49,7 +49,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const [memoFocused, setMemoFocused] = useState(false);
 
   // ── Linked Notes ───────────────────────────────────────────────────────────
-  const { notes: allNotes } = useDataStore();
+  const { notes: allNotes, lists: allLists } = useDataStore();
   const [showNoteSelector, setShowNoteSelector] = useState(false);
 
   const subTaskInputRef = useRef<HTMLInputElement>(null);
@@ -337,6 +337,28 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
           {/* ── Priority & Due Date & Reminder ─────────────────────────────── */}
           <div className="px-5 py-4 border-b border-border space-y-3">
+            {/* List */}
+            {allLists.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-text-muted text-xs w-16 flex-shrink-0">목록</span>
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: allLists.find((l) => l.id === task.listId)?.color ?? '#e94560' }}
+                  />
+                  <select
+                    value={task.listId ?? ''}
+                    onChange={(e) => onUpdate({ listId: e.target.value })}
+                    className="flex-1 min-w-0 px-2 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
+                  >
+                    {allLists.map((l) => (
+                      <option key={l.id} value={l.id!} className="bg-background-card">{l.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* Priority */}
             <div className="flex items-center gap-3">
               <span className="text-text-muted text-xs w-16 flex-shrink-0">중요도</span>

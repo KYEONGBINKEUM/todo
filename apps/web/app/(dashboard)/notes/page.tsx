@@ -10,6 +10,7 @@ import {
   restoreFolder as restoreFolderDB, permanentDeleteFolder as permanentDeleteFolderDB,
 } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
+import hljs from 'highlight.js/lib/common';
 
 // ============================================================================
 // Types
@@ -116,6 +117,8 @@ function NotesContent() {
   const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(new Set());
   // Toggle blocks
   const [openToggleIds, setOpenToggleIds] = useState<Set<string>>(new Set());
+  // Code blocks in edit mode (textarea shown instead of highlighted pre)
+  const [editingCodeIds, setEditingCodeIds] = useState<Set<string>>(new Set());
 
   // Block drag-and-drop state
   const [dragBlockSrcIdx, setDragBlockSrcIdx] = useState<number | null>(null);
@@ -867,16 +870,59 @@ function NotesContent() {
         );
       case 'divider':
         return <div className="py-2"><div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" /></div>;
-      case 'code':
+      case 'code': {
+        // First line may be a bare language identifier (e.g. "javascript")
+        const firstLine = block.content.split('\n')[0] ?? '';
+        const langHint = /^[a-zA-Z][a-zA-Z0-9+\-#]*$/.test(firstLine.trim()) && hljs.getLanguage(firstLine.trim().toLowerCase()) ? firstLine.trim().toLowerCase() : null;
+        const codeBody = langHint ? block.content.slice(firstLine.length + 1) : block.content;
+        let highlightedHtml = '';
+        let detectedLang = langHint ?? 'code';
+        try {
+          if (langHint) {
+            const r = hljs.highlight(codeBody, { language: langHint });
+            highlightedHtml = r.value;
+          } else if (codeBody.trim()) {
+            const r = hljs.highlightAuto(codeBody);
+            highlightedHtml = r.value;
+            if (r.language) detectedLang = r.language;
+          }
+        } catch {
+          highlightedHtml = codeBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        const isCodeEditing = !readOnly && editingCodeIds.has(block.id);
         return (
-          <div className="bg-background border border-border rounded-lg p-3 relative">
-            <div className="absolute top-2 right-2 text-[9px] text-text-inactive font-mono">CODE</div>
-            <textarea data-block-id={block.id} value={block.content} onChange={(e) => handleBlockInput(block.id, e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') e.stopPropagation(); if (e.key === 'Tab') { e.preventDefault(); updateBlock(block.id, block.content + '  '); } }} placeholder="코드를 입력하세요..." rows={Math.max(3, block.content.split('\n').length)} className={`${baseClass} text-xs font-mono leading-relaxed resize-none`} />
+          <div className="bg-background-card border border-border rounded-lg relative">
+            <div className="absolute top-2 right-2 text-[9px] text-text-inactive font-mono uppercase z-10">{detectedLang}</div>
+            {isCodeEditing ? (
+              <textarea
+                data-block-id={block.id}
+                autoFocus
+                value={block.content}
+                onChange={(e) => handleBlockInput(block.id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.stopPropagation(); if (e.key === 'Tab') { e.preventDefault(); updateBlock(block.id, block.content + '  '); } }}
+                onBlur={() => setEditingCodeIds((prev) => { const n = new Set(prev); n.delete(block.id); return n; })}
+                rows={Math.max(3, block.content.split('\n').length)}
+                className={`${baseClass} w-full text-xs font-mono leading-relaxed resize-none p-3`}
+              />
+            ) : (
+              <pre
+                className={`p-3 text-xs font-mono leading-relaxed overflow-x-auto min-h-[4rem] ${!readOnly ? 'cursor-text' : ''}`}
+                onClick={() => !readOnly && setEditingCodeIds((prev) => new Set([...prev, block.id]))}
+              >
+                <code
+                  className="hljs"
+                  dangerouslySetInnerHTML={{
+                    __html: highlightedHtml || `<span style="opacity:0.4">${readOnly ? '' : '코드를 클릭해 편집… (첫 줄에 언어명 입력: javascript, python, tsx…)'}</span>`,
+                  }}
+                />
+              </pre>
+            )}
           </div>
         );
+      }
       case 'link':
         return (
-          <div className="flex items-center gap-2 p-2 bg-background border border-border rounded-lg group">
+          <div className="flex items-center gap-2 p-2 bg-background-card border border-border rounded-lg group">
             <span className="text-[#3b82f6] flex-shrink-0">🔗</span>
             <textarea {...taProps('text-sm text-[#3b82f6] underline flex-1', '링크 제목')} />
             <input
@@ -897,8 +943,8 @@ function NotesContent() {
         );
       case 'toggle':
         return (
-          <div className="rounded-lg overflow-hidden border border-border/60">
-            <div className="flex items-center gap-2 px-3 py-2 bg-background/50 cursor-pointer group/toggle" onClick={() => setOpenToggleIds((prev) => { const next = new Set(prev); if (next.has(block.id)) next.delete(block.id); else next.add(block.id); return next; })}>
+          <div className="rounded-lg overflow-hidden border border-border">
+            <div className="flex items-center gap-2 px-3 py-2 bg-background-card cursor-pointer group/toggle" onClick={() => setOpenToggleIds((prev) => { const next = new Set(prev); if (next.has(block.id)) next.delete(block.id); else next.add(block.id); return next; })}>
               <span className={`text-text-muted transition-transform text-xs ${openToggleIds.has(block.id) ? 'rotate-90' : ''}`}>▶</span>
               <textarea
                 data-block-id={block.id}
@@ -913,7 +959,7 @@ function NotesContent() {
               />
             </div>
             {openToggleIds.has(block.id) && (
-              <div className="px-3 py-2 border-t border-border/40 bg-background/20">
+              <div className="px-3 py-2 border-t border-border/40 bg-background">
                 <textarea
                   value={block.children ?? ''}
                   onChange={(e) => { updateBlockField(block.id, { children: e.target.value }); autoResize(e.target); }}

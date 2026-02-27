@@ -31,6 +31,17 @@
 
   /* Checkbox border — dark mode */
   --color-checkbox-border: #eee;
+
+  /* Syntax highlight tokens (one-dark palette) */
+  --hljs-fg:      #abb2bf;
+  --hljs-comment: #5c6370;
+  --hljs-keyword: #c678dd;
+  --hljs-string:  #98c379;
+  --hljs-number:  #d19a66;
+  --hljs-title:   #61afef;
+  --hljs-type:    #e5c07b;
+  --hljs-tag:     #e06c75;
+  --hljs-builtin: #e06c75;
 }
 
 html.light {
@@ -52,6 +63,17 @@ html.light {
 
   /* Checkbox border — light mode */
   --color-checkbox-border: #ddd;
+
+  /* Syntax highlight tokens (github-light palette) */
+  --hljs-fg:      #24292e;
+  --hljs-comment: #6a737d;
+  --hljs-keyword: #d73a49;
+  --hljs-string:  #032f62;
+  --hljs-number:  #005cc5;
+  --hljs-title:   #6f42c1;
+  --hljs-type:    #005cc5;
+  --hljs-tag:     #22863a;
+  --hljs-builtin: #e36209;
 }
 
 * {
@@ -190,3 +212,19 @@ input,
 textarea {
   font-family: inherit;
 }
+
+/* ===== Syntax Highlighting (highlight.js token overrides) ===== */
+.hljs { background: transparent; color: var(--hljs-fg); }
+.hljs-comment, .hljs-quote { color: var(--hljs-comment); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-subst { color: var(--hljs-keyword); font-weight: 600; }
+.hljs-number, .hljs-literal { color: var(--hljs-number); }
+.hljs-string, .hljs-doctag, .hljs-regexp { color: var(--hljs-string); }
+.hljs-title, .hljs-section { color: var(--hljs-title); font-weight: 600; }
+.hljs-type, .hljs-class .hljs-title, .hljs-built_in, .hljs-builtin-name { color: var(--hljs-type); }
+.hljs-tag, .hljs-name, .hljs-attribute, .hljs-variable, .hljs-template-variable { color: var(--hljs-tag); }
+.hljs-symbol, .hljs-bullet, .hljs-link { color: var(--hljs-number); }
+.hljs-meta { color: var(--hljs-comment); }
+.hljs-deletion { color: #e06c75; }
+.hljs-addition { color: #98c379; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }

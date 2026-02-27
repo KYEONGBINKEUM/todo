@@ -1,28 +1,32 @@
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
 
-export default function LandingPage() {
+function isTauriApp(): boolean {
+  return typeof window !== 'undefined' && (
+    '__TAURI__' in window || '__TAURI_INTERNALS__' in window
+  );
+}
+
+function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-accent-dark p-8">
       <div className="max-w-4xl mx-auto text-center space-y-8 animate-fade-up">
-        {/* Logo/Badge */}
         <div className="inline-block">
           <div className="px-4 py-2 bg-primary/20 border border-primary/40 rounded-full text-xs font-semibold text-primary tracking-wide uppercase">
             Product Framework v1.0
           </div>
         </div>
-
-        {/* Hero Title */}
         <h1 className="text-5xl md:text-7xl font-extrabold bg-gradient-to-r from-text-primary to-primary bg-clip-text text-transparent leading-tight">
           AI Todo Framework
         </h1>
-
-        {/* Subtitle */}
         <p className="text-xl md:text-2xl text-text-secondary max-w-2xl mx-auto leading-relaxed">
           할 일을 적는 앱이 아니라, <br />
           <span className="text-primary font-semibold">오늘을 설계해주는 디지털 비서</span>
         </p>
-
-        {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-8">
           <Link
             href="/login"
@@ -37,25 +41,11 @@ export default function LandingPage() {
             자세히 보기
           </a>
         </div>
-
-        {/* Features Grid */}
         <div id="features" className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-16">
           {[
-            {
-              icon: '🧱',
-              title: 'Foundation Layer',
-              desc: '핵심 Todo 기능',
-            },
-            {
-              icon: '🧠',
-              title: 'AI Core Layer',
-              desc: 'AI 기반 자동화 엔진',
-            },
-            {
-              icon: '🤖',
-              title: 'AI Agent Layer',
-              desc: '에이전트형 디지털 비서',
-            },
+            { icon: '🧱', title: 'Foundation Layer', desc: '핵심 Todo 기능' },
+            { icon: '🧠', title: 'AI Core Layer', desc: 'AI 기반 자동화 엔진' },
+            { icon: '🤖', title: 'AI Agent Layer', desc: '에이전트형 디지털 비서' },
           ].map((feature, i) => (
             <div
               key={i}
@@ -68,12 +58,36 @@ export default function LandingPage() {
             </div>
           ))}
         </div>
-
-        {/* Footer */}
         <div className="pt-16 text-text-muted text-sm">
           <p>정보 제공이 아니라 행동 지원 — 오늘의 성공률을 높이는 도구</p>
         </div>
       </div>
     </div>
   );
+}
+
+export default function RootPage() {
+  const router = useRouter();
+  const { user, loading } = useAuth();
+  const tauri = isTauriApp();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!tauri) return; // 웹에서는 랜딩 페이지 유지
+
+    if (user) {
+      // 로그인 상태: 마지막 방문 페이지로 이동
+      const lastPage = localStorage.getItem('lastPage') || '/my-day';
+      router.replace(lastPage);
+    } else {
+      // 미로그인: 로그인 페이지로 바로 이동
+      router.replace('/login');
+    }
+  }, [user, loading, tauri, router]);
+
+  // Tauri 앱에서는 리다이렉트 중 빈 화면
+  if (tauri) return null;
+
+  // 웹: 기존 랜딩 페이지
+  return <LandingPage />;
 }

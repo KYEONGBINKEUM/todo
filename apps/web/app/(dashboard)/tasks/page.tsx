@@ -38,6 +38,8 @@ function TasksContent() {
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
@@ -48,6 +50,8 @@ function TasksContent() {
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const savingOrder = useRef(false);
+  const touchDragSrcRef = useRef<number | null>(null);
+  const touchDragOverRef = useRef<number | null>(null);
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
@@ -90,13 +94,15 @@ function TasksContent() {
     .filter((t) => !filterList || t.listId === filterList)
     .filter((t) => !filterStatus || t.status === filterStatus)
     .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
+    .filter((t) => !filterDateFrom || (t.dueDate && t.dueDate >= filterDateFrom))
+    .filter((t) => !filterDateTo || (t.dueDate && t.dueDate <= filterDateTo))
     .filter((t) => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const activeTasks = filtered.filter((t) => t.status !== 'completed');
   const completedTasks = filtered.filter((t) => t.status === 'completed');
 
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
-  const canDrag = !filterList && !filterStatus && !filterTag && !searchQuery;
+  const canDrag = !filterList && !filterStatus && !filterTag && !searchQuery && !filterDateFrom && !filterDateTo;
 
   const relatedNotes = storeNotes.map((n) => ({ id: n.id!, title: n.title, icon: n.icon, tags: n.tags }));
   const tagRelatedNotes = filterTag
@@ -118,6 +124,54 @@ function TasksContent() {
   };
 
   const handleDragEnd = () => { setDragSrcIdx(null); setDragOverIdx(null); };
+
+  // 터치 드래그 (모바일)
+  const handleTouchDragStart = (idx: number) => {
+    if (!canDrag) return;
+    touchDragSrcRef.current = idx;
+    setDragSrcIdx(idx);
+  };
+
+  const handleTouchDragMove = (e: React.TouchEvent, listEl: HTMLElement) => {
+    if (touchDragSrcRef.current === null) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const items = listEl.querySelectorAll('[data-task-index]');
+    let targetIdx: number | null = null;
+    items.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        targetIdx = parseInt((el as HTMLElement).dataset.taskIndex ?? '-1');
+      }
+    });
+    if (targetIdx !== null && targetIdx !== touchDragSrcRef.current) {
+      touchDragOverRef.current = targetIdx;
+      setDragOverIdx(targetIdx);
+    }
+  };
+
+  const handleTouchDragEnd = async () => {
+    const src = touchDragSrcRef.current;
+    const dst = touchDragOverRef.current;
+    touchDragSrcRef.current = null;
+    touchDragOverRef.current = null;
+    setDragSrcIdx(null);
+    setDragOverIdx(null);
+    if (src === null || dst === null || src === dst || savingOrder.current) return;
+    const newTasks = [...filtered];
+    const [moved] = newTasks.splice(src, 1);
+    newTasks.splice(dst, 0, moved);
+    const withOrder = newTasks.map((t, i) => ({ ...t, order: (i + 1) * 1000 }));
+    setTasks(withOrder);
+    if (user) {
+      savingOrder.current = true;
+      try {
+        await Promise.all(withOrder.map((t) => updateTask(user.uid, t.id!, { order: t.order! })));
+      } finally {
+        savingOrder.current = false;
+      }
+    }
+  };
 
   const handleDrop = async (e: React.DragEvent, dstIdx: number) => {
     e.preventDefault();
@@ -265,6 +319,34 @@ function TasksContent() {
           </div>
         </div>
 
+        {/* 기간 필터 */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider">📅 기간</span>
+          <input
+            type="date"
+            value={filterDateFrom}
+            onChange={(e) => setFilterDateFrom(e.target.value)}
+            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
+            title="시작일"
+          />
+          <span className="text-text-muted text-xs">~</span>
+          <input
+            type="date"
+            value={filterDateTo}
+            onChange={(e) => setFilterDateTo(e.target.value)}
+            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
+            title="종료일"
+          />
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); }}
+              className="px-2 py-0.5 text-[10px] text-[#e94560] border border-[#e94560]/30 rounded-lg hover:bg-[#e94560]/10 transition-colors"
+            >
+              초기화
+            </button>
+          )}
+        </div>
+
         {/* @Tags */}
         {allTags.length > 0 && (
           <div className="mb-4 flex items-center gap-2 flex-wrap">
@@ -293,7 +375,11 @@ function TasksContent() {
         )}
 
         {/* Active Task List */}
-        <div className="space-y-2">
+        <div
+          className="space-y-2"
+          onTouchMove={canDrag ? (e) => handleTouchDragMove(e, e.currentTarget) : undefined}
+          onTouchEnd={canDrag ? handleTouchDragEnd : undefined}
+        >
           {activeTasks.map((task, index) => {
             const ps = priorityStyle(task.priority);
             const list = getListInfo(task.listId);
@@ -305,6 +391,7 @@ function TasksContent() {
             return (
               <div
                 key={task.id}
+                data-task-index={index}
                 draggable={canDrag}
                 onDragStart={canDrag ? (e) => handleDragStart(e, index) : undefined}
                 onDragOver={canDrag ? (e) => handleDragOver(e, index) : undefined}
@@ -320,7 +407,11 @@ function TasksContent() {
                 style={{ animation: isDragOver ? undefined : 'fadeUp 0.4s ease-out both', animationDelay: `${index * 0.03}s` }}
               >
                 {canDrag && (
-                  <span className="opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none" title={t('tasks.dragReorder')}>
+                  <span
+                    className="opacity-60 md:opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none touch-none"
+                    title={t('tasks.dragReorder')}
+                    onTouchStart={(e) => { e.stopPropagation(); handleTouchDragStart(index); }}
+                  >
                     ⋮⋮
                   </span>
                 )}

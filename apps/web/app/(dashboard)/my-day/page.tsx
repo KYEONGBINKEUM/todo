@@ -94,6 +94,8 @@ export default function MyDayPage() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
@@ -176,7 +178,9 @@ export default function MyDayPage() {
 
   const filteredTasks = tasks
     .filter((t) => !filterList || t.listId === filterList)
-    .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag));
+    .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
+    .filter((t) => !filterDateFrom || (t.dueDate && t.dueDate >= filterDateFrom))
+    .filter((t) => !filterDateTo || (t.dueDate && t.dueDate <= filterDateTo));
 
   const activeTasks = filteredTasks.filter((t) => !completedOnDateIds.has(t.id!));
   const completedTasks = filteredTasks.filter((t) => completedOnDateIds.has(t.id!));
@@ -184,7 +188,11 @@ export default function MyDayPage() {
   const completedCount = completedTasks.length;
   const totalCount = filteredTasks.length;
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
-  const canDrag = !filterList && !filterTag;
+  const canDrag = !filterList && !filterTag && !filterDateFrom && !filterDateTo;
+
+  // Touch drag refs (모바일)
+  const touchDragSrcRef = useRef<number | null>(null);
+  const touchDragOverRef = useRef<number | null>(null);
 
   // Drag & Drop
   const handleDragStart = (e: React.DragEvent, idx: number) => {
@@ -200,6 +208,54 @@ export default function MyDayPage() {
   };
 
   const handleDragEnd = () => { setDragSrcIdx(null); setDragOverIdx(null); };
+
+  // 터치 드래그 핸들러
+  const handleTouchDragStart = (idx: number) => {
+    if (!canDrag) return;
+    touchDragSrcRef.current = idx;
+    setDragSrcIdx(idx);
+  };
+
+  const handleTouchDragMove = (e: React.TouchEvent, listEl: HTMLElement) => {
+    if (touchDragSrcRef.current === null) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const items = listEl.querySelectorAll('[data-task-index]');
+    let targetIdx: number | null = null;
+    items.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        targetIdx = parseInt((el as HTMLElement).dataset.taskIndex ?? '-1');
+      }
+    });
+    if (targetIdx !== null && targetIdx !== touchDragSrcRef.current) {
+      touchDragOverRef.current = targetIdx;
+      setDragOverIdx(targetIdx);
+    }
+  };
+
+  const handleTouchDragEnd = async () => {
+    const src = touchDragSrcRef.current;
+    const dst = touchDragOverRef.current;
+    touchDragSrcRef.current = null;
+    touchDragOverRef.current = null;
+    setDragSrcIdx(null);
+    setDragOverIdx(null);
+    if (src === null || dst === null || src === dst || savingOrder.current) return;
+    const newTasks = [...activeTasks];
+    const [moved] = newTasks.splice(src, 1);
+    newTasks.splice(dst, 0, moved);
+    const withOrder = newTasks.map((t, i) => ({ ...t, order: (i + 1) * 1000 }));
+    setTasks(withOrder);
+    if (user) {
+      savingOrder.current = true;
+      try {
+        await Promise.all(withOrder.map((t) => updateTask(user.uid, t.id!, { order: t.order! })));
+      } finally {
+        savingOrder.current = false;
+      }
+    }
+  };
 
   const handleDrop = async (e: React.DragEvent, dstIdx: number) => {
     e.preventDefault();
@@ -585,6 +641,34 @@ export default function MyDayPage() {
           </div>
         )}
 
+        {/* 기간 필터 */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider">📅 기간</span>
+          <input
+            type="date"
+            value={filterDateFrom}
+            onChange={(e) => setFilterDateFrom(e.target.value)}
+            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
+            title="시작일"
+          />
+          <span className="text-text-muted text-xs">~</span>
+          <input
+            type="date"
+            value={filterDateTo}
+            onChange={(e) => setFilterDateTo(e.target.value)}
+            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
+            title="종료일"
+          />
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); }}
+              className="px-2 py-0.5 text-[10px] text-[#e94560] border border-[#e94560]/30 rounded-lg hover:bg-[#e94560]/10 transition-colors"
+            >
+              초기화
+            </button>
+          )}
+        </div>
+
         {/* Add Task Input */}
         <div className="mb-6 flex gap-2">
             <div className="flex-1 flex bg-background-card border border-border rounded-xl overflow-hidden focus-within:border-[#e94560] transition-colors">
@@ -622,7 +706,11 @@ export default function MyDayPage() {
         )}
 
         {/* Active Task List */}
-        <div className="space-y-2">
+        <div
+          className="space-y-2"
+          onTouchMove={canDrag ? (e) => handleTouchDragMove(e, e.currentTarget) : undefined}
+          onTouchEnd={canDrag ? handleTouchDragEnd : undefined}
+        >
           {activeTasks.map((task, index) => {
             const priority = priorityColors[task.priority];
             const list = getListInfo(task.listId);
@@ -634,6 +722,7 @@ export default function MyDayPage() {
             return (
               <div
                 key={task.id}
+                data-task-index={index}
                 draggable={canDrag}
                 onDragStart={canDrag ? (e) => handleDragStart(e, index) : undefined}
                 onDragOver={canDrag ? (e) => handleDragOver(e, index) : undefined}
@@ -650,7 +739,11 @@ export default function MyDayPage() {
               >
                 {/* Drag handle */}
                 {canDrag && (
-                  <span className="opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none" title="드래그하여 순서 변경">
+                  <span
+                    className="opacity-60 md:opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none touch-none"
+                    title="드래그하여 순서 변경"
+                    onTouchStart={(e) => { e.stopPropagation(); handleTouchDragStart(index); }}
+                  >
                     ⋮⋮
                   </span>
                 )}

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
-import { addList, updateList, deleteList, getUserSettings, getStorageLimit, type ListData, type Plan } from '@/lib/firestore';
+import { addList, updateList, deleteList, addNote, deleteNote, getUserSettings, getStorageLimit, type ListData, type Plan } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 import SettingsModal from '@/components/settings/SettingsModal';
 
@@ -23,15 +23,20 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
-  const { lists: storeLists, storageUsed } = useDataStore();
+  const { lists: storeLists, notes: storeNotes, storageUsed } = useDataStore();
   const [lists, setLists] = useState<ListData[]>([]);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
+  const [editingColor, setEditingColor] = useState('');
   const [showAddList, setShowAddList] = useState(false);
   const [newListLabel, setNewListLabel] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [hasUpdate, setHasUpdate] = useState(false);
+
+  // Notes sidebar state
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
 
   // Tauri: 앱 시작 시 백그라운드 업데이트 확인
   useEffect(() => {
@@ -97,12 +102,46 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const handleRenameList = async (listId: string) => {
     if (!user || !editingLabel.trim()) { setEditingListId(null); return; }
-    setLists((prev) => prev.map((l) => l.id === listId ? { ...l, label: editingLabel.trim() } : l));
+    const label = editingLabel.trim();
+    const color = editingColor;
+    setLists((prev) => prev.map((l) => l.id === listId ? { ...l, label, color } : l));
     setEditingListId(null);
     try {
-      await updateList(user.uid, listId, { label: editingLabel.trim() });
+      await updateList(user.uid, listId, { label, color });
     } catch (err) {
       console.error('Failed to rename list:', err);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!user || addingNote) return;
+    setAddingNote(true);
+    try {
+      const noteId = await addNote(user.uid, {
+        title: '새 노트',
+        icon: '📝',
+        blocks: [{ id: `${Date.now()}-b1`, type: 'text', content: '' }],
+        pinned: false,
+        tags: [],
+        folderId: null,
+        linkedTaskId: null,
+        linkedTaskIds: [],
+      });
+      router.push(`/notes?note=${noteId}`);
+      if (onClose) onClose();
+    } catch (err) {
+      console.error('Failed to create note:', err);
+    } finally {
+      setAddingNote(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!user) return;
+    try {
+      await deleteNote(user.uid, noteId);
+    } catch (err) {
+      console.error('Failed to delete note:', err);
     }
   };
 
@@ -209,14 +248,37 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   style={{ backgroundColor: list.color }}
                 />
                 {editingListId === list.id ? (
-                  <input
-                    value={editingLabel}
-                    onChange={(e) => setEditingLabel(e.target.value)}
-                    onBlur={() => handleRenameList(list.id!)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
-                    autoFocus
-                    className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
-                  />
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <input
+                      value={editingLabel}
+                      onChange={(e) => setEditingLabel(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
+                      autoFocus
+                      className="flex-1 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
+                    />
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {LIST_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setEditingColor(c)}
+                          className={`w-4 h-4 rounded-full flex-shrink-0 transition-all ${editingColor === c ? 'ring-2 ring-white ring-offset-1 ring-offset-background scale-110' : ''}`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                      <button
+                        onClick={() => handleRenameList(list.id!)}
+                        className="ml-auto text-[10px] px-2 py-0.5 bg-[#e94560]/20 text-[#e94560] rounded hover:bg-[#e94560]/30 transition-colors"
+                      >
+                        저장
+                      </button>
+                      <button
+                        onClick={() => setEditingListId(null)}
+                        className="text-[10px] px-2 py-0.5 text-text-muted hover:text-text-secondary transition-colors"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <Link
@@ -225,11 +287,11 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                     >
                       {list.label}
                     </Link>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
                       <button
-                        onClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); }}
+                        onClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); setEditingColor(list.color); }}
                         className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-text-secondary transition-colors text-[11px]"
-                        title="이름 변경"
+                        title="이름/색상 변경"
                       >
                         ✏️
                       </button>
@@ -260,6 +322,63 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Notes Section */}
+        <div className="mt-3 pt-3 border-t border-border flex-shrink-0">
+          <div className="flex items-center justify-between mb-1">
+            <button
+              onClick={() => setNotesExpanded(!notesExpanded)}
+              className="flex items-center gap-1.5 text-[10px] text-text-muted uppercase tracking-widest font-semibold hover:text-text-secondary transition-colors"
+            >
+              <span className={`text-[9px] transition-transform duration-200 ${notesExpanded ? 'rotate-90' : ''}`}>▶</span>
+              📝 {t('nav.notes')}
+              <span className="ml-1 text-[9px] bg-border px-1 rounded-full">{storeNotes.length}</span>
+            </button>
+            <button
+              onClick={handleAddNote}
+              disabled={addingNote}
+              className="text-text-inactive hover:text-[#e94560] transition-colors text-sm disabled:opacity-50"
+              title="새 노트 추가"
+            >
+              +
+            </button>
+          </div>
+          {notesExpanded && (
+            <div className="space-y-0.5 max-h-48 overflow-y-auto">
+              {storeNotes.slice(0, 20).map((note) => (
+                <div key={note.id} className="group flex items-center gap-1.5 px-1 py-1 rounded-lg hover:bg-background-card transition-colors">
+                  <Link
+                    href={`/notes?note=${note.id}`}
+                    onClick={() => onClose?.()}
+                    className="flex items-center gap-1.5 flex-1 min-w-0"
+                  >
+                    <span className="text-xs flex-shrink-0">{note.icon || '📝'}</span>
+                    <span className="text-[11px] text-text-secondary truncate hover:text-text-primary transition-colors">{note.title || '제목 없음'}</span>
+                  </Link>
+                  <button
+                    onClick={() => handleDeleteNote(note.id!)}
+                    className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-text-inactive hover:text-[#e94560] transition-all text-xs flex-shrink-0"
+                    title="삭제"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {storeNotes.length === 0 && (
+                <p className="text-[10px] text-text-inactive px-2 py-1">노트가 없습니다</p>
+              )}
+              {storeNotes.length > 0 && (
+                <Link
+                  href="/notes"
+                  onClick={() => onClose?.()}
+                  className="block text-[10px] text-text-inactive hover:text-[#e94560] transition-colors px-2 py-1"
+                >
+                  전체 보기 →
+                </Link>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Theme Toggle */}

@@ -103,6 +103,9 @@ function NotesContent() {
   const [readOnly, setReadOnly] = useState(false);
   const [showMobileToolbar, setShowMobileToolbar] = useState(false);
 
+  // 노트 목록 패널 접기/펼치기 (데스크탑)
+  const [listPanelCollapsed, setListPanelCollapsed] = useState(false);
+
   // Undo / Redo history (per active note)
   const historyRef = useRef<Map<string, { past: NoteBlock[][]; future: NoteBlock[][] }>>(new Map());
   const skipHistoryRef = useRef(false);
@@ -117,6 +120,8 @@ function NotesContent() {
   // Block drag-and-drop state
   const [dragBlockSrcIdx, setDragBlockSrcIdx] = useState<number | null>(null);
   const [dragBlockOverIdx, setDragBlockOverIdx] = useState<number | null>(null);
+  const dragSrcRef = useRef<number | null>(null);
+  const dragDstRef = useRef<number | null>(null);
 
   // Slash command menu state
   const [slashMenuVisible, setSlashMenuVisible] = useState(false);
@@ -951,6 +956,49 @@ function NotesContent() {
     return () => document.removeEventListener('mousedown', handler);
   }, [blockTypeMenuId]);
 
+  // Pointer drag: finalize reorder on pointerup
+  useEffect(() => {
+    if (dragBlockSrcIdx === null) return;
+    const finish = () => {
+      const src = dragSrcRef.current;
+      const dst = dragDstRef.current;
+      dragSrcRef.current = null;
+      dragDstRef.current = null;
+      setDragBlockSrcIdx(null);
+      setDragBlockOverIdx(null);
+      if (src === null || dst === null || src === dst) return;
+      setNotes((prev) => {
+        const cur = prev.find((n) => n.id === activeNoteId);
+        if (cur) pushHistory(activeNoteId, cur.blocks, true);
+        const updated = prev.map((n) => {
+          if (n.id !== activeNoteId) return n;
+          const blocks = [...n.blocks];
+          const [moved] = blocks.splice(src, 1);
+          blocks.splice(dst, 0, moved);
+          return { ...n, blocks, updated_at: new Date().toISOString() };
+        });
+        const note = updated.find((n) => n.id === activeNoteId);
+        if (note) debouncedSave(note);
+        return updated;
+      });
+    };
+    document.addEventListener('pointerup', finish);
+    return () => document.removeEventListener('pointerup', finish);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragBlockSrcIdx]);
+
+  // Body cursor while dragging
+  useEffect(() => {
+    if (dragBlockSrcIdx !== null) {
+      document.body.style.cursor = 'grabbing';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    return () => { document.body.style.cursor = ''; document.body.style.userSelect = ''; };
+  }, [dragBlockSrcIdx]);
+
   if (pageLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -972,24 +1020,44 @@ function NotesContent() {
       {/* ================================================================ */}
       {/* Note List Panel */}
       {/* ================================================================ */}
-      <div className={`border-r border-border bg-background flex flex-col flex-shrink-0 ${activeNoteId ? 'hidden md:flex md:w-72' : 'flex w-full md:w-72'}`}>
+      <div className={`border-r border-border bg-background flex flex-col flex-shrink-0 transition-all duration-200 ${activeNoteId ? 'hidden md:flex' : 'flex w-full'} ${listPanelCollapsed ? 'md:w-10' : 'md:w-72'}`}>
         {/* Header */}
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📝</span>
-              <h2 className="text-lg font-bold text-text-primary">{t('notes.title')}</h2>
-              <span className="text-xs text-text-muted bg-border px-2 py-0.5 rounded-full">
-                {searchFiltered.length}
-              </span>
+        <div className={`p-4 border-b border-border ${listPanelCollapsed ? 'hidden md:flex md:flex-col md:items-center md:px-1' : ''}`}>
+          {listPanelCollapsed ? (
+            // 접힌 상태: 아이콘들만 세로로
+            <div className="flex flex-col items-center gap-2">
+              <button onClick={() => setListPanelCollapsed(false)} className="w-7 h-7 flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors" title="목록 펼치기">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <span className="text-base">📝</span>
+              <button onClick={() => createNote()} className="w-7 h-7 flex items-center justify-center bg-[#e94560] hover:bg-[#ff5a7a] text-white rounded-lg transition-colors text-sm" title="새 노트">+</button>
             </div>
-            <button
-              onClick={() => createNote()}
-              className="w-8 h-8 flex items-center justify-center bg-[#e94560] hover:bg-[#ff5a7a] text-white rounded-lg transition-colors text-lg"
-            >
-              +
-            </button>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📝</span>
+                  <h2 className="text-lg font-bold text-text-primary">{t('notes.title')}</h2>
+                  <span className="text-xs text-text-muted bg-border px-2 py-0.5 rounded-full">
+                    {searchFiltered.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => createNote()}
+                    className="w-8 h-8 flex items-center justify-center bg-[#e94560] hover:bg-[#ff5a7a] text-white rounded-lg transition-colors text-lg"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => setListPanelCollapsed(true)}
+                    className="hidden md:flex w-7 h-7 items-center justify-center text-text-muted hover:text-text-primary hover:bg-border rounded transition-colors"
+                    title="목록 접기"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                </div>
+              </div>
 
           {/* Search */}
           <div className="relative">
@@ -1004,10 +1072,12 @@ function NotesContent() {
               className="w-full pl-9 pr-3 py-2 bg-background-card border border-border rounded-lg text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-[#e94560] transition-colors"
             />
           </div>
+            </>
+          )}
         </div>
 
-        {/* Tree List */}
-        <div className="flex-1 overflow-y-auto py-2">
+        {/* Tree List - 접힌 상태에서는 숨김 */}
+        {!listPanelCollapsed && <div className="flex-1 overflow-y-auto py-2">
           {/* Pinned */}
           {pinnedNotes.length > 0 && (
             <div className="mb-1">
@@ -1243,7 +1313,7 @@ function NotesContent() {
               )}
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* ================================================================ */}
@@ -1427,9 +1497,12 @@ function NotesContent() {
                 {activeNote.blocks.map((block, idx) => (
                   <div
                     key={block.id}
-                    onDragOver={(e) => !readOnly && handleBlockDragOver(e, idx)}
-                    onDrop={(e) => !readOnly && handleBlockDrop(e, idx)}
-                    onDragEnd={handleBlockDragEnd}
+                    onPointerEnter={() => {
+                      if (dragBlockSrcIdx !== null && idx !== dragBlockSrcIdx) {
+                        dragDstRef.current = idx;
+                        setDragBlockOverIdx(idx);
+                      }
+                    }}
                     className={`group relative py-1.5 rounded transition-colors ${
                       dragBlockSrcIdx === idx ? 'opacity-40 scale-95' :
                       dragBlockOverIdx === idx ? 'bg-[#e94560]/5 border border-dashed border-[#e94560]/30 rounded-lg' :
@@ -1439,9 +1512,12 @@ function NotesContent() {
                     <div className="flex items-start gap-1">
                       {!readOnly && (
                         <div
-                          draggable
-                          onDragStart={(e) => handleBlockDragStart(e, idx)}
-                          className="hidden md:flex flex-shrink-0 items-center justify-center w-5 self-stretch opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            dragSrcRef.current = idx;
+                            setDragBlockSrcIdx(idx);
+                          }}
+                          className="hidden md:flex flex-shrink-0 items-center justify-center w-5 self-stretch opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing touch-none select-none"
                           title="드래그하여 순서 변경"
                         >
                           <span className="text-text-inactive text-[10px]">⋮⋮</span>

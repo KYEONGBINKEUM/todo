@@ -46,13 +46,21 @@ export default function UpcomingPage() {
   const { user } = useAuth();
   const { t } = useI18n();
   const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
-  const tasks = storeTasks.filter((t) => t.dueDate);
   const [lists, setLists] = useState<ListData[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
   const [newTaskList, setNewTaskList] = useState('');
   const [adding, setAdding] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+
+  const tasks = storeTasks.filter((t) => {
+    if (!t.dueDate) return false;
+    if (filterDateFrom && t.dueDate < filterDateFrom) return false;
+    if (filterDateTo && t.dueDate > filterDateTo) return false;
+    return true;
+  });
 
   useEffect(() => {
     if (storeLists.length > 0) {
@@ -112,6 +120,30 @@ export default function UpcomingPage() {
             <h2 className="text-3xl font-extrabold text-text-primary">{t('upcoming.title')}</h2>
           </div>
           <p className="text-text-secondary text-sm">{t('upcoming.desc')}</p>
+        </div>
+
+        {/* Date Range Filter */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-text-muted">기간:</span>
+          <input
+            type="date"
+            value={filterDateFrom}
+            onChange={(e) => setFilterDateFrom(e.target.value)}
+            className="px-2 py-1 text-xs bg-background-card border border-border rounded-lg text-text-primary focus:outline-none focus:border-[#e94560]"
+          />
+          <span className="text-xs text-text-muted">~</span>
+          <input
+            type="date"
+            value={filterDateTo}
+            onChange={(e) => setFilterDateTo(e.target.value)}
+            className="px-2 py-1 text-xs bg-background-card border border-border rounded-lg text-text-primary focus:outline-none focus:border-[#e94560]"
+          />
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); }}
+              className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded-lg border border-border hover:border-border-hover transition-colors"
+            >초기화</button>
+          )}
         </div>
 
         {/* Add Task */}

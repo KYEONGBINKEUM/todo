@@ -155,6 +155,14 @@ body {
   animation: slideInRight 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Safe area insets for mobile (notch/status bar) */
+.mobile-header-height {
+  height: calc(3.5rem + env(safe-area-inset-top));
+}
+.mobile-content-pt {
+  padding-top: calc(3.5rem + env(safe-area-inset-top));
+}
+
 /* Font size utilities */
 html[data-font="small"]  { --font-size-base: 12px; }
 html[data-font="medium"] { --font-size-base: 14px; }

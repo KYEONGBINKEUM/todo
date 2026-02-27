@@ -44,10 +44,13 @@ export default function LoginPage() {
     })();
   }, []);
 
-  // 이미 로그인된 상태면 바로 리다이렉트
+  // 이미 로그인된 상태면 마지막 페이지(또는 /my-day)로 리다이렉트
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace('/my-day');
+      const lastPage = typeof window !== 'undefined'
+        ? localStorage.getItem('lastPage') || '/my-day'
+        : '/my-day';
+      router.replace(lastPage);
     }
   }, [user, authLoading, router]);
 

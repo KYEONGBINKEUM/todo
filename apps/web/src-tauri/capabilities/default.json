@@ -8,6 +8,7 @@
     "core:default",
     "shell:allow-open",
     "updater:default",
-    "os:default"
+    "os:default",
+    "notification:default"
   ]
 }

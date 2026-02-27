@@ -85,7 +85,9 @@ function MindmapContent() {
   const touchRef = useRef<{
     lastDist: number;
     longPressTimer: NodeJS.Timeout | null;
-  }>({ lastDist: 0, longPressTimer: null });
+    startX: number;
+    startY: number;
+  }>({ lastDist: 0, longPressTimer: null, startX: 0, startY: 0 });
 
   // Undo/Redo
   const historyRef = useRef<Map<string, { past: HistorySnapshot[]; future: HistorySnapshot[] }>>(new Map());
@@ -650,6 +652,8 @@ function MindmapContent() {
     }
 
     const touch = e.touches[0];
+    t.startX = touch.clientX;
+    t.startY = touch.clientY;
     const target = e.target as HTMLElement;
     const nodeEl = target.closest('[data-node-id]') as HTMLElement | null;
 
@@ -662,7 +666,7 @@ function MindmapContent() {
       setSelectedEdgeId(null);
       startNodeDrag(touch.clientX, touch.clientY, nodeId);
 
-      // Long press = multi-select toggle
+      // Long press = multi-select toggle (500ms)
       t.longPressTimer = setTimeout(() => {
         setSelectedNodeIds((prev) => {
           const next = new Set(prev);
@@ -684,7 +688,16 @@ function MindmapContent() {
 
   const handleTouchMove = (e: React.TouchEvent) => {
     const t = touchRef.current;
-    if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
+    // long-press 타이머: 10px 이상 이동 시에만 취소 (미세 떨림으로 취소 방지)
+    if (t.longPressTimer) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - t.startX;
+      const dy = touch.clientY - t.startY;
+      if (Math.sqrt(dx * dx + dy * dy) > 10) {
+        clearTimeout(t.longPressTimer);
+        t.longPressTimer = null;
+      }
+    }
 
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;

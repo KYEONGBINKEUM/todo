@@ -13,7 +13,7 @@ function isTauriEnv(): boolean {
 }
 
 function showInAppAlert(title: string, body: string) {
-  // 인앱 알림 표시 (Tauri 환경이거나 Notification API 사용 불가 시)
+  // 인앱 알림 표시 (fallback)
   const container = document.createElement('div');
   container.style.cssText = `
     position: fixed; top: 20px; right: 20px; z-index: 99999;
@@ -35,20 +35,39 @@ function showInAppAlert(title: string, body: string) {
   }, 5000);
 }
 
-function fireNotification(title: string, body: string) {
+async function fireNotification(title: string, body: string) {
   if (typeof window === 'undefined') return;
 
-  // 브라우저 Notification API 사용 가능하면 사용
+  // 1) Tauri 네이티브 알림 (Windows / macOS / Android / iOS 모두 지원)
+  if (isTauriEnv()) {
+    try {
+      const { isPermissionGranted, requestPermission, sendNotification } =
+        await import('@tauri-apps/plugin-notification');
+      let granted = await isPermissionGranted();
+      if (!granted) {
+        const perm = await requestPermission();
+        granted = perm === 'granted';
+      }
+      if (granted) {
+        await sendNotification({ title, body });
+        return;
+      }
+    } catch {
+      // plugin-notification 사용 불가 시 다음 단계로 fall-through
+    }
+  }
+
+  // 2) 브라우저 Notification API (웹 전용 fallback)
   if ('Notification' in window && Notification.permission === 'granted') {
     try {
       new Notification(title, { body, tag: title });
       return;
     } catch {
-      // fallback to in-app
+      // fall-through
     }
   }
 
-  // Notification API 사용 불가 → 인앱 알림
+  // 3) 인앱 알림 (최후 fallback)
   showInAppAlert(title, body);
 }
 
@@ -87,9 +106,25 @@ export function useTaskReminders(tasks: TaskData[]) {
   }, [tasks]);
 }
 
-/** 알림 권한을 요청합니다. OS 알림 API를 사용합니다. */
+/** 알림 권한을 요청합니다. Tauri 환경이면 네이티브 권한, 아니면 브라우저 권한을 요청합니다. */
 export async function requestNotificationPermission(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
+
+  // Tauri 환경: 네이티브 알림 플러그인 권한 요청
+  if (isTauriEnv()) {
+    try {
+      const { isPermissionGranted, requestPermission } =
+        await import('@tauri-apps/plugin-notification');
+      const granted = await isPermissionGranted();
+      if (granted) return true;
+      const perm = await requestPermission();
+      return perm === 'granted';
+    } catch {
+      // plugin-notification 사용 불가 시 브라우저 API로 fallback
+    }
+  }
+
+  // 웹 환경: 브라우저 Notification API
   if (!('Notification' in window)) return false;
   if (Notification.permission === 'granted') return true;
   if (Notification.permission === 'denied') return false;

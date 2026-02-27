@@ -92,7 +92,7 @@ export function useTaskReminders(tasks: TaskData[]) {
       if (delay <= 0 || delay > MAX_TIMEOUT) continue;
 
       const timer = setTimeout(() => {
-        fireNotification(`⏰ ${task.title}`, task.memo || '알림 시간이 되었습니다.');
+        fireNotification('AI Todo 알림', `⏰ ${task.title}`);
         timers.current.delete(task.id!);
       }, delay);
 

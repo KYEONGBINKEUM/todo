@@ -4,7 +4,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { callGemini } from './gemini';
 import { buildPrompt, NoahAIAction } from './prompts';
 import { getTotalTokensUsed, incrementUsage, getMonthlyUsage } from './usage';
-import { getYouTubeTranscript } from './youtube';
+import { getYouTubeVideoInfo } from './youtube';
 
 admin.initializeApp();
 
@@ -65,14 +65,22 @@ export const callNoahAI = onCall(
       }
     }
 
-    // 5. Handle YouTube transcript fetching if needed
+    // 5. Handle YouTube video info fetching if needed
     let processedContext = { ...context };
     if ((action === 'youtube_to_note' || action === 'youtube_to_mindmap') && context.url) {
       try {
-        const transcript = await getYouTubeTranscript(context.url);
-        processedContext.transcript = transcript;
+        const videoInfo = await getYouTubeVideoInfo(context.url);
+        processedContext.hasTranscript = videoInfo.hasTranscript;
+        if (videoInfo.hasTranscript && videoInfo.transcript) {
+          processedContext.transcript = videoInfo.transcript;
+        }
+        if (videoInfo.metadata) {
+          processedContext.videoTitle = videoInfo.metadata.title || context.videoTitle || '';
+          processedContext.videoAuthor = videoInfo.metadata.author || '';
+          processedContext.videoDescription = videoInfo.metadata.description || '';
+        }
       } catch (error: any) {
-        throw new HttpsError('failed-precondition', error.message || 'Failed to fetch YouTube transcript');
+        throw new HttpsError('failed-precondition', error.message || 'Failed to fetch YouTube video info');
       }
     }
 

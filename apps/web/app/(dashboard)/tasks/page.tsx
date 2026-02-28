@@ -252,6 +252,17 @@ function TasksContent() {
             <span className="text-3xl">📋</span>
             <h2 className="text-3xl font-extrabold text-text-primary">{t('tasks.title')}</h2>
             <span className="text-sm text-text-muted ml-2">{filtered.length}</span>
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('noah-ai-open', { detail: { page: '/tasks' } }));
+              }}
+              title="노아AI"
+              className="ml-auto h-7 px-2.5 flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-all
+                bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
+                hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
+            >
+              <span className="text-xs font-bold">N</span> AI
+            </button>
           </div>
           <p className="text-text-secondary text-sm">{t('tasks.desc')}</p>
         </div>

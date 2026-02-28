@@ -13,6 +13,7 @@ import { callNoahAI, detectYouTubeURL } from './noah-ai';
 // ============================================================================
 
 export type NoahAIAction =
+  | 'chat'
   | 'suggest_tasks'
   | 'prioritize'
   | 'schedule'
@@ -166,6 +167,15 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
   const togglePanel = useCallback(() => setIsPanelOpen((prev) => !prev), []);
   const closePanel = useCallback(() => setIsPanelOpen(false), []);
 
+  // Listen for 'noah-ai-open' events from in-page AI buttons
+  useEffect(() => {
+    const handleOpen = () => {
+      setIsPanelOpen(true);
+    };
+    window.addEventListener('noah-ai-open', handleOpen);
+    return () => window.removeEventListener('noah-ai-open', handleOpen);
+  }, []);
+
   const addMessage = useCallback((msg: Omit<AIMessage, 'id' | 'timestamp'>) => {
     const newMsg: AIMessage = {
       ...msg,
@@ -241,20 +251,8 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
         return;
       }
 
-      // For notes page, treat as auto-write context
-      if (currentPage === '/notes') {
-        await sendAction('auto_write_note', { title: message }, message);
-        return;
-      }
-
-      // For mindmap page, generate mindmap from text
-      if (currentPage === '/mindmap') {
-        await sendAction('generate_mindmap', { text: message }, message);
-        return;
-      }
-
-      // Default: suggest tasks
-      await sendAction('suggest_tasks', { userInput: message }, message);
+      // Default: general chat conversation
+      await sendAction('chat', { userInput: message, currentPage }, message);
     },
     [user, isLoading, currentPage, sendAction]
   );
@@ -298,6 +296,9 @@ function formatResult(action: NoahAIAction, result: any, t: (key: string) => str
   if (!result) return t('ai.noResult');
 
   switch (action) {
+    case 'chat': {
+      return result.reply || result.text || JSON.stringify(result);
+    }
     case 'suggest_tasks': {
       const suggestions = result.suggestions || [];
       if (suggestions.length === 0) return t('ai.noSuggestions');

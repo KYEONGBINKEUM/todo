@@ -218,6 +218,66 @@ function NotesContent() {
     saveTimerRef.current = setTimeout(() => { saveNoteToFirestore(note); }, 400);
   }, [saveNoteToFirestore]);
 
+  // ========== Noah AI: apply note from AI ==========
+  useEffect(() => {
+    const handleAIApplyNote = async (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !user) return;
+      const aiBlocks: NoteBlock[] = (detail.blocks || []).map((b: any, i: number) => ({
+        id: `${Date.now()}-ai-${i}`,
+        type: b.type || 'text',
+        content: b.content || '',
+      }));
+      if (aiBlocks.length === 0) return;
+
+      // If there's an active note and it's empty (just one empty text block), fill it
+      const current = notes.find((n) => n.id === activeNoteId);
+      if (current && current.blocks.length <= 1 && !current.blocks[0]?.content?.trim()) {
+        const updatedNote: Note = {
+          ...current,
+          title: detail.title || current.title,
+          blocks: aiBlocks,
+          updated_at: new Date().toISOString(),
+        };
+        setNotes((prev) => prev.map((n) => n.id === current.id ? updatedNote : n));
+        saveNoteToFirestore(updatedNote);
+        return;
+      }
+
+      // Otherwise create a new note with AI content
+      const tempId = Date.now().toString();
+      const newNote: Note = {
+        id: tempId,
+        title: detail.title || 'AI 노트',
+        icon: '🤖',
+        blocks: aiBlocks,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        pinned: false,
+        starred: false,
+        tags: [],
+        folderId: null,
+        linkedTaskId: null,
+        linkedTaskIds: [],
+      };
+      setNotes((prev) => [newNote, ...prev]);
+      setActiveNoteId(tempId);
+      try {
+        const realId = await addNoteDB(user.uid, {
+          title: newNote.title, icon: newNote.icon, blocks: newNote.blocks,
+          pinned: false, tags: [], folderId: null, linkedTaskId: null, linkedTaskIds: [],
+        });
+        setNotes((prev) => prev.map((n) => n.id === tempId ? { ...n, id: realId } : n));
+        setActiveNoteId(realId);
+      } catch (err) {
+        console.error('Failed to create AI note:', err);
+      }
+    };
+
+    window.addEventListener('noah-ai-apply-note', handleAIApplyNote);
+    return () => window.removeEventListener('noah-ai-apply-note', handleAIApplyNote);
+  }, [user, activeNoteId, notes, saveNoteToFirestore]);
+
   // ========== Undo / Redo ==========
 
   const getHistory = (noteId: string) => {
@@ -1419,6 +1479,24 @@ function NotesContent() {
                   ) : (
                     <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span className="hidden md:inline"> 쓰기</span></>
                   )}
+                </button>
+
+                {/* AI Button */}
+                <div className="w-px h-4 bg-border mx-1" />
+                <button
+                  onClick={() => {
+                    // Open Noah AI panel with note context
+                    window.dispatchEvent(new CustomEvent('noah-ai-open', {
+                      detail: { page: '/notes', noteTitle: activeNote.title, noteBlocks: activeNote.blocks.slice(-10) }
+                    }));
+                  }}
+                  title="노아AI로 글 작성"
+                  className="h-7 px-2 md:px-2.5 flex items-center gap-1 md:gap-1.5 rounded-lg text-[11px] font-semibold transition-all
+                    bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
+                    hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
+                >
+                  <span className="text-xs">N</span>
+                  <span className="hidden md:inline">AI</span>
                 </button>
 
                 {/* Desktop: inline block type buttons */}

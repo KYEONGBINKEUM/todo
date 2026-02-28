@@ -434,7 +434,18 @@ export default function MyDayPage() {
           <div className="flex items-center gap-3 mb-2">
             <span className="text-3xl">☀️</span>
             <h2 className="text-3xl font-extrabold text-text-primary">{t('myDay.title')}</h2>
-            <div className="ml-auto relative">
+            <div className="ml-auto flex items-center gap-2 relative">
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('noah-ai-open', { detail: { page: '/my-day' } }));
+                }}
+                title="노아AI"
+                className="h-7 px-2.5 flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-all
+                  bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
+                  hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
+              >
+                <span className="text-xs font-bold">N</span> AI
+              </button>
               <button
                 onClick={() => setShowCleanup(!showCleanup)}
                 className="px-3 py-1.5 text-[11px] text-text-muted hover:text-[#e94560] border border-border hover:border-[#e94560]/30 rounded-lg transition-colors"

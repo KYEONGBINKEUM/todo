@@ -3,8 +3,10 @@ import { buildNoteWriterPrompt } from './note-writer';
 import { buildNoteCompleterPrompt } from './note-completer';
 import { buildYouTubeToNotePrompt, buildYouTubeToMindmapPrompt } from './youtube-analyzer';
 import { buildMindmapGeneratorPrompt } from './mindmap-generator';
+import { buildChatPrompt } from './chat';
 
 export type NoahAIAction =
+  | 'chat'
   | 'suggest_tasks'
   | 'prioritize'
   | 'schedule'
@@ -28,6 +30,8 @@ export function buildPrompt(action: NoahAIAction, context: Record<string, any>, 
   const langInstruction = getLanguageInstruction(language);
 
   switch (action) {
+    case 'chat':
+      return buildChatPrompt(context, langInstruction);
     case 'suggest_tasks':
       return buildTaskSuggestionsPrompt(context, langInstruction);
     case 'prioritize':

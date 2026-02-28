@@ -202,6 +202,58 @@ function MindmapContent() {
     saveTimerRef.current = setTimeout(() => saveToFirestore(map), 500);
   }, [saveToFirestore]);
 
+  // ========== Noah AI: apply mindmap from AI ==========
+  useEffect(() => {
+    const handleAIApplyMindmap = async (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !user) return;
+      const aiNodes: MindMapNode[] = (detail.nodes || []).map((n: any) => ({
+        id: n.id || `ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        text: n.text || '',
+        x: n.x ?? 400,
+        y: n.y ?? 300,
+        width: n.width || DEFAULT_NODE_WIDTH,
+        height: n.height || DEFAULT_NODE_HEIGHT,
+        color: n.color || NODE_COLORS[0],
+      }));
+      const aiEdges: MindMapEdge[] = (detail.edges || []).map((e: any) => ({
+        id: e.id || `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        from: e.from,
+        to: e.to,
+        style: e.style || 'curved',
+      }));
+      if (aiNodes.length === 0) return;
+
+      const tempId = Date.now().toString();
+      const newMap: MindMap = {
+        id: tempId,
+        title: detail.title || 'AI 마인드맵',
+        nodes: aiNodes,
+        edges: aiEdges,
+        viewportX: 0,
+        viewportY: 0,
+        zoom: 1,
+        starred: false,
+        createdAt: new Date().toISOString(),
+      };
+      setMindmaps((prev) => [newMap, ...prev]);
+      setActiveMapId(tempId);
+      try {
+        const realId = await addMindmapDB(user.uid, {
+          title: newMap.title, nodes: newMap.nodes, edges: newMap.edges,
+          viewportX: 0, viewportY: 0, zoom: 1,
+        });
+        setMindmaps((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: realId } : m)));
+        setActiveMapId(realId);
+      } catch (err) {
+        console.error('Failed to create AI mindmap:', err);
+      }
+    };
+
+    window.addEventListener('noah-ai-apply-mindmap', handleAIApplyMindmap);
+    return () => window.removeEventListener('noah-ai-apply-mindmap', handleAIApplyMindmap);
+  }, [user]);
+
   // updateMapDirect: update + save, used for undo/redo & non-history ops
   const updateMapDirect = (updater: (m: MindMap) => MindMap) => {
     setMindmaps((prev) => {
@@ -874,6 +926,22 @@ function MindmapContent() {
               >
                 <span className="md:hidden">+</span>
                 <span className="hidden md:inline">+ 노드</span>
+              </button>
+
+              {/* AI Button */}
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('noah-ai-open', {
+                    detail: { page: '/mindmap', mindmapTitle: activeMap?.title }
+                  }));
+                }}
+                title="노아AI로 마인드맵 생성"
+                className="h-7 px-2 md:px-2.5 flex items-center gap-1 rounded-lg text-[11px] font-semibold transition-all
+                  bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
+                  hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
+              >
+                <span className="text-xs">N</span>
+                <span className="hidden md:inline">AI</span>
               </button>
 
               <div className="w-px h-4 bg-border mx-0.5 hidden md:block" />

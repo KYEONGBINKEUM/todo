@@ -274,6 +274,56 @@ function TasksContent() {
                   }
                   return { tasks: taskSummaries };
                 }}
+                onResult={async (action, result) => {
+                  if (!user) return;
+                  // suggest_tasks: create new tasks
+                  if (action === 'suggest_tasks' && result?.suggestions) {
+                    for (const s of result.suggestions) {
+                      try {
+                        await addTaskDB(user.uid, {
+                          title: s.title, status: 'todo', priority: s.priority || 'medium',
+                          starred: false, listId: lists[0]?.id || '', myDay: false,
+                          tags: [], order: Date.now(),
+                          createdDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
+                        });
+                      } catch { /* ignore */ }
+                    }
+                    // Refresh by reloading from store
+                    window.location.reload();
+                  }
+                  // prioritize: update priorities
+                  if (action === 'prioritize' && result?.priorities) {
+                    for (const p of result.priorities) {
+                      if (p.taskId) {
+                        try { await updateTask(user.uid, p.taskId, { priority: p.suggestedPriority }); } catch { /* ignore */ }
+                      }
+                    }
+                    window.location.reload();
+                  }
+                  // breakdown: create subtasks
+                  if (action === 'breakdown' && result?.subtasks) {
+                    for (const s of result.subtasks) {
+                      try {
+                        await addTaskDB(user.uid, {
+                          title: s.title, status: 'todo', priority: 'medium',
+                          starred: false, listId: lists[0]?.id || '', myDay: false,
+                          tags: [], order: Date.now(),
+                          createdDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
+                        });
+                      } catch { /* ignore */ }
+                    }
+                    window.location.reload();
+                  }
+                  // schedule: update due dates
+                  if (action === 'schedule' && result?.schedule) {
+                    for (const s of result.schedule) {
+                      if (s.taskId && s.suggestedDate) {
+                        try { await updateTask(user.uid, s.taskId, { dueDate: s.suggestedDate }); } catch { /* ignore */ }
+                      }
+                    }
+                    window.location.reload();
+                  }
+                }}
               />
             </div>
           </div>

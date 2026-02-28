@@ -1500,6 +1500,37 @@ function NotesContent() {
                     }
                     return {};
                   }}
+                  onResult={(action, result) => {
+                    if (!result?.blocks || !activeNote) return;
+                    const aiBlocks: NoteBlock[] = result.blocks.map((b: any, i: number) => ({
+                      id: `${Date.now()}-ai-${i}`,
+                      type: b.type || 'text',
+                      content: b.content || '',
+                    }));
+                    if (aiBlocks.length === 0) return;
+
+                    if (action === 'complete_note') {
+                      // Append AI blocks after existing content
+                      const updatedNote: Note = {
+                        ...activeNote,
+                        blocks: [...activeNote.blocks, ...aiBlocks],
+                        updated_at: new Date().toISOString(),
+                      };
+                      setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updatedNote : n));
+                      saveNoteToFirestore(updatedNote);
+                    } else {
+                      // auto_write or youtube: replace empty blocks or set all blocks
+                      const isEmpty = activeNote.blocks.length <= 1 && !activeNote.blocks[0]?.content?.trim();
+                      const updatedNote: Note = {
+                        ...activeNote,
+                        title: result.title || activeNote.title,
+                        blocks: isEmpty ? aiBlocks : [...activeNote.blocks, { id: `${Date.now()}-div`, type: 'divider' as const, content: '' }, ...aiBlocks],
+                        updated_at: new Date().toISOString(),
+                      };
+                      setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updatedNote : n));
+                      saveNoteToFirestore(updatedNote);
+                    }
+                  }}
                 />
 
                 {/* Desktop: inline block type buttons */}

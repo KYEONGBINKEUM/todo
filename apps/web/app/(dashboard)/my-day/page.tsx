@@ -455,6 +455,43 @@ export default function MyDayPage() {
                   }
                   return { tasks: taskSummaries };
                 }}
+                onResult={async (action, result) => {
+                  if (!user) return;
+                  if (action === 'suggest_tasks' && result?.suggestions) {
+                    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+                    for (const s of result.suggestions) {
+                      try {
+                        await addTaskDB(user.uid, {
+                          title: s.title, status: 'todo', priority: s.priority || 'medium',
+                          starred: false, listId: lists[0]?.id || '', myDay: true,
+                          tags: [], order: Date.now(), createdDate: today,
+                        });
+                      } catch { /* ignore */ }
+                    }
+                    window.location.reload();
+                  }
+                  if (action === 'prioritize' && result?.priorities) {
+                    for (const p of result.priorities) {
+                      if (p.taskId) {
+                        try { await updateTask(user.uid, p.taskId, { priority: p.suggestedPriority }); } catch { /* ignore */ }
+                      }
+                    }
+                    window.location.reload();
+                  }
+                  if (action === 'breakdown' && result?.subtasks) {
+                    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+                    for (const s of result.subtasks) {
+                      try {
+                        await addTaskDB(user.uid, {
+                          title: s.title, status: 'todo', priority: 'medium',
+                          starred: false, listId: lists[0]?.id || '', myDay: true,
+                          tags: [], order: Date.now(), createdDate: today,
+                        });
+                      } catch { /* ignore */ }
+                    }
+                    window.location.reload();
+                  }
+                }}
               />
               <button
                 onClick={() => setShowCleanup(!showCleanup)}

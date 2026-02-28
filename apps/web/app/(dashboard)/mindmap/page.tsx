@@ -936,12 +936,38 @@ function MindmapContent() {
                   { id: 'generate', label: '마인드맵 생성', icon: '🧠', action: 'generate_mindmap' as NoahAIAction, description: '텍스트로 마인드맵 자동 생성' },
                   { id: 'youtube', label: 'YouTube → 마인드맵', icon: '🎬', action: 'youtube_to_mindmap' as NoahAIAction, description: '영상 내용을 마인드맵으로' },
                 ]}
-                getContext={(action) => {
-                  if (action === 'generate_mindmap') {
-                    const text = prompt('마인드맵 주제를 입력하세요:');
-                    return text ? { text } : {};
-                  }
-                  return {};
+                getContext={() => ({})}
+                onResult={async (action, result) => {
+                  if (!result?.nodes || !user) return;
+                  const aiNodes: MindMapNode[] = result.nodes.map((n: any) => ({
+                    id: n.id || `ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                    text: n.text || '',
+                    x: n.x ?? 400, y: n.y ?? 300,
+                    width: n.width || DEFAULT_NODE_WIDTH, height: n.height || DEFAULT_NODE_HEIGHT,
+                    color: n.color || NODE_COLORS[0],
+                  }));
+                  const aiEdges: MindMapEdge[] = (result.edges || []).map((e: any) => ({
+                    id: e.id || `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                    from: e.from, to: e.to, style: e.style || 'curved',
+                  }));
+                  // Create new mindmap with AI content
+                  const tempId = Date.now().toString();
+                  const newMap: MindMap = {
+                    id: tempId, title: result.title || 'AI 마인드맵',
+                    nodes: aiNodes, edges: aiEdges,
+                    viewportX: 0, viewportY: 0, zoom: 1,
+                    starred: false, createdAt: new Date().toISOString(),
+                  };
+                  setMindmaps((prev) => [newMap, ...prev]);
+                  setActiveMapId(tempId);
+                  try {
+                    const realId = await addMindmapDB(user.uid, {
+                      title: newMap.title, nodes: newMap.nodes, edges: newMap.edges,
+                      viewportX: 0, viewportY: 0, zoom: 1,
+                    });
+                    setMindmaps((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: realId } : m)));
+                    setActiveMapId(realId);
+                  } catch (err) { console.error('Failed to create AI mindmap:', err); }
                 }}
               />
 

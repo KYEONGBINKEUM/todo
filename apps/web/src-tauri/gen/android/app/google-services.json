@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "175504330251",
+    "project_id": "ai-todo-e213a",
+    "storage_bucket": "ai-todo-e213a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:175504330251:android:afa65d350c36b14254810e",
+        "android_client_info": {
+          "package_name": "aitodo.firstb.aitodo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "175504330251-h5iqn8jkhj7huboqnhds5dvqk8fnno58.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "aitodo.firstb.aitodo",
+            "certificate_hash": "9722612c08b63bb0bd0c0eaad642804467058c8d"
+          }
+        },
+        {
+          "client_id": "175504330251-3c9g46s74ba91e56785m4u1d66s37boh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQyomtbP37EqYWirfi8RgyIJOgM6BE72g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "175504330251-3c9g46s74ba91e56785m4u1d66s37boh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

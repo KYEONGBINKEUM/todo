@@ -1,0 +1,13 @@
+{
+  "identifier": "mobile",
+  "description": "Capability for mobile",
+  "windows": ["main"],
+  "platforms": ["android", "iOS"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "deep-link:default",
+    "os:default",
+    "notification:default"
+  ]
+}

@@ -1,0 +1,230 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   CSS Variables — Dark (default) & Light overrides
+   ============================================================ */
+:root {
+  --font-pretendard: 'Pretendard Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-size-base: 14px;
+
+  /* Background */
+  --color-bg-base:    #08081a;
+  --color-bg-card:    #111128;
+  --color-bg-hover:   #1a1a40;
+  --color-bg-sidebar: #111128;
+
+  /* Border */
+  --color-border:       #1e1e3a;
+  --color-border-hover: #333355;
+
+  /* Text */
+  --color-text-primary:   #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted:     #64748b;
+  --color-text-inactive:  #4a4a6a;
+
+  /* Scrollbar */
+  --color-scrollbar: #333;
+  --color-scrollbar-hover: #444;
+
+  /* Checkbox border — dark mode */
+  --color-checkbox-border: #eee;
+
+  /* Syntax highlight tokens (one-dark palette) */
+  --hljs-fg:      #abb2bf;
+  --hljs-comment: #5c6370;
+  --hljs-keyword: #c678dd;
+  --hljs-string:  #98c379;
+  --hljs-number:  #d19a66;
+  --hljs-title:   #61afef;
+  --hljs-type:    #e5c07b;
+  --hljs-tag:     #e06c75;
+  --hljs-builtin: #e06c75;
+}
+
+html.light {
+  --color-bg-base:    #ffffff;
+  --color-bg-card:    #f8fafc;
+  --color-bg-hover:   #e8edf5;
+  --color-bg-sidebar: #dde3ef;
+
+  --color-border:       #cbd5e1;
+  --color-border-hover: #94a3b8;
+
+  --color-text-primary:   #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted:     #94a3b8;
+  --color-text-inactive:  #cbd5e1;
+
+  --color-scrollbar: #cbd5e1;
+  --color-scrollbar-hover: #94a3b8;
+
+  /* Checkbox border — light mode */
+  --color-checkbox-border: #ddd;
+
+  /* Syntax highlight tokens (github-light palette) */
+  --hljs-fg:      #24292e;
+  --hljs-comment: #6a737d;
+  --hljs-keyword: #d73a49;
+  --hljs-string:  #032f62;
+  --hljs-number:  #005cc5;
+  --hljs-title:   #6f42c1;
+  --hljs-type:    #005cc5;
+  --hljs-tag:     #22863a;
+  --hljs-builtin: #e36209;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  min-height: 100vh;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-hover);
+}
+
+/* Animation utilities */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-slow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes checkPop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.4s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 3s ease infinite;
+  background-size: 200% 200%;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Safe area insets for mobile (notch/status bar) */
+.mobile-header-height {
+  height: calc(3.5rem + env(safe-area-inset-top));
+}
+.mobile-content-pt {
+  padding-top: calc(3.5rem + env(safe-area-inset-top));
+}
+
+/* Font size utilities */
+html[data-font="small"]  { --font-size-base: 12px; }
+html[data-font="medium"] { --font-size-base: 14px; }
+html[data-font="large"]  { --font-size-base: 16px; }
+
+body { font-size: var(--font-size-base); }
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid #e94560;
+  outline-offset: 2px;
+}
+
+/* Button reset */
+button {
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Input reset */
+input,
+textarea {
+  font-family: inherit;
+}
+
+/* ===== Syntax Highlighting (highlight.js token overrides) ===== */
+.hljs { background: transparent; color: var(--hljs-fg); }
+.hljs-comment, .hljs-quote { color: var(--hljs-comment); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-subst { color: var(--hljs-keyword); font-weight: 600; }
+.hljs-number, .hljs-literal { color: var(--hljs-number); }
+.hljs-string, .hljs-doctag, .hljs-regexp { color: var(--hljs-string); }
+.hljs-title, .hljs-section { color: var(--hljs-title); font-weight: 600; }
+.hljs-type, .hljs-class .hljs-title, .hljs-built_in, .hljs-builtin-name { color: var(--hljs-type); }
+.hljs-tag, .hljs-name, .hljs-attribute, .hljs-variable, .hljs-template-variable { color: var(--hljs-tag); }
+.hljs-symbol, .hljs-bullet, .hljs-link { color: var(--hljs-number); }
+.hljs-meta { color: var(--hljs-comment); }
+.hljs-deletion { color: #e06c75; }
+.hljs-addition { color: #98c379; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }

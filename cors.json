@@ -1,0 +1,20 @@
+[
+  {
+    "origin": [
+      "https://ai-todo-e81.pages.dev",
+      "https://*.pages.dev",
+      "http://localhost:3000",
+      "http://localhost:1420",
+      "tauri://localhost"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": [
+      "Content-Type",
+      "Authorization",
+      "Content-Length",
+      "User-Agent",
+      "x-goog-resumable"
+    ]
+  }
+]

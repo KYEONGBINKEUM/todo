@@ -12,6 +12,8 @@ import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebas
 import { storage } from '@/lib/firebase';
 import { MAX_ATTACHMENT_SIZE } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
+import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
+import type { NoahAIAction } from '@/lib/noah-ai-context';
 import type { MindMapNode, MindMapEdge, MindMapData } from '@/lib/firestore';
 
 // ============================================================================
@@ -928,21 +930,20 @@ function MindmapContent() {
                 <span className="hidden md:inline">+ 노드</span>
               </button>
 
-              {/* AI Button */}
-              <button
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('noah-ai-open', {
-                    detail: { page: '/mindmap', mindmapTitle: activeMap?.title }
-                  }));
+              {/* AI Actions */}
+              <NoahAIPageActions
+                actions={[
+                  { id: 'generate', label: '마인드맵 생성', icon: '🧠', action: 'generate_mindmap' as NoahAIAction, description: '텍스트로 마인드맵 자동 생성' },
+                  { id: 'youtube', label: 'YouTube → 마인드맵', icon: '🎬', action: 'youtube_to_mindmap' as NoahAIAction, description: '영상 내용을 마인드맵으로' },
+                ]}
+                getContext={(action) => {
+                  if (action === 'generate_mindmap') {
+                    const text = prompt('마인드맵 주제를 입력하세요:');
+                    return text ? { text } : {};
+                  }
+                  return {};
                 }}
-                title="노아AI로 마인드맵 생성"
-                className="h-7 px-2 md:px-2.5 flex items-center gap-1 rounded-lg text-[11px] font-semibold transition-all
-                  bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
-                  hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
-              >
-                <span className="text-xs">N</span>
-                <span className="hidden md:inline">AI</span>
-              </button>
+              />
 
               <div className="w-px h-4 bg-border mx-0.5 hidden md:block" />
 

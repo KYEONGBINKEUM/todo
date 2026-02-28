@@ -8,6 +8,8 @@ import { addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB, type Task
 import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
+import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
+import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -252,17 +254,28 @@ function TasksContent() {
             <span className="text-3xl">📋</span>
             <h2 className="text-3xl font-extrabold text-text-primary">{t('tasks.title')}</h2>
             <span className="text-sm text-text-muted ml-2">{filtered.length}</span>
-            <button
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('noah-ai-open', { detail: { page: '/tasks' } }));
-              }}
-              title="노아AI"
-              className="ml-auto h-7 px-2.5 flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-all
-                bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
-                hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
-            >
-              <span className="text-xs font-bold">N</span> AI
-            </button>
+            <div className="ml-auto">
+              <NoahAIPageActions
+                actions={[
+                  { id: 'prioritize', label: '우선순위 분석', icon: '🎯', action: 'prioritize' as NoahAIAction, description: '작업 우선순위 AI 분석' },
+                  { id: 'suggest', label: '작업 제안', icon: '💡', action: 'suggest_tasks' as NoahAIAction, description: '새로운 작업 추천' },
+                  { id: 'schedule', label: '일정 최적화', icon: '📅', action: 'schedule' as NoahAIAction, description: '작업 일정 자동 배분' },
+                  { id: 'breakdown', label: '작업 분해', icon: '📋', action: 'breakdown' as NoahAIAction, description: '작업을 세부 단위로 분해' },
+                ]}
+                getContext={(action) => {
+                  const taskSummaries = tasks.slice(0, 20).map((t) => ({
+                    id: t.id, title: t.title, status: t.status,
+                    priority: t.priority, dueDate: t.dueDate || null,
+                  }));
+                  if (action === 'breakdown') {
+                    const target = tasks.find((t) => t.starred && t.status !== 'completed')
+                      || tasks.find((t) => t.status !== 'completed');
+                    return { task: target ? { title: target.title, memo: target.memo } : {} };
+                  }
+                  return { tasks: taskSummaries };
+                }}
+              />
+            </div>
           </div>
           <p className="text-text-secondary text-sm">{t('tasks.desc')}</p>
         </div>

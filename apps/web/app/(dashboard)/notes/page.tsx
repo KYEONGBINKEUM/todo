@@ -10,6 +10,8 @@ import {
   restoreFolder as restoreFolderDB, permanentDeleteFolder as permanentDeleteFolderDB,
 } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
+import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
+import type { NoahAIAction } from '@/lib/noah-ai-context';
 import hljs from 'highlight.js/lib/common';
 
 // ============================================================================
@@ -1481,23 +1483,24 @@ function NotesContent() {
                   )}
                 </button>
 
-                {/* AI Button */}
+                {/* AI Actions */}
                 <div className="w-px h-4 bg-border mx-1" />
-                <button
-                  onClick={() => {
-                    // Open Noah AI panel with note context
-                    window.dispatchEvent(new CustomEvent('noah-ai-open', {
-                      detail: { page: '/notes', noteTitle: activeNote.title, noteBlocks: activeNote.blocks.slice(-10) }
-                    }));
+                <NoahAIPageActions
+                  actions={[
+                    { id: 'auto_write', label: '자동 작성', icon: '✍️', action: 'auto_write_note' as NoahAIAction, description: '제목으로 노트 자동 생성' },
+                    { id: 'complete', label: '이어쓰기', icon: '📝', action: 'complete_note' as NoahAIAction, description: '현재 내용 이어서 작성' },
+                    { id: 'youtube', label: 'YouTube → 노트', icon: '🎬', action: 'youtube_to_note' as NoahAIAction, description: '영상 요약 노트 생성' },
+                  ]}
+                  getContext={(action) => {
+                    if (action === 'auto_write_note') {
+                      return { title: activeNote.title, existingBlocks: activeNote.blocks.slice(0, 10) };
+                    }
+                    if (action === 'complete_note') {
+                      return { title: activeNote.title, blocks: activeNote.blocks.slice(-15) };
+                    }
+                    return {};
                   }}
-                  title="노아AI로 글 작성"
-                  className="h-7 px-2 md:px-2.5 flex items-center gap-1 md:gap-1.5 rounded-lg text-[11px] font-semibold transition-all
-                    bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
-                    hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
-                >
-                  <span className="text-xs">N</span>
-                  <span className="hidden md:inline">AI</span>
-                </button>
+                />
 
                 {/* Desktop: inline block type buttons */}
                 {!readOnly && (

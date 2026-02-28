@@ -10,6 +10,8 @@ import {
 import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
+import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
+import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -435,17 +437,25 @@ export default function MyDayPage() {
             <span className="text-3xl">☀️</span>
             <h2 className="text-3xl font-extrabold text-text-primary">{t('myDay.title')}</h2>
             <div className="ml-auto flex items-center gap-2 relative">
-              <button
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('noah-ai-open', { detail: { page: '/my-day' } }));
+              <NoahAIPageActions
+                actions={[
+                  { id: 'prioritize', label: '우선순위 분석', icon: '🎯', action: 'prioritize' as NoahAIAction, description: '오늘 할 일 우선순위 분석' },
+                  { id: 'suggest', label: '작업 제안', icon: '💡', action: 'suggest_tasks' as NoahAIAction, description: '오늘에 맞는 작업 추천' },
+                  { id: 'breakdown', label: '작업 분해', icon: '📋', action: 'breakdown' as NoahAIAction, description: '작업을 세부 단위로 분해' },
+                ]}
+                getContext={(action) => {
+                  const taskSummaries = tasks.slice(0, 20).map((t) => ({
+                    id: t.id, title: t.title, status: t.status,
+                    priority: t.priority, dueDate: t.dueDate || null, myDay: t.myDay,
+                  }));
+                  if (action === 'breakdown') {
+                    const target = tasks.find((t) => t.starred && t.status !== 'completed')
+                      || tasks.find((t) => t.status !== 'completed');
+                    return { task: target ? { title: target.title, memo: target.memo } : {} };
+                  }
+                  return { tasks: taskSummaries };
                 }}
-                title="노아AI"
-                className="h-7 px-2.5 flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-all
-                  bg-gradient-to-r from-[#e94560]/15 to-[#8b5cf6]/15 text-[#e94560] border border-[#e94560]/30
-                  hover:from-[#e94560]/25 hover:to-[#8b5cf6]/25"
-              >
-                <span className="text-xs font-bold">N</span> AI
-              </button>
+              />
               <button
                 onClick={() => setShowCleanup(!showCleanup)}
                 className="px-3 py-1.5 text-[11px] text-text-muted hover:text-[#e94560] border border-border hover:border-[#e94560]/30 rounded-lg transition-colors"

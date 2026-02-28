@@ -27,7 +27,7 @@ export default function NoahAIPanel() {
 
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -96,11 +96,31 @@ export default function NoahAIPanel() {
     sendAction(chip.action, context);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!input.trim() || isLoading) return;
     sendMessage(input.trim());
     setInput('');
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+    // Shift+Enter or Alt+Enter = newline (default behavior)
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // Auto-resize textarea
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
   };
 
   const handleApplyResult = (data: any, action?: NoahAIAction) => {
@@ -260,23 +280,25 @@ export default function NoahAIPanel() {
           onSubmit={handleSubmit}
           className="px-4 py-3 border-t border-border flex-shrink-0"
         >
-          <div className="flex items-center gap-2">
-            <input
+          <div className="flex items-end gap-2">
+            <textarea
               ref={inputRef}
-              type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
               placeholder={t('ai.inputPlaceholder')}
               disabled={isLoading}
+              rows={1}
               className="flex-1 px-3.5 py-2.5 rounded-xl text-sm bg-background border border-border
-                text-text-primary placeholder:text-text-muted
+                text-text-primary placeholder:text-text-muted resize-none
                 focus:outline-none focus:border-[#e94560] focus:ring-1 focus:ring-[#e94560]/30
                 disabled:opacity-50 transition-colors"
+              style={{ maxHeight: '120px' }}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="w-10 h-10 flex items-center justify-center rounded-xl
+              className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl
                 bg-gradient-to-r from-[#e94560] to-[#8b5cf6] text-white
                 disabled:opacity-40 hover:opacity-90 transition-opacity active:scale-95"
             >
@@ -286,7 +308,7 @@ export default function NoahAIPanel() {
             </button>
           </div>
           <p className="text-[10px] text-text-muted mt-1.5 text-center">
-            {t('ai.inputHint')}
+            Enter: {t('ai.send')} · Shift+Enter / Alt+Enter: {t('ai.newline')}
           </p>
         </form>
       </div>

@@ -19,7 +19,7 @@ export interface GeminiResult {
 
 /**
  * Call Gemini with a system prompt and user prompt.
- * Uses gemini-2.0-flash for speed and cost efficiency.
+ * Uses gemini-3.0-flash for speed and cost efficiency.
  * Requests JSON output when jsonMode is true.
  */
 export async function callGemini(
@@ -29,7 +29,7 @@ export async function callGemini(
 ): Promise<GeminiResult> {
   const ai = getGenAI();
   const model = ai.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3.0-flash',
     systemInstruction: systemPrompt,
     generationConfig: jsonMode
       ? { responseMimeType: 'application/json', temperature: 0.7, maxOutputTokens: 4096 }

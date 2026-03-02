@@ -218,6 +218,7 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
         updateMessage(loadingId, {
           content: formatResult(action, response.result, t),
           isLoading: false,
+          action,
           structuredData: response.result,
         });
 

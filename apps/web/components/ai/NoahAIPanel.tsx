@@ -4,12 +4,16 @@ import { useState, useRef, useEffect } from 'react';
 import { useNoahAI } from '@/lib/noah-ai-context';
 import { useI18n } from '@/lib/i18n-context';
 import { useDataStore } from '@/lib/data-store';
-import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+import { usePathname, useRouter } from 'next/navigation';
+import { addNote as addNoteDB, addMindmap as addMindmapDB } from '@/lib/firestore';
 import NoahAISuggestionChip from './NoahAISuggestionChip';
 import NoahAIUsageBar from './NoahAIUsageBar';
 import type { AISuggestionChip as ChipType, NoahAIAction } from '@/lib/noah-ai-context';
 
 export default function NoahAIPanel() {
+  const { user } = useAuth();
+  const router = useRouter();
   const {
     isPanelOpen,
     isLoading,
@@ -123,28 +127,65 @@ export default function NoahAIPanel() {
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
   };
 
-  const handleApplyResult = (data: any, action?: NoahAIAction) => {
-    if (!data) return;
+  const [applying, setApplying] = useState<string | null>(null);
 
-    // Apply note blocks
-    if ((action === 'auto_write_note' || action === 'complete_note' || action === 'youtube_to_note') && data.blocks) {
-      // Dispatch custom event for the notes page to handle
-      window.dispatchEvent(new CustomEvent('noah-ai-apply-note', { detail: data }));
-    }
+  const handleApplyResult = async (data: any, action?: NoahAIAction, msgId?: string) => {
+    if (!data || !user) return;
+    setApplying(msgId || null);
 
-    // Apply mindmap
-    if ((action === 'generate_mindmap' || action === 'youtube_to_mindmap') && data.nodes) {
-      window.dispatchEvent(new CustomEvent('noah-ai-apply-mindmap', { detail: data }));
-    }
+    try {
+      // Note actions: create a new note with AI blocks
+      if ((action === 'auto_write_note' || action === 'complete_note' || action === 'youtube_to_note') && data.blocks) {
+        const blocks = data.blocks.map((b: any, i: number) => ({
+          id: `${Date.now()}-ai-${i}`,
+          type: b.type || 'text',
+          content: b.content || '',
+        }));
+        await addNoteDB(user.uid, {
+          title: data.title || 'AI 노트',
+          icon: '🤖',
+          blocks,
+          pinned: false,
+          tags: [],
+          folderId: null,
+          linkedTaskId: null,
+          linkedTaskIds: [],
+        });
+        router.push('/notes');
+      }
 
-    // Apply task suggestions
-    if (action === 'suggest_tasks' && data.suggestions) {
-      window.dispatchEvent(new CustomEvent('noah-ai-apply-tasks', { detail: data }));
-    }
+      // Mindmap actions: create a new mindmap
+      if ((action === 'generate_mindmap' || action === 'youtube_to_mindmap') && data.nodes) {
+        const nodes = data.nodes.map((n: any) => ({
+          id: n.id || `ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          text: n.text || '',
+          x: n.x ?? 400, y: n.y ?? 300,
+          width: n.width || 180, height: n.height || 70,
+          color: n.color || '#e94560',
+        }));
+        const edges = (data.edges || []).map((e: any) => ({
+          id: e.id || `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          from: e.from, to: e.to, style: e.style || 'curved',
+        }));
+        await addMindmapDB(user.uid, {
+          title: data.title || 'AI 마인드맵',
+          nodes, edges,
+          viewportX: 0, viewportY: 0, zoom: 1,
+        });
+        router.push('/mindmap');
+      }
 
-    // Apply task breakdown
-    if (action === 'breakdown' && data.subtasks) {
-      window.dispatchEvent(new CustomEvent('noah-ai-apply-subtasks', { detail: data }));
+      // Task actions: dispatch events (pages listen)
+      if (action === 'suggest_tasks' && data.suggestions) {
+        window.dispatchEvent(new CustomEvent('noah-ai-apply-tasks', { detail: data }));
+      }
+      if (action === 'breakdown' && data.subtasks) {
+        window.dispatchEvent(new CustomEvent('noah-ai-apply-subtasks', { detail: data }));
+      }
+    } catch (err) {
+      console.error('Apply failed:', err);
+    } finally {
+      setApplying(null);
     }
   };
 
@@ -256,14 +297,15 @@ export default function NoahAIPanel() {
                   <>
                     <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                     {/* Apply button for structured data */}
-                    {msg.role === 'assistant' && msg.structuredData && !msg.isLoading && (
+                    {msg.role === 'assistant' && msg.structuredData && !msg.isLoading && msg.action !== 'chat' && (
                       <button
-                        onClick={() => handleApplyResult(msg.structuredData, msg.action)}
+                        onClick={() => handleApplyResult(msg.structuredData, msg.action, msg.id)}
+                        disabled={applying === msg.id}
                         className="mt-2 w-full py-1.5 px-3 rounded-lg text-xs font-medium
                           bg-[#e94560]/10 text-[#e94560] hover:bg-[#e94560]/20
-                          transition-colors border border-[#e94560]/20"
+                          transition-colors border border-[#e94560]/20 disabled:opacity-50"
                       >
-                        {t('ai.apply')}
+                        {applying === msg.id ? '적용 중...' : t('ai.apply')}
                       </button>
                     )}
                   </>

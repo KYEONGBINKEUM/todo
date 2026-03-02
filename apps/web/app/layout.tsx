@@ -3,8 +3,8 @@ import { Providers } from './providers';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'AI Todo - 오늘을 설계해주는 디지털 비서',
-  description: '할 일을 적는 앱이 아니라, 오늘을 설계해주는 디지털 비서',
+  title: 'NOAH - 오늘을 설계해주는 디지털 비서',
+  description: 'NOAH - 할 일을 적는 앱이 아니라, 오늘을 설계해주는 디지털 비서',
 };
 
 export default function RootLayout({

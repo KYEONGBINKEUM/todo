@@ -48,8 +48,7 @@ export default function NoahAIButton() {
         ) : (
           // Noah AI icon
           <div className="relative">
-            <span className="text-xl font-black text-white tracking-tighter">N</span>
-            {/* Subtle glow ring */}
+            <img src="/symbol.svg" alt="NOAH" className="w-8 h-8 rounded-lg" />
             <div className="absolute -inset-1 rounded-full bg-white/10 animate-ping opacity-30" />
           </div>
         )}

@@ -2,7 +2,7 @@
   "name": "ai-todo",
   "version": "1.0.0",
   "private": true,
-  "description": "AI-powered Todo application with web and mobile support",
+  "description": "NOAH - AI-powered productivity app with notes, tasks, mindmaps",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",

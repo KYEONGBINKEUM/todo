@@ -15,7 +15,7 @@ function LandingPage() {
           </div>
         </div>
         <h1 className="text-5xl md:text-7xl font-extrabold bg-gradient-to-r from-text-primary to-primary bg-clip-text text-transparent leading-tight">
-          AI Todo Framework
+          NOAH
         </h1>
         <p className="text-xl md:text-2xl text-text-secondary max-w-2xl mx-auto leading-relaxed">
           할 일을 적는 앱이 아니라, <br />

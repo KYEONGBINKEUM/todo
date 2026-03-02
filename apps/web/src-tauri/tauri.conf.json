@@ -1,5 +1,5 @@
 {
-  "productName": "AI Todo",
+  "productName": "NOAH",
   "version": "1.3.4",
   "identifier": "aitodo.firstb.aitodo",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "AI Todo",
+        "title": "NOAH",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -40,8 +40,8 @@
     "externalBin": [],
     "copyright": "",
     "category": "Productivity",
-    "shortDescription": "AI-powered Todo App",
-    "longDescription": "AI-powered Todo application with notes, tasks, and collaboration.",
+    "shortDescription": "NOAH - Smart Productivity App",
+    "longDescription": "NOAH - AI-powered productivity app with notes, tasks, mindmaps, and collaboration.",
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",

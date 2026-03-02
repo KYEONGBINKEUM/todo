@@ -120,7 +120,7 @@ export default function NoahAIPageActions({ actions, getContext, onResult }: Noa
           </>
         ) : (
           <>
-            <span className="text-xs font-bold">N</span> AI
+            <img src="/symbol.svg" alt="NOAH" className="w-3.5 h-3.5 rounded-sm" /> AI
           </>
         )}
       </button>

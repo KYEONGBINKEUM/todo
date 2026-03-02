@@ -156,14 +156,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       `}>
         {/* Logo */}
         <div className="mb-8">
-          <Link href="/my-day">
-            <h1 className="text-xl font-extrabold bg-gradient-to-r from-text-primary to-[#e94560] bg-clip-text text-transparent">
-              AI Todo
-            </h1>
+          <Link href="/my-day" className="flex items-center gap-2.5">
+            <img src="/symbol.svg" alt="NOAH" className="w-8 h-8 rounded-lg" />
+            <div>
+              <h1 className="text-xl font-extrabold bg-gradient-to-r from-text-primary to-[#e94560] bg-clip-text text-transparent">
+                NOAH
+              </h1>
+              <p className="text-[10px] text-text-muted uppercase tracking-widest">
+                Smart Productivity
+              </p>
+            </div>
           </Link>
-          <p className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">
-            Digital Assistant
-          </p>
         </div>
 
         {/* Navigation */}

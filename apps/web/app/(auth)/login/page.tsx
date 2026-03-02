@@ -256,8 +256,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-8 animate-fade-up">
         {/* Header */}
         <div className="text-center">
+          <img src="/symbol.svg" alt="NOAH" className="w-16 h-16 mx-auto mb-4 rounded-2xl" />
           <h1 className="text-4xl font-extrabold bg-gradient-to-r from-[#e2e8f0] to-[#e94560] bg-clip-text text-transparent mb-2">
-            AI Todo
+            NOAH
           </h1>
           <p className="text-[#94a3b8]">오늘을 설계해주는 디지털 비서</p>
         </div>

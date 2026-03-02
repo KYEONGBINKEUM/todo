@@ -435,8 +435,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               {activeTab === 'info' && (
                 <div className="space-y-4">
                   <div className="text-center py-4">
-                    <div className="text-4xl mb-3">✅</div>
-                    <h3 className="text-lg font-extrabold text-text-primary mb-1">AI Todo</h3>
+                    <img src="/symbol.svg" alt="NOAH" className="w-16 h-16 mx-auto mb-3 rounded-2xl" />
+                    <h3 className="text-lg font-extrabold text-text-primary mb-1">NOAH</h3>
                     <p className="text-xs text-text-muted">버전 {currentVersion || '1.0.0'}{isTauri ? ' (Desktop)' : ' (Web)'}</p>
                   </div>
 
@@ -544,7 +544,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   </div>
 
                   <div className="mt-4 p-3 bg-background rounded-xl border border-border text-[11px] text-text-muted text-center">
-                    © 2026 AI Todo · 개인 프로젝트
+                    © 2026 NOAH · 개인 프로젝트
                   </div>
                 </div>
               )}

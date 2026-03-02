@@ -31,7 +31,7 @@ export function buildPrompt(action: NoahAIAction, context: Record<string, any>, 
 
   switch (action) {
     case 'chat':
-      return buildChatPrompt(context, langInstruction);
+      return buildChatPrompt(context, langInstruction, language);
     case 'suggest_tasks':
       return buildTaskSuggestionsPrompt(context, langInstruction);
     case 'prioritize':

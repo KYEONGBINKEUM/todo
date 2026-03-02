@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
-import { updateUserSettings, getUserSettings, getStorageLimit, type FontSize, type Plan, type Language } from '@/lib/firestore';
+import { updateUserSettings, getUserSettings, getStorageLimit, type Plan, type Language } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 
 type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'error';
@@ -19,8 +19,8 @@ interface SettingsModalProps {
 
 type Tab = 'account' | 'display' | 'language' | 'info';
 
-function applyFontSize(size: FontSize) {
-  document.documentElement.setAttribute('data-font', size);
+function applyFontSize(size: number) {
+  document.documentElement.style.setProperty('--font-size-base', `${size}px`);
 }
 
 const LANGUAGES: { code: Language; name: string; flag: string }[] = [
@@ -44,7 +44,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { t, language, setLanguage } = useI18n();
   const { storageUsed } = useDataStore();
   const [activeTab, setActiveTab] = useState<Tab>('account');
-  const [fontSize, setFontSizeState] = useState<FontSize>('medium');
+  const [fontSize, setFontSizeState] = useState<number>(14);
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isTauri, setIsTauri] = useState(false);
@@ -131,7 +131,11 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   useEffect(() => {
     if (!user) return;
     getUserSettings(user.uid).then((s) => {
-      const fs = s.fontSize ?? 'medium';
+      const rawFs = s.fontSize ?? 14;
+      // Migrate legacy string values
+      const fs = typeof rawFs === 'string'
+        ? (rawFs === 'small' ? 12 : rawFs === 'large' ? 16 : 14)
+        : (rawFs as number);
       setFontSizeState(fs);
       applyFontSize(fs);
       setUserPlan(s.plan || 'free');
@@ -148,10 +152,11 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
 
-  const handleFontSize = (size: FontSize) => {
-    setFontSizeState(size);
-    applyFontSize(size);
-    if (user) updateUserSettings(user.uid, { fontSize: size });
+  const handleFontSize = (size: number) => {
+    const clamped = Math.max(10, Math.min(24, size));
+    setFontSizeState(clamped);
+    applyFontSize(clamped);
+    if (user) updateUserSettings(user.uid, { fontSize: clamped });
   };
 
   const handleLanguageChange = (lang: Language) => {
@@ -371,28 +376,28 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   {/* Font size */}
                   <div>
                     <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.fontSize')}</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { value: 'small' as FontSize, label: t('settings.fontSmall'), preview: 'Aa', size: 'text-xs' },
-                        { value: 'medium' as FontSize, label: t('settings.fontMedium'), preview: 'Aa', size: 'text-sm' },
-                        { value: 'large' as FontSize, label: t('settings.fontLarge'), preview: 'Aa', size: 'text-base' },
-                      ].map((f) => (
-                        <button
-                          key={f.value}
-                          onClick={() => handleFontSize(f.value)}
-                          className={`p-3 rounded-xl border text-center transition-all ${
-                            fontSize === f.value
-                              ? 'border-[#e94560] bg-[#e94560]/10 text-[#e94560]'
-                              : 'border-border text-text-secondary hover:border-border-hover'
-                          }`}
-                        >
-                          <span className={`${f.size} font-bold block mb-1`}>{f.preview}</span>
-                          <span className="text-[11px] font-semibold">{f.label}</span>
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between p-3 bg-background rounded-xl border border-border">
+                      <button
+                        onClick={() => handleFontSize(fontSize - 1)}
+                        disabled={fontSize <= 10}
+                        className="w-9 h-9 flex items-center justify-center rounded-lg border border-border text-text-primary hover:bg-background-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all text-lg font-bold"
+                      >
+                        −
+                      </button>
+                      <div className="text-center">
+                        <span className="text-lg font-bold text-text-primary">{fontSize}</span>
+                        <span className="text-xs text-text-muted ml-1">px</span>
+                      </div>
+                      <button
+                        onClick={() => handleFontSize(fontSize + 1)}
+                        disabled={fontSize >= 24}
+                        className="w-9 h-9 flex items-center justify-center rounded-lg border border-border text-text-primary hover:bg-background-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all text-lg font-bold"
+                      >
+                        +
+                      </button>
                     </div>
-                    <p className="text-[11px] text-text-muted mt-2">
-                      현재: {fontSize === 'small' ? '12px' : fontSize === 'large' ? '16px' : '14px'}
+                    <p className="text-[11px] text-text-muted mt-2 text-center">
+                      min: 10px · max: 24px
                     </p>
                   </div>
                 </div>
@@ -528,20 +533,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       )}
                     </div>
                   )}
-
-                  <div className="space-y-2 text-xs text-text-secondary">
-                    {[
-                      { label: '프레임워크', value: 'Next.js 14 (App Router)' },
-                      { label: '데이터베이스', value: 'Firebase Firestore' },
-                      { label: '인증', value: 'Firebase Auth' },
-                      { label: '배포', value: isTauri ? 'Tauri 2 (Desktop)' : 'Cloudflare Pages' },
-                    ].map((item) => (
-                      <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/50">
-                        <span className="text-text-muted">{item.label}</span>
-                        <span className="font-medium text-text-primary">{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
 
                   <div className="mt-4 p-3 bg-background rounded-xl border border-border text-[11px] text-text-muted text-center">
                     © 2026 NOAH · 개인 프로젝트

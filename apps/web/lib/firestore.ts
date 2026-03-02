@@ -12,6 +12,7 @@ import {
   where,
   serverTimestamp,
   Timestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -100,17 +101,22 @@ export interface NoteData {
   folderId: string | null;
   linkedTaskId?: string | null;
   linkedTaskIds?: string[];
+  deleted?: boolean;
+  deletedAt?: string | null;
+  originalFolderId?: string | null;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
 
 export interface NoteBlock {
   id: string;
-  type: 'text' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote' | 'divider' | 'code' | 'link' | 'toggle';
+  type: 'text' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote' | 'divider' | 'code' | 'link' | 'toggle' | 'image';
   content: string;
   checked?: boolean;
   url?: string;
   children?: string;
+  imageURL?: string;
+  imagePath?: string;
 }
 
 export interface ListData {
@@ -260,8 +266,50 @@ export async function updateNote(uid: string, noteId: string, updates: Partial<N
   });
 }
 
+/** Permanent delete note (legacy — prefer softDeleteNote) */
 export async function deleteNote(uid: string, noteId: string): Promise<void> {
+  invalidateCache(uid, 'notes');
   await deleteDoc(doc(db, 'users', uid, 'notes', noteId));
+}
+
+/** Soft delete — move note to trash */
+export async function softDeleteNote(uid: string, noteId: string, currentFolderId: string | null): Promise<void> {
+  invalidateCache(uid, 'notes');
+  await updateDoc(doc(db, 'users', uid, 'notes', noteId), {
+    deleted: true,
+    deletedAt: new Date().toISOString(),
+    originalFolderId: currentFolderId,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Restore note from trash */
+export async function restoreNote(uid: string, noteId: string, originalFolderId: string | null, existingFolderIds: string[]): Promise<void> {
+  invalidateCache(uid, 'notes');
+  const targetFolderId = originalFolderId && existingFolderIds.includes(originalFolderId) ? originalFolderId : null;
+  await updateDoc(doc(db, 'users', uid, 'notes', noteId), {
+    deleted: false,
+    deletedAt: null,
+    originalFolderId: null,
+    folderId: targetFolderId,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Permanent delete note */
+export async function permanentDeleteNote(uid: string, noteId: string): Promise<void> {
+  invalidateCache(uid, 'notes');
+  await deleteDoc(doc(db, 'users', uid, 'notes', noteId));
+}
+
+/** Empty trash — permanently delete all trashed notes */
+export async function emptyNoteTrash(uid: string, trashedNoteIds: string[]): Promise<void> {
+  invalidateCache(uid, 'notes');
+  const batch = writeBatch(db);
+  for (const id of trashedNoteIds) {
+    batch.delete(doc(db, 'users', uid, 'notes', id));
+  }
+  await batch.commit();
 }
 
 // ============================================================================
@@ -491,7 +539,7 @@ export async function deleteSharedTask(listId: string, taskId: string): Promise<
 
 export type Theme = 'system' | 'light' | 'dark';
 
-export type FontSize = 'small' | 'medium' | 'large';
+export type FontSize = number; // px value, range 10-24, default 14
 
 export type Language = 'ko' | 'en' | 'ja' | 'es' | 'pt' | 'fr';
 

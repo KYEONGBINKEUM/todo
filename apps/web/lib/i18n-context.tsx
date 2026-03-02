@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, ReactNode } from 'react';
 import { useAuth } from './auth-context';
 import { getUserSettings, updateUserSettings, type Language } from './firestore';
 
@@ -53,6 +53,12 @@ const translations: Record<Language, Record<string, string>> = {
     'notes.noNotes': '노트 없음',
     'notes.newBlock': '+ 새 블록',
     'notes.shortcuts': '단축키',
+    'notes.trash': '휴지통',
+    'notes.emptyTrash': '비우기',
+    'notes.restore': '복원',
+    'notes.permanentDelete': '영구 삭제',
+    'notes.untitled': '제목 없음',
+    'notes.trashAutoDelete': '30일 후 자동 삭제',
     'shared.title': '공유됨',
     'shared.desc': '다른 사람과 공유된 목록을 관리하세요',
     'shared.newList': '새 공유 목록 만들기',
@@ -217,6 +223,12 @@ const translations: Record<Language, Record<string, string>> = {
     'notes.noNotes': 'No notes',
     'notes.newBlock': '+ New Block',
     'notes.shortcuts': 'Shortcuts',
+    'notes.trash': 'Trash',
+    'notes.emptyTrash': 'Empty',
+    'notes.restore': 'Restore',
+    'notes.permanentDelete': 'Delete permanently',
+    'notes.untitled': 'Untitled',
+    'notes.trashAutoDelete': 'Auto-deleted after 30 days',
     'shared.title': 'Shared',
     'shared.desc': 'Manage shared lists with others',
     'shared.newList': 'Create Shared List',
@@ -381,6 +393,12 @@ const translations: Record<Language, Record<string, string>> = {
     'notes.noNotes': 'ノートなし',
     'notes.newBlock': '+ 新ブロック',
     'notes.shortcuts': 'ショートカット',
+    'notes.trash': 'ゴミ箱',
+    'notes.emptyTrash': '空にする',
+    'notes.restore': '復元',
+    'notes.permanentDelete': '完全に削除',
+    'notes.untitled': '無題',
+    'notes.trashAutoDelete': '30日後に自動削除',
     'shared.title': '共有',
     'shared.desc': '共有リストを管理',
     'shared.newList': '共有リストを作成',
@@ -545,6 +563,12 @@ const translations: Record<Language, Record<string, string>> = {
     'notes.noNotes': 'Sin notas',
     'notes.newBlock': '+ Nuevo Bloque',
     'notes.shortcuts': 'Atajos',
+    'notes.trash': 'Papelera',
+    'notes.emptyTrash': 'Vaciar',
+    'notes.restore': 'Restaurar',
+    'notes.permanentDelete': 'Eliminar permanentemente',
+    'notes.untitled': 'Sin título',
+    'notes.trashAutoDelete': 'Eliminación automática en 30 días',
     'shared.title': 'Compartido',
     'shared.desc': 'Gestiona listas compartidas',
     'shared.newList': 'Crear Lista Compartida',
@@ -709,6 +733,12 @@ const translations: Record<Language, Record<string, string>> = {
     'notes.noNotes': 'Sem notas',
     'notes.newBlock': '+ Novo Bloco',
     'notes.shortcuts': 'Atalhos',
+    'notes.trash': 'Lixeira',
+    'notes.emptyTrash': 'Esvaziar',
+    'notes.restore': 'Restaurar',
+    'notes.permanentDelete': 'Excluir permanentemente',
+    'notes.untitled': 'Sem título',
+    'notes.trashAutoDelete': 'Exclusão automática em 30 dias',
     'shared.title': 'Compartilhado',
     'shared.desc': 'Gerencie listas compartilhadas',
     'shared.newList': 'Criar Lista Compartilhada',
@@ -873,6 +903,12 @@ const translations: Record<Language, Record<string, string>> = {
     'notes.noNotes': 'Aucune note',
     'notes.newBlock': '+ Nouveau Bloc',
     'notes.shortcuts': 'Raccourcis',
+    'notes.trash': 'Corbeille',
+    'notes.emptyTrash': 'Vider',
+    'notes.restore': 'Restaurer',
+    'notes.permanentDelete': 'Supprimer définitivement',
+    'notes.untitled': 'Sans titre',
+    'notes.trashAutoDelete': 'Suppression automatique après 30 jours',
     'shared.title': 'Partagé',
     'shared.desc': 'Gérez les listes partagées',
     'shared.newList': 'Créer une Liste Partagée',
@@ -1083,17 +1119,21 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setInitialized(true);
   }, [user]);
 
-  const setLanguage = (lang: Language) => {
+  const setLanguage = useCallback((lang: Language) => {
     setLanguageState(lang);
     if (user) updateUserSettings(user.uid, { language: lang });
-  };
+  }, [user]);
 
-  const t = (key: string): string => {
+  const t = useCallback((key: string): string => {
     return translations[language]?.[key] || translations.ko[key] || key;
-  };
+  }, [language]);
+
+  const contextValue = useMemo(() => ({
+    language, setLanguage, t, languageNames: LANGUAGE_NAMES,
+  }), [language, setLanguage, t]);
 
   return (
-    <I18nContext.Provider value={{ language, setLanguage, t, languageNames: LANGUAGE_NAMES }}>
+    <I18nContext.Provider value={contextValue}>
       {children}
     </I18nContext.Provider>
   );

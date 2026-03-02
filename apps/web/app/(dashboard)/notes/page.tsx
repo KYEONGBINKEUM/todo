@@ -5,7 +5,9 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
-  addNote as addNoteDB, updateNote as updateNoteDB, deleteNote as deleteNoteDB,
+  addNote as addNoteDB, updateNote as updateNoteDB,
+  softDeleteNote as softDeleteNoteDB, restoreNote as restoreNoteDB,
+  permanentDeleteNote as permanentDeleteNoteDB, emptyNoteTrash as emptyNoteTrashDB,
   addFolder as addFolderDB, deleteFolder as deleteFolderDB, updateFolder as updateFolderDB,
   restoreFolder as restoreFolderDB, permanentDeleteFolder as permanentDeleteFolderDB,
 } from '@/lib/firestore';
@@ -20,11 +22,13 @@ import hljs from 'highlight.js/lib/common';
 
 interface NoteBlock {
   id: string;
-  type: 'text' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote' | 'divider' | 'code' | 'link' | 'toggle';
+  type: 'text' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote' | 'divider' | 'code' | 'link' | 'toggle' | 'image';
   content: string;
   checked?: boolean;
   url?: string;
   children?: string;
+  imageURL?: string;
+  imagePath?: string;
 }
 
 interface Note {
@@ -40,6 +44,9 @@ interface Note {
   linkedTaskId?: string | null;
   linkedTaskIds?: string[];
   starred: boolean;
+  deleted?: boolean;
+  deletedAt?: string | null;
+  originalFolderId?: string | null;
 }
 
 interface Folder {
@@ -67,6 +74,7 @@ const SLASH_COMMANDS = [
   { type: 'code' as const, icon: '</>', label: '코드', desc: '코드 블록', keywords: 'code snippet' },
   { type: 'link' as const, icon: '🔗', label: '링크', desc: 'URL 링크 블록', keywords: 'link url' },
   { type: 'toggle' as const, icon: '▶', label: '토글', desc: '접을 수 있는 블록', keywords: 'toggle collapse expand' },
+  { type: 'image' as const, icon: '🖼', label: '이미지', desc: '이미지 업로드 또는 URL', keywords: 'image picture photo img 이미지 사진' },
   { type: 'divider' as const, icon: '—', label: '구분선', desc: '수평 구분선', keywords: 'divider line separator hr' },
 ];
 
@@ -83,6 +91,7 @@ function NotesContent() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [trashedFolders, setTrashedFolders] = useState<Folder[]>([]);
+  const [trashedNotes, setTrashedNotes] = useState<Note[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showIconPicker, setShowIconPicker] = useState(false);
@@ -144,7 +153,7 @@ function NotesContent() {
     if (storeLoading || initializedRef.current) return;
     initializedRef.current = true;
 
-    const mappedNotes: Note[] = storeNotes.map((n) => ({
+    const allNotes: Note[] = storeNotes.map((n) => ({
       id: n.id!,
       title: n.title,
       icon: n.icon,
@@ -157,13 +166,26 @@ function NotesContent() {
       linkedTaskId: n.linkedTaskId || null,
       linkedTaskIds: n.linkedTaskIds || [],
       starred: n.starred ?? false,
+      deleted: (n as any).deleted ?? false,
+      deletedAt: (n as any).deletedAt ?? null,
+      originalFolderId: (n as any).originalFolderId ?? null,
     }));
-    setNotes(mappedNotes);
+    const activeNotes = allNotes.filter((n) => !n.deleted);
+    const trashNotes = allNotes.filter((n) => n.deleted);
+    // Auto-cleanup: permanently delete notes older than 30 days
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const expired = trashNotes.filter((n) => n.deletedAt && n.deletedAt < thirtyDaysAgo);
+    if (expired.length > 0 && user) {
+      emptyNoteTrashDB(user.uid, expired.map((n) => n.id)).catch(console.error);
+    }
+    const remainingTrashed = trashNotes.filter((n) => !n.deletedAt || n.deletedAt >= thirtyDaysAgo);
+    setNotes(activeNotes);
+    setTrashedNotes(remainingTrashed);
     const paramNoteId = searchParams.get('note');
-    if (paramNoteId && mappedNotes.find((n) => n.id === paramNoteId)) {
+    if (paramNoteId && activeNotes.find((n) => n.id === paramNoteId)) {
       setActiveNoteId(paramNoteId);
-    } else if (mappedNotes.length > 0) {
-      setActiveNoteId(mappedNotes[0].id);
+    } else if (activeNotes.length > 0) {
+      setActiveNoteId(activeNotes[0].id);
     }
 
     const allFolders: Folder[] = storeFolders.map((f) => ({
@@ -411,15 +433,47 @@ function NotesContent() {
   };
 
   const deleteNote = async (id: string) => {
+    const note = notes.find((n) => n.id === id);
+    if (!note) return;
+    const trashedNote = { ...note, deleted: true, deletedAt: new Date().toISOString(), originalFolderId: note.folderId };
     setNotes((prev) => prev.filter((n) => n.id !== id));
+    setTrashedNotes((prev) => [...prev, trashedNote]);
     if (activeNoteId === id) {
       const remaining = notes.filter((n) => n.id !== id);
       setActiveNoteId(remaining[0]?.id || '');
     }
     if (user) {
-      try { await deleteNoteDB(user.uid, id); }
-      catch (err) { console.error('Failed to delete note:', err); }
+      try { await softDeleteNoteDB(user.uid, id, note.folderId); }
+      catch (err) { console.error('Failed to soft-delete note:', err); }
     }
+  };
+
+  const restoreNoteFn = async (noteId: string) => {
+    const note = trashedNotes.find((n) => n.id === noteId);
+    if (!note || !user) return;
+    const folderIds = folders.map((f) => f.id);
+    const targetFolderId = note.originalFolderId && folderIds.includes(note.originalFolderId)
+      ? note.originalFolderId : null;
+    const restoredNote = { ...note, deleted: false, deletedAt: null, originalFolderId: null, folderId: targetFolderId };
+    setTrashedNotes((prev) => prev.filter((n) => n.id !== noteId));
+    setNotes((prev) => [...prev, restoredNote]);
+    try { await restoreNoteDB(user.uid, noteId, note.originalFolderId ?? null, folderIds); }
+    catch (err) { console.error('Failed to restore note:', err); }
+  };
+
+  const permanentDeleteNoteFn = async (noteId: string) => {
+    if (!user) return;
+    setTrashedNotes((prev) => prev.filter((n) => n.id !== noteId));
+    try { await permanentDeleteNoteDB(user.uid, noteId); }
+    catch (err) { console.error('Failed to permanently delete note:', err); }
+  };
+
+  const emptyTrashFn = async () => {
+    if (!user || trashedNotes.length === 0) return;
+    const ids = trashedNotes.map((n) => n.id);
+    setTrashedNotes([]);
+    try { await emptyNoteTrashDB(user.uid, ids); }
+    catch (err) { console.error('Failed to empty trash:', err); }
   };
 
   const updateNoteTitle = (title: string) => {
@@ -616,6 +670,27 @@ function NotesContent() {
     });
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, blockId: string) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    try {
+      const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+      const { storage } = await import('@/lib/firebase');
+      const path = `users/${user.uid}/notes/${activeNoteId}/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      updateBlockField(blockId, { imageURL: url, imagePath: path, content: file.name });
+    } catch (err) {
+      console.error('Failed to upload image:', err);
+    }
+  };
+
+  const handleImageURL = (url: string, blockId: string) => {
+    if (!url.trim()) return;
+    updateBlockField(blockId, { imageURL: url.trim(), content: url });
+  };
+
   const toggleTodo = (blockId: string) => {
     setNotes((prev) => {
       const cur = prev.find((n) => n.id === activeNoteId);
@@ -775,6 +850,47 @@ function NotesContent() {
       else if (c === '```') { changeBlockType(block.id, 'code'); updateBlock(block.id, ''); e.preventDefault(); }
       else if (c === '[[') { changeBlockType(block.id, 'link'); updateBlock(block.id, ''); e.preventDefault(); }
       else if (c === '>>') { changeBlockType(block.id, 'toggle'); updateBlock(block.id, ''); e.preventDefault(); }
+    }
+
+    // Ctrl+B: bold, Ctrl+I: italic, Ctrl+Shift+S: strikethrough
+    const isMod = e.ctrlKey || e.metaKey;
+    if (isMod && !e.altKey) {
+      const ta = e.target as HTMLTextAreaElement;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      if (start !== end) {
+        const selected = block.content.slice(start, end);
+        let wrapped = '';
+        if (e.key === 'b' && !e.shiftKey) {
+          wrapped = `**${selected}**`;
+          e.preventDefault();
+        } else if (e.key === 'i' && !e.shiftKey) {
+          wrapped = `*${selected}*`;
+          e.preventDefault();
+        } else if (e.key === 's' && e.shiftKey) {
+          wrapped = `~~${selected}~~`;
+          e.preventDefault();
+        }
+        if (wrapped) {
+          const newContent = block.content.slice(0, start) + wrapped + block.content.slice(end);
+          updateBlock(block.id, newContent);
+          setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = start + wrapped.length; }, 0);
+        }
+      }
+    }
+
+    // Tab: indent list, Shift+Tab: outdent
+    if (e.key === 'Tab' && ['bullet', 'numbered', 'todo'].includes(block.type)) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        // Outdent: remove leading 2 spaces
+        if (block.content.startsWith('  ')) {
+          updateBlock(block.id, block.content.slice(2));
+        }
+      } else {
+        // Indent: add 2 spaces
+        updateBlock(block.id, '  ' + block.content);
+      }
     }
   };
 
@@ -1034,6 +1150,47 @@ function NotesContent() {
             )}
           </div>
         );
+      case 'image':
+        return (
+          <div className="my-2">
+            {block.imageURL ? (
+              <div className="relative group/img">
+                <img src={block.imageURL} alt={block.content || 'image'} className="max-w-full rounded-lg border border-border" />
+                {!readOnly && (
+                  <button
+                    onClick={() => updateBlockField(block.id, { imageURL: undefined, imagePath: undefined, content: '' })}
+                    className="absolute top-2 right-2 opacity-0 group-hover/img:opacity-100 w-6 h-6 flex items-center justify-center bg-black/60 text-white rounded-full text-xs transition-opacity"
+                  >
+                    ×
+                  </button>
+                )}
+                {!readOnly && (
+                  <input
+                    value={block.content}
+                    onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
+                    placeholder="이미지 캡션..."
+                    className={`${baseClass} text-xs text-text-muted text-center mt-1`}
+                  />
+                )}
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-border rounded-lg p-6 text-center space-y-2">
+                <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, block.id)} className="hidden" id={`img-${block.id}`} />
+                <label htmlFor={`img-${block.id}`} className="cursor-pointer text-text-muted hover:text-text-primary text-sm block">
+                  🖼 이미지를 선택하세요
+                </label>
+                <div className="flex items-center gap-2 max-w-xs mx-auto">
+                  <input
+                    type="text"
+                    placeholder="또는 이미지 URL 붙여넣기..."
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleImageURL((e.target as HTMLInputElement).value, block.id); }}
+                    className="flex-1 px-2.5 py-1.5 bg-background-card border border-border rounded text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-[#e94560]"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        );
       default:
         return <textarea {...taProps('text-sm', '텍스트를 입력하세요... ( / 로 블록 타입 선택)')} />;
     }
@@ -1121,6 +1278,128 @@ function NotesContent() {
   // Tree data
   const pinnedNotes = searchFiltered.filter((n) => n.pinned);
   const folderNotes = (folderId: string) => searchFiltered.filter((n) => n.folderId === folderId && !n.pinned);
+
+  // Get all descendant folder IDs (to prevent circular move)
+  const getDescendantIds = (folderId: string): Set<string> => {
+    const ids = new Set<string>();
+    const addChildren = (parentId: string) => {
+      folders.filter((f) => f.parentId === parentId).forEach((f) => {
+        ids.add(f.id);
+        addChildren(f.id);
+      });
+    };
+    addChildren(folderId);
+    return ids;
+  };
+
+  // Get folder path for breadcrumb
+  const getFolderPath = (folderId: string | null): Folder[] => {
+    if (!folderId) return [];
+    const path: Folder[] = [];
+    let current = folders.find((f) => f.id === folderId);
+    while (current) {
+      path.unshift(current);
+      current = current.parentId ? folders.find((f) => f.id === current!.parentId) : undefined;
+    }
+    return path;
+  };
+
+  // Count all notes including sub-folder notes recursively
+  const countFolderItems = (folderId: string): number => {
+    const directNotes = searchFiltered.filter((n) => n.folderId === folderId && !n.pinned).length;
+    const childFolders = folders.filter((f) => f.parentId === folderId);
+    return directNotes + childFolders.length + childFolders.reduce((sum, cf) => sum + countFolderItems(cf.id), 0);
+  };
+
+  // Recursive folder tree renderer
+  const renderFolderTree = (parentId: string | null, depth: number): React.ReactNode => {
+    const foldersAtLevel = folders.filter((f) => (parentId === null ? !f.parentId : f.parentId === parentId));
+    return foldersAtLevel.map((folder) => {
+      const fNotes = folderNotes(folder.id);
+      const childFolders = folders.filter((f) => f.parentId === folder.id);
+      const isOpen = openFolderIds.has(folder.id);
+      const isMovingThis = movingFolderId === folder.id;
+      const itemCount = countFolderItems(folder.id);
+      const indentPx = 12 + depth * 16;
+
+      return (
+        <div key={folder.id} className="mb-0.5">
+          {/* Folder Header */}
+          <div className="group flex items-center gap-1 py-1.5 hover:bg-background-card/60 transition-colors cursor-pointer rounded-lg mx-2" style={{ paddingLeft: `${indentPx}px`, paddingRight: '12px' }}>
+            <button onClick={() => toggleFolder(folder.id)} className="flex items-center gap-1.5 flex-1 min-w-0">
+              <span className={`text-text-muted transition-transform text-[10px] flex-shrink-0 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+              <span className="text-sm flex-shrink-0">{folder.icon}</span>
+              {editingFolderId === folder.id ? (
+                <input
+                  value={editingFolderName}
+                  onChange={(e) => setEditingFolderName(e.target.value)}
+                  onBlur={() => renameFolder(folder.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') renameFolder(folder.id); if (e.key === 'Escape') setEditingFolderId(null); }}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                  className="flex-1 text-xs font-semibold bg-transparent outline-none border-b border-[#e94560] min-w-0"
+                  style={{ color: folder.color }}
+                />
+              ) : (
+                <span className="text-xs font-semibold truncate flex-1" style={{ color: folder.color }}
+                  onDoubleClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setEditingFolderName(folder.name); }}>
+                  {folder.name}
+                </span>
+              )}
+              <span className="text-[10px] text-text-inactive flex-shrink-0">{itemCount}</span>
+            </button>
+            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0">
+              <button onClick={(e) => { e.stopPropagation(); createNote(folder.id); if (!isOpen) toggleFolder(folder.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#22c55e] transition-all text-sm" title="노트 추가">+</button>
+              <button onClick={(e) => { e.stopPropagation(); setCreatingSubfolderId(folder.id); setNewSubfolderName(''); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#8b5cf6] transition-all text-[10px]" title="하위폴더 추가">📁</button>
+              {depth > 0 && <button onClick={(e) => { e.stopPropagation(); setMovingFolderId(isMovingThis ? null : folder.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#06b6d4] transition-all text-[10px]" title="이동">↕</button>}
+              <button onClick={(e) => { e.stopPropagation(); deleteFolder(folder.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-xs" title="휴지통으로 이동">×</button>
+            </div>
+          </div>
+
+          {/* Subfolder creation input */}
+          {creatingSubfolderId === folder.id && (
+            <div className="flex gap-1 py-1" style={{ paddingLeft: `${indentPx + 16}px`, paddingRight: '12px' }}>
+              <input
+                value={newSubfolderName}
+                onChange={(e) => setNewSubfolderName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') createFolder(folder.id, newSubfolderName); if (e.key === 'Escape') setCreatingSubfolderId(null); }}
+                placeholder="하위폴더 이름..."
+                autoFocus
+                className="flex-1 px-2 py-1 bg-background-card border border-[#8b5cf6]/40 rounded text-[11px] text-text-primary placeholder-text-muted focus:outline-none"
+              />
+              <button onClick={() => createFolder(folder.id, newSubfolderName)} className="px-2 py-1 bg-[#8b5cf6] text-white rounded text-[10px]">{t('common.add')}</button>
+              <button onClick={() => setCreatingSubfolderId(null)} className="px-1 py-1 text-text-muted text-[10px]">{t('common.cancel')}</button>
+            </div>
+          )}
+
+          {/* Move folder UI */}
+          {isMovingThis && (
+            <div className="mb-1 p-2 bg-background-card border border-[#06b6d4]/30 rounded-lg mx-3" style={{ marginLeft: `${indentPx + 8}px` }}>
+              <p className="text-[10px] text-text-muted mb-1.5">이동할 위치 선택:</p>
+              <button onClick={() => moveFolderTo(folder.id, null)} className="block w-full text-left text-[11px] text-text-secondary hover:text-text-primary py-0.5 px-1 rounded hover:bg-background-hover">📂 루트로 이동</button>
+              {folders.filter((f) => f.id !== folder.id && !getDescendantIds(folder.id).has(f.id)).map((rf) => (
+                <button key={rf.id} onClick={() => moveFolderTo(folder.id, rf.id)} className="block w-full text-left text-[11px] py-0.5 px-1 rounded hover:bg-background-hover" style={{ color: rf.color }}>
+                  {rf.icon} {rf.name}
+                </button>
+              ))}
+              <button onClick={() => setMovingFolderId(null)} className="text-[10px] text-text-muted mt-1">{t('common.cancel')}</button>
+            </div>
+          )}
+
+          {/* Recursive child folders */}
+          {isOpen && renderFolderTree(folder.id, depth + 1)}
+
+          {/* Notes in this folder */}
+          {isOpen && fNotes.map((note) => (
+            <NoteTreeItem key={note.id} note={note} isActive={note.id === activeNoteId} onClick={() => setActiveNoteId(note.id)} onDelete={() => deleteNote(note.id)} onTogglePin={() => togglePin(note.id)} onToggleStar={() => toggleStar(note.id)} getRelativeTime={getRelativeTime} indent={depth + 1} />
+          ))}
+          {isOpen && fNotes.length === 0 && childFolders.length === 0 && (
+            <p className="text-[11px] text-text-inactive py-0.5" style={{ paddingLeft: `${indentPx + 24}px` }}>{t('notes.noNotes')}</p>
+          )}
+        </div>
+      );
+    });
+  };
   const unfolderNotes = searchFiltered.filter((n) => n.folderId === null && !n.pinned);
 
   return (
@@ -1206,129 +1485,8 @@ function NotesContent() {
             </div>
           )}
 
-          {/* Folder tree - 루트 폴더만 렌더링 (하위폴더는 내부에서) */}
-          {folders.filter((f) => !f.parentId).map((folder) => {
-            const fNotes = folderNotes(folder.id);
-            const subFolders = folders.filter((f) => f.parentId === folder.id);
-            const isOpen = openFolderIds.has(folder.id);
-            const isMovingThis = movingFolderId === folder.id;
-            const rootFolders = folders.filter((f) => !f.parentId && f.id !== folder.id);
-            return (
-              <div key={folder.id} className="mb-0.5">
-                {/* Folder Header */}
-                <div className="group flex items-center gap-1 px-3 py-1.5 hover:bg-background-card/60 transition-colors cursor-pointer rounded-lg mx-2">
-                  <button onClick={() => toggleFolder(folder.id)} className="flex items-center gap-1.5 flex-1 min-w-0">
-                    <span className={`text-text-muted transition-transform text-[10px] flex-shrink-0 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
-                    <span className="text-sm flex-shrink-0">{folder.icon}</span>
-                    {editingFolderId === folder.id ? (
-                      <input
-                        value={editingFolderName}
-                        onChange={(e) => setEditingFolderName(e.target.value)}
-                        onBlur={() => renameFolder(folder.id)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') renameFolder(folder.id); if (e.key === 'Escape') setEditingFolderId(null); }}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                        className="flex-1 text-xs font-semibold bg-transparent outline-none border-b border-[#e94560] min-w-0"
-                        style={{ color: folder.color }}
-                      />
-                    ) : (
-                      <span className="text-xs font-semibold truncate flex-1" style={{ color: folder.color }}
-                        onDoubleClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setEditingFolderName(folder.name); }}>
-                        {folder.name}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-text-inactive flex-shrink-0">{fNotes.length + subFolders.length}</span>
-                  </button>
-                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0">
-                    <button onClick={(e) => { e.stopPropagation(); createNote(folder.id); if (!isOpen) toggleFolder(folder.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#22c55e] transition-all text-sm" title="노트 추가">+</button>
-                    <button onClick={(e) => { e.stopPropagation(); setCreatingSubfolderId(folder.id); setNewSubfolderName(''); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#8b5cf6] transition-all text-[10px]" title="하위폴더 추가">📁</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteFolder(folder.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-xs" title="휴지통으로 이동">×</button>
-                  </div>
-                </div>
-
-                {/* 하위폴더 생성 인풋 */}
-                {creatingSubfolderId === folder.id && (
-                  <div className="flex gap-1 pl-8 pr-3 py-1">
-                    <input
-                      value={newSubfolderName}
-                      onChange={(e) => setNewSubfolderName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') createFolder(folder.id, newSubfolderName); if (e.key === 'Escape') setCreatingSubfolderId(null); }}
-                      placeholder="하위폴더 이름..."
-                      autoFocus
-                      className="flex-1 px-2 py-1 bg-background-card border border-[#8b5cf6]/40 rounded text-[11px] text-text-primary placeholder-text-muted focus:outline-none"
-                    />
-                    <button onClick={() => createFolder(folder.id, newSubfolderName)} className="px-2 py-1 bg-[#8b5cf6] text-white rounded text-[10px]">추가</button>
-                    <button onClick={() => setCreatingSubfolderId(null)} className="px-1 py-1 text-text-muted text-[10px]">취소</button>
-                  </div>
-                )}
-
-                {/* 폴더 내 하위폴더 */}
-                {isOpen && subFolders.map((sub) => {
-                  const subNotes = folderNotes(sub.id);
-                  const isSubOpen = openFolderIds.has(sub.id);
-                  const isMovingSub = movingFolderId === sub.id;
-                  return (
-                    <div key={sub.id} className="ml-4">
-                      <div className="group flex items-center gap-1 px-3 py-1.5 hover:bg-background-card/60 transition-colors cursor-pointer rounded-lg mx-2">
-                        <button onClick={() => toggleFolder(sub.id)} className="flex items-center gap-1.5 flex-1 min-w-0">
-                          <span className={`text-text-muted transition-transform text-[10px] flex-shrink-0 ${isSubOpen ? 'rotate-90' : ''}`}>▶</span>
-                          <span className="text-xs flex-shrink-0">{sub.icon}</span>
-                          {editingFolderId === sub.id ? (
-                            <input
-                              value={editingFolderName}
-                              onChange={(e) => setEditingFolderName(e.target.value)}
-                              onBlur={() => renameFolder(sub.id)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') renameFolder(sub.id); if (e.key === 'Escape') setEditingFolderId(null); }}
-                              onClick={(e) => e.stopPropagation()}
-                              autoFocus
-                              className="flex-1 text-xs font-semibold bg-transparent outline-none border-b border-[#e94560] min-w-0"
-                              style={{ color: sub.color }}
-                            />
-                          ) : (
-                            <span className="text-xs font-semibold truncate flex-1" style={{ color: sub.color }}
-                              onDoubleClick={(e) => { e.stopPropagation(); setEditingFolderId(sub.id); setEditingFolderName(sub.name); }}>
-                              {sub.name}
-                            </span>
-                          )}
-                          <span className="text-[10px] text-text-inactive flex-shrink-0">{subNotes.length}</span>
-                        </button>
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0">
-                          <button onClick={(e) => { e.stopPropagation(); createNote(sub.id); if (!isSubOpen) toggleFolder(sub.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#22c55e] transition-all text-sm" title="노트 추가">+</button>
-                          <button onClick={(e) => { e.stopPropagation(); setMovingFolderId(isMovingSub ? null : sub.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#06b6d4] transition-all text-[10px]" title="이동">↕</button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteFolder(sub.id); }} className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-xs" title="휴지통으로 이동">×</button>
-                        </div>
-                      </div>
-                      {/* 하위폴더 이동 UI */}
-                      {isMovingSub && (
-                        <div className="ml-6 mr-3 mb-1 p-2 bg-background-card border border-[#06b6d4]/30 rounded-lg">
-                          <p className="text-[10px] text-text-muted mb-1.5">이동할 위치 선택:</p>
-                          <button onClick={() => moveFolderTo(sub.id, null)} className="block w-full text-left text-[11px] text-text-secondary hover:text-text-primary py-0.5 px-1 rounded hover:bg-background-hover">📂 루트로 이동</button>
-                          {rootFolders.filter((f) => f.id !== sub.id).map((rf) => (
-                            <button key={rf.id} onClick={() => moveFolderTo(sub.id, rf.id)} className="block w-full text-left text-[11px] py-0.5 px-1 rounded hover:bg-background-hover" style={{ color: rf.color }}>
-                              {rf.icon} {rf.name}
-                            </button>
-                          ))}
-                          <button onClick={() => setMovingFolderId(null)} className="text-[10px] text-text-muted mt-1">취소</button>
-                        </div>
-                      )}
-                      {isSubOpen && subNotes.map((note) => (
-                        <NoteTreeItem key={note.id} note={note} isActive={note.id === activeNoteId} onClick={() => setActiveNoteId(note.id)} onDelete={() => deleteNote(note.id)} onTogglePin={() => togglePin(note.id)} onToggleStar={() => toggleStar(note.id)} getRelativeTime={getRelativeTime} indent={2} />
-                      ))}
-                      {isSubOpen && subNotes.length === 0 && <p className="text-[11px] text-text-inactive pl-16 py-0.5">{t('notes.noNotes')}</p>}
-                    </div>
-                  );
-                })}
-
-                {/* 폴더 내 노트 */}
-                {isOpen && fNotes.map((note) => (
-                  <NoteTreeItem key={note.id} note={note} isActive={note.id === activeNoteId} onClick={() => setActiveNoteId(note.id)} onDelete={() => deleteNote(note.id)} onTogglePin={() => togglePin(note.id)} onToggleStar={() => toggleStar(note.id)} getRelativeTime={getRelativeTime} indent={1} />
-                ))}
-                {isOpen && fNotes.length === 0 && subFolders.length === 0 && (
-                  <p className="text-[11px] text-text-inactive pl-12 py-1">{t('notes.noNotes')}</p>
-                )}
-              </div>
-            );
-          })}
+          {/* Folder tree - recursive rendering */}
+          {renderFolderTree(null, 0)}
 
           {/* Unfiled notes */}
           {unfolderNotes.length > 0 && (
@@ -1385,16 +1543,26 @@ function NotesContent() {
           </div>
 
           {/* 휴지통 */}
-          {trashedFolders.length > 0 && (
+          {(trashedFolders.length > 0 || trashedNotes.length > 0) && (
             <div className="px-3 mt-4 border-t border-border pt-3">
-              <button
-                onClick={() => setShowTrash(!showTrash)}
-                className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors w-full"
-              >
-                <span className={`text-[9px] transition-transform ${showTrash ? 'rotate-90' : ''}`}>▶</span>
-                <span>🗑️ 휴지통</span>
-                <span className="ml-auto text-[10px] bg-border px-1.5 py-0.5 rounded-full">{trashedFolders.length}</span>
-              </button>
+              <div className="flex items-center gap-1.5 w-full">
+                <button
+                  onClick={() => setShowTrash(!showTrash)}
+                  className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors flex-1"
+                >
+                  <span className={`text-[9px] transition-transform ${showTrash ? 'rotate-90' : ''}`}>▶</span>
+                  <span>🗑️ {t('notes.trash')}</span>
+                  <span className="text-[10px] bg-border px-1.5 py-0.5 rounded-full">{trashedFolders.length + trashedNotes.length}</span>
+                </button>
+                {showTrash && (trashedFolders.length > 0 || trashedNotes.length > 0) && (
+                  <button
+                    onClick={emptyTrashFn}
+                    className="text-[10px] text-[#e94560] hover:text-[#d63b55] transition-colors flex-shrink-0"
+                  >
+                    {t('notes.emptyTrash')}
+                  </button>
+                )}
+              </div>
               {showTrash && (
                 <div className="mt-1.5 space-y-1">
                   {trashedFolders.map((f) => (
@@ -1404,14 +1572,34 @@ function NotesContent() {
                       <button
                         onClick={() => restoreFolderFn(f.id)}
                         className="opacity-0 group-hover:opacity-100 text-[10px] text-[#22c55e] hover:text-[#16a34a] transition-all px-1.5 py-0.5 rounded border border-[#22c55e]/30 flex-shrink-0"
-                        title="복원"
+                        title={t('notes.restore')}
                       >
-                        복원
+                        {t('notes.restore')}
                       </button>
                       <button
                         onClick={() => permanentDeleteFolderFn(f.id)}
                         className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-xs flex-shrink-0"
-                        title="영구 삭제"
+                        title={t('notes.permanentDelete')}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  {trashedNotes.map((n) => (
+                    <div key={n.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-background-card/50 group">
+                      <span className="text-xs flex-shrink-0 opacity-50">{n.icon}</span>
+                      <span className="text-[11px] text-text-muted truncate flex-1">{n.title || t('notes.untitled')}</span>
+                      <button
+                        onClick={() => restoreNoteFn(n.id)}
+                        className="opacity-0 group-hover:opacity-100 text-[10px] text-[#22c55e] hover:text-[#16a34a] transition-all px-1.5 py-0.5 rounded border border-[#22c55e]/30 flex-shrink-0"
+                        title={t('notes.restore')}
+                      >
+                        {t('notes.restore')}
+                      </button>
+                      <button
+                        onClick={() => permanentDeleteNoteFn(n.id)}
+                        className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-xs flex-shrink-0"
+                        title={t('notes.permanentDelete')}
                       >
                         ×
                       </button>
@@ -1441,6 +1629,19 @@ function NotesContent() {
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
+                {activeNote.folderId && getFolderPath(activeNote.folderId).length > 0 && (
+                  <>
+                    <span className="hidden md:flex items-center gap-0.5 truncate">
+                      {getFolderPath(activeNote.folderId).map((f, i) => (
+                        <span key={f.id} className="flex items-center gap-0.5">
+                          {i > 0 && <span className="text-text-inactive">/</span>}
+                          <span style={{ color: f.color }}>{f.icon} {f.name}</span>
+                        </span>
+                      ))}
+                    </span>
+                    <span className="hidden md:inline text-text-inactive">·</span>
+                  </>
+                )}
                 <span className="truncate hidden md:inline">수정됨 {getRelativeTime(activeNote.updated_at)}</span>
                 <span className="hidden md:inline">·</span>
                 <span className="hidden md:inline">{activeNote.blocks.length} 블록</span>
@@ -1547,6 +1748,7 @@ function NotesContent() {
                         { type: 'code' as const, label: '</>', title: '코드' },
                         { type: 'link' as const, label: '🔗', title: '링크 ([[)' },
                         { type: 'toggle' as const, label: '▶', title: '토글 (>>)' },
+                        { type: 'image' as const, label: '🖼', title: '이미지' },
                         { type: 'divider' as const, label: '—', title: '구분선' },
                       ].map((item) => (
                         <button
@@ -1600,6 +1802,7 @@ function NotesContent() {
                   { type: 'code' as const, label: '</>', title: '코드' },
                   { type: 'link' as const, label: '🔗', title: '링크' },
                   { type: 'toggle' as const, label: '▶', title: '토글' },
+                  { type: 'image' as const, label: '🖼', title: '이미지' },
                   { type: 'divider' as const, label: '—', title: '구분선' },
                 ].map((item) => (
                   <button

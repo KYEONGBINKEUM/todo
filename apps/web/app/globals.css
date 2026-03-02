@@ -187,11 +187,8 @@ body {
   padding-top: calc(3.5rem + env(safe-area-inset-top));
 }
 
-/* Font size utilities */
-html[data-font="small"]  { --font-size-base: 12px; }
-html[data-font="medium"] { --font-size-base: 14px; }
-html[data-font="large"]  { --font-size-base: 16px; }
-
+/* Font size */
+:root { --font-size-base: 14px; }
 body { font-size: var(--font-size-base); }
 
 /* Focus styles */

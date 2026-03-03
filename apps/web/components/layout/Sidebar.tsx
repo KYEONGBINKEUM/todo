@@ -157,7 +157,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         {/* Logo */}
         <div className="mb-8">
           <Link href="/my-day" className="flex items-center">
-            <img src="/logo.svg" alt="NOAH" className="h-8" />
+            <img src="/logo.svg" alt="NOAH" className="h-8 dark:brightness-0 dark:invert" />
           </Link>
         </div>
 

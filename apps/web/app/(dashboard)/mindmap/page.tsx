@@ -439,6 +439,136 @@ function MindmapContent() {
     }));
   };
 
+  const duplicateNode = () => {
+    const map = activeMapRef.current;
+    if (!map || !selectedNodeId) return;
+    const node = map.nodes.find((n) => n.id === selectedNodeId);
+    if (!node) return;
+    const newNode: MindMapNode = {
+      ...node,
+      id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      x: node.x + 30,
+      y: node.y + 30,
+      imageURL: undefined,
+      imagePath: undefined,
+      imageSize: undefined,
+    };
+    updateMap((m) => ({ ...m, nodes: [...m.nodes, newNode] }));
+    setSelectedNodeIds(new Set([newNode.id]));
+  };
+
+  const addChildNode = () => {
+    const map = activeMapRef.current;
+    if (!map || !selectedNodeId) return;
+    const parent = map.nodes.find((n) => n.id === selectedNodeId);
+    if (!parent) return;
+    const newNode: MindMapNode = {
+      id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      text: '',
+      x: parent.x + parent.width + 60,
+      y: parent.y,
+      width: DEFAULT_NODE_WIDTH,
+      height: DEFAULT_NODE_HEIGHT,
+      color: NODE_COLORS[map.nodes.length % NODE_COLORS.length],
+    };
+    const newEdge: MindMapEdge = {
+      id: `e-${Date.now()}`,
+      from: selectedNodeId,
+      to: newNode.id,
+      style: edgeStyle,
+      color: '#888',
+    };
+    updateMap((m) => ({ ...m, nodes: [...m.nodes, newNode], edges: [...m.edges, newEdge] }));
+    setSelectedNodeIds(new Set([newNode.id]));
+    setEditingNodeId(newNode.id);
+  };
+
+  const autoLayout = () => {
+    const map = activeMapRef.current;
+    if (!map || map.nodes.length === 0) return;
+    const nodes = map.nodes;
+    const nodeCount = nodes.length;
+    const centerX = 500;
+    const centerY = 350;
+
+    if (nodeCount === 1) {
+      updateMap((m) => ({
+        ...m,
+        nodes: m.nodes.map((node) => ({ ...node, x: centerX - node.width / 2, y: centerY - node.height / 2 })),
+      }));
+      return;
+    }
+
+    // Find root: node with no incoming edges (or first node if none)
+    const toIds = new Set(map.edges.map((e) => e.to));
+    const rootNode = nodes.find((n) => !toIds.has(n.id)) || nodes[0];
+
+    // BFS tree layout
+    const childrenMap = new Map<string, string[]>();
+    for (const edge of map.edges) {
+      if (!childrenMap.has(edge.from)) childrenMap.set(edge.from, []);
+      childrenMap.get(edge.from)!.push(edge.to);
+    }
+
+    const positioned = new Map<string, { x: number; y: number }>();
+    const visited = new Set<string>();
+
+    const countDescendants = (id: string): number => {
+      const children = childrenMap.get(id) || [];
+      if (children.length === 0) return 1;
+      return children.reduce((sum, c) => sum + countDescendants(c), 0);
+    };
+
+    const layoutTree = (id: string, x: number, yStart: number, yEnd: number) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      const node = nodes.find((n) => n.id === id);
+      if (!node) return;
+      const yMid = (yStart + yEnd) / 2;
+      positioned.set(id, { x, y: yMid - node.height / 2 });
+
+      const children = (childrenMap.get(id) || []).filter((c) => !visited.has(c));
+      if (children.length === 0) return;
+
+      const totalDesc = children.reduce((sum, c) => sum + countDescendants(c), 0);
+      const nodeSpacing = Math.max(100, (yEnd - yStart) / totalDesc);
+      const hSpacing = 240;
+      let yCursor = yStart;
+
+      for (const childId of children) {
+        const desc = countDescendants(childId);
+        const span = desc * nodeSpacing;
+        layoutTree(childId, x + hSpacing, yCursor, yCursor + span);
+        yCursor += span;
+      }
+    };
+
+    const totalDescendants = countDescendants(rootNode.id);
+    const totalHeight = Math.max(600, totalDescendants * 110);
+    layoutTree(rootNode.id, centerX - 400, centerY - totalHeight / 2, centerY + totalHeight / 2);
+
+    // Position any disconnected nodes radially
+    const unpositioned = nodes.filter((n) => !positioned.has(n.id));
+    if (unpositioned.length > 0) {
+      const radius = 300 + unpositioned.length * 30;
+      unpositioned.forEach((node, i) => {
+        const angle = (i * 2 * Math.PI) / unpositioned.length - Math.PI / 2;
+        positioned.set(node.id, {
+          x: centerX + radius * Math.cos(angle) - node.width / 2,
+          y: centerY + radius * Math.sin(angle) - node.height / 2,
+        });
+      });
+    }
+
+    updateMap((m) => ({
+      ...m,
+      nodes: m.nodes.map((node) => {
+        const pos = positioned.get(node.id);
+        return pos ? { ...node, x: pos.x, y: pos.y } : node;
+      }),
+    }));
+  };
+
   // ========== Image Upload ==========
   const handleImageUpload = async (nodeId: string, file: File) => {
     if (!user || !activeMapRef.current) return;
@@ -998,6 +1128,15 @@ function MindmapContent() {
 
               <div className="w-px h-4 bg-border mx-0.5 hidden md:block" />
 
+              {/* Auto layout */}
+              <button
+                onClick={autoLayout}
+                title="자동 배치"
+                className="hidden md:flex h-7 px-2 items-center gap-1 text-text-muted hover:text-text-primary rounded-lg text-[11px] hover:bg-border transition-colors"
+              >
+                ⚡ 자동배치
+              </button>
+
               {/* Line style — hidden on mobile */}
               <button
                 onClick={() => setEdgeStyle(edgeStyle === 'curved' ? 'straight' : 'curved')}
@@ -1179,6 +1318,8 @@ function MindmapContent() {
                             <button key={c} onClick={(e) => { e.stopPropagation(); updateNodeColor(node.id, c); }} className="w-5 h-5 rounded-full border-2 border-white/50 hover:scale-110 transition-transform shadow-sm" style={{ backgroundColor: c }} />
                           ))}
                           <button onClick={(e) => { e.stopPropagation(); fileInputRef.current?.setAttribute('data-node-id', node.id); fileInputRef.current?.click(); }} className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm" title="이미지 추가">📷</button>
+                          <button onClick={(e) => { e.stopPropagation(); duplicateNode(); }} className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm text-[#8b5cf6] font-bold" title="복제">⊕</button>
+                          <button onClick={(e) => { e.stopPropagation(); addChildNode(); }} className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm text-[#06b6d4] font-bold" title="자식 노드 추가">→</button>
                           <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-sm text-[#e94560]" title="삭제">×</button>
                         </div>
                       )}

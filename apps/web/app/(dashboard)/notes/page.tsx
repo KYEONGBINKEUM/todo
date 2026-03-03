@@ -20,6 +20,13 @@ import hljs from 'highlight.js/lib/common';
 // Types
 // ============================================================================
 
+interface SubBlock {
+  id: string;
+  type: 'text' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote';
+  content: string;
+  checked?: boolean;
+}
+
 interface NoteBlock {
   id: string;
   type: 'text' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'quote' | 'divider' | 'code' | 'link' | 'toggle' | 'image';
@@ -27,6 +34,7 @@ interface NoteBlock {
   checked?: boolean;
   url?: string;
   children?: string;
+  subBlocks?: SubBlock[];
   imageURL?: string;
   imagePath?: string;
 }
@@ -761,7 +769,7 @@ function NotesContent() {
               ...n,
               blocks: n.blocks.map((b) =>
                 b.id === blockId
-                  ? { ...b, type: newType, ...(newType === 'todo' ? { checked: false } : {}), ...(newType === 'toggle' ? { children: '' } : {}), ...(newType === 'link' ? { url: '' } : {}) }
+                  ? { ...b, type: newType, ...(newType === 'todo' ? { checked: false } : {}), ...(newType === 'toggle' ? { subBlocks: [] } : {}), ...(newType === 'link' ? { url: '' } : {}) }
                   : b
               ),
             }
@@ -1119,11 +1127,66 @@ function NotesContent() {
             )}
           </div>
         );
-      case 'toggle':
+      case 'toggle': {
+        const subBlocks: SubBlock[] = block.subBlocks || [];
+        const isOpen = openToggleIds.has(block.id);
+
+        const addSubAfter = (afterId: string, inheritType: SubBlock['type'] = 'text') => {
+          const newSub: SubBlock = {
+            id: `${Date.now()}-sub-${Math.random().toString(36).substring(2, 6)}`,
+            type: inheritType,
+            content: '',
+            ...(inheritType === 'todo' ? { checked: false } : {}),
+          };
+          const idx = subBlocks.findIndex((s) => s.id === afterId);
+          const newSubs = [...subBlocks];
+          if (idx >= 0) newSubs.splice(idx + 1, 0, newSub);
+          else newSubs.push(newSub);
+          updateBlockField(block.id, { subBlocks: newSubs });
+          setTimeout(() => {
+            document.querySelector<HTMLTextAreaElement>(`[data-sub-id="${newSub.id}"]`)?.focus();
+          }, 50);
+        };
+
+        const updateSub = (subId: string, fields: Partial<SubBlock>) => {
+          updateBlockField(block.id, { subBlocks: subBlocks.map((s) => s.id === subId ? { ...s, ...fields } : s) });
+        };
+
+        const deleteSub = (subId: string) => {
+          const idx = subBlocks.findIndex((s) => s.id === subId);
+          const newSubs = subBlocks.filter((s) => s.id !== subId);
+          updateBlockField(block.id, { subBlocks: newSubs });
+          if (newSubs.length === 0) return;
+          const focusIdx = Math.max(0, idx - 1);
+          setTimeout(() => {
+            document.querySelector<HTMLTextAreaElement>(`[data-sub-id="${newSubs[focusIdx].id}"]`)?.focus();
+          }, 50);
+        };
+
+        const addFirstSub = () => {
+          const newSub: SubBlock = {
+            id: `${Date.now()}-sub-${Math.random().toString(36).substring(2, 6)}`,
+            type: 'text',
+            content: '',
+          };
+          updateBlockField(block.id, { subBlocks: [newSub] });
+          setTimeout(() => {
+            document.querySelector<HTMLTextAreaElement>(`[data-sub-id="${newSub.id}"]`)?.focus();
+          }, 50);
+        };
+
         return (
           <div className="rounded-lg overflow-hidden border border-border">
-            <div className="flex items-center gap-2 px-3 py-2 bg-background-card cursor-pointer group/toggle" onClick={() => setOpenToggleIds((prev) => { const next = new Set(prev); if (next.has(block.id)) next.delete(block.id); else next.add(block.id); return next; })}>
-              <span className={`text-text-muted transition-transform text-xs ${openToggleIds.has(block.id) ? 'rotate-90' : ''}`}>▶</span>
+            {/* Toggle header */}
+            <div
+              className="flex items-center gap-2 px-3 py-2 bg-background-card cursor-pointer group/toggle"
+              onClick={() => setOpenToggleIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(block.id)) next.delete(block.id); else next.add(block.id);
+                return next;
+              })}
+            >
+              <span className={`text-text-muted transition-transform text-xs ${isOpen ? 'rotate-90' : ''}`}>▶</span>
               <textarea
                 data-block-id={block.id}
                 value={block.content}
@@ -1136,20 +1199,84 @@ function NotesContent() {
                 className={`${baseClass} text-sm font-semibold flex-1`}
               />
             </div>
-            {openToggleIds.has(block.id) && (
-              <div className="px-3 py-2 border-t border-border/40 bg-background">
-                <textarea
-                  value={block.children ?? ''}
-                  onChange={(e) => { updateBlockField(block.id, { children: e.target.value }); autoResize(e.target); }}
-                  onFocus={(e) => autoResize(e.target)}
-                  placeholder="내용을 입력하세요..."
-                  rows={Math.max(2, (block.children ?? '').split('\n').length)}
-                  className={`${baseClass} text-sm resize-none leading-relaxed`}
-                />
+            {/* Toggle body */}
+            {isOpen && (
+              <div className="border-t border-border/40 bg-background px-3 py-2 space-y-1">
+                {subBlocks.length === 0 ? (
+                  !readOnly && (
+                    <p
+                      className="text-sm text-text-muted/50 cursor-text py-1"
+                      onClick={addFirstSub}
+                    >
+                      내용을 입력하세요...
+                    </p>
+                  )
+                ) : (
+                  <>
+                    {subBlocks.map((sub, subIdx) => {
+                      const subTextClass = (() => {
+                        switch (sub.type) {
+                          case 'heading2': return 'text-base font-bold';
+                          case 'heading3': return 'text-sm font-semibold';
+                          case 'quote': return 'text-sm italic';
+                          case 'todo': return `text-sm ${sub.checked ? 'line-through text-text-muted' : ''}`;
+                          default: return 'text-sm';
+                        }
+                      })();
+                      return (
+                        <div key={sub.id} className={`flex items-start gap-2 ${sub.type === 'quote' ? 'border-l-2 border-text-muted/30 pl-2' : ''}`}>
+                          {sub.type === 'heading2' && <span className="text-[11px] font-bold text-text-muted flex-shrink-0 mt-1 min-w-[1.5rem]">H2</span>}
+                          {sub.type === 'heading3' && <span className="text-[11px] font-bold text-text-muted flex-shrink-0 mt-1 min-w-[1.5rem]">H3</span>}
+                          {sub.type === 'bullet' && <span className="text-text-muted flex-shrink-0 mt-1 text-base leading-tight">•</span>}
+                          {sub.type === 'numbered' && <span className="text-xs text-text-muted flex-shrink-0 mt-1 min-w-[1.5rem]">{subIdx + 1}.</span>}
+                          {sub.type === 'todo' && (
+                            <input
+                              type="checkbox"
+                              checked={sub.checked ?? false}
+                              onChange={() => updateSub(sub.id, { checked: !sub.checked })}
+                              className="w-3.5 h-3.5 flex-shrink-0 cursor-pointer mt-1 accent-[#e94560]"
+                            />
+                          )}
+                          <textarea
+                            data-sub-id={sub.id}
+                            value={sub.content}
+                            readOnly={readOnly}
+                            onChange={(e) => { updateSub(sub.id, { content: e.target.value }); autoResize(e.target); }}
+                            onFocus={(e) => autoResize(e.target)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                const inheritType: SubBlock['type'] = ['bullet', 'numbered', 'todo'].includes(sub.type) ? sub.type as SubBlock['type'] : 'text';
+                                addSubAfter(sub.id, inheritType);
+                              }
+                              if (e.key === 'Backspace' && sub.content === '') {
+                                e.preventDefault();
+                                deleteSub(sub.id);
+                              }
+                            }}
+                            placeholder={subIdx === 0 ? '내용 입력...' : ''}
+                            rows={1}
+                            className={`flex-1 bg-transparent outline-none resize-none ${subTextClass} text-text-primary placeholder:text-text-muted/40 ${readOnly ? 'cursor-default' : ''}`}
+                            style={{ maxHeight: '300px' }}
+                          />
+                        </div>
+                      );
+                    })}
+                    {!readOnly && (
+                      <button
+                        onClick={() => addSubAfter(subBlocks[subBlocks.length - 1].id)}
+                        className="text-[11px] text-text-muted/40 hover:text-text-muted flex items-center gap-1 mt-0.5 transition-colors"
+                      >
+                        + 블록 추가
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
         );
+      }
       case 'image':
         return (
           <div className="my-2">

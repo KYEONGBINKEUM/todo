@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/i18n-context';
 import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
 import { usePathname, useRouter } from 'next/navigation';
-import { addNote as addNoteDB, addMindmap as addMindmapDB } from '@/lib/firestore';
+import { addNote as addNoteDB, addMindmap as addMindmapDB, addTask as addTaskDB, updateTask } from '@/lib/firestore';
 import NoahAISuggestionChip from './NoahAISuggestionChip';
 import NoahAIUsageBar from './NoahAIUsageBar';
 import type { AISuggestionChip as ChipType, NoahAIAction } from '@/lib/noah-ai-context';
@@ -27,6 +27,7 @@ export default function NoahAIPanel() {
   } = useNoahAI();
   const { t } = useI18n();
   const dataStore = useDataStore();
+  const lists = dataStore.lists || [];
   const pathname = usePathname();
 
   const [input, setInput] = useState('');
@@ -175,12 +176,48 @@ export default function NoahAIPanel() {
         router.push('/mindmap');
       }
 
-      // Task actions: dispatch events (pages listen)
+      // Task actions: directly write to Firestore
       if (action === 'suggest_tasks' && data.suggestions) {
-        window.dispatchEvent(new CustomEvent('noah-ai-apply-tasks', { detail: data }));
+        const today = new Date();
+        const createdDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const listId = lists[0]?.id || '';
+        for (const s of data.suggestions) {
+          await addTaskDB(user.uid, {
+            title: s.title, status: 'todo', priority: s.priority || 'medium',
+            starred: false, listId, myDay: true,
+            tags: [], order: Date.now(), createdDate,
+          });
+        }
+        router.push('/tasks');
       }
       if (action === 'breakdown' && data.subtasks) {
-        window.dispatchEvent(new CustomEvent('noah-ai-apply-subtasks', { detail: data }));
+        const today = new Date();
+        const createdDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const listId = lists[0]?.id || '';
+        for (const s of data.subtasks) {
+          await addTaskDB(user.uid, {
+            title: s.title, status: 'todo', priority: 'medium',
+            starred: false, listId, myDay: true,
+            tags: [], order: Date.now(), createdDate,
+          });
+        }
+        router.push('/tasks');
+      }
+      if (action === 'prioritize' && data.priorities) {
+        for (const p of data.priorities) {
+          if (p.taskId) {
+            await updateTask(user.uid, p.taskId, { priority: p.suggestedPriority });
+          }
+        }
+        router.push('/tasks');
+      }
+      if (action === 'schedule' && data.schedule) {
+        for (const s of data.schedule) {
+          if (s.taskId && s.suggestedDate) {
+            await updateTask(user.uid, s.taskId, { dueDate: s.suggestedDate });
+          }
+        }
+        router.push('/upcoming');
       }
     } catch (err) {
       console.error('Apply failed:', err);

@@ -24,8 +24,8 @@ export default function NoahAIButton() {
       {/* Floating Action Button */}
       <button
         onClick={handleClick}
-        className={`fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full
-          ${!canUseAI || isPanelOpen ? 'bg-gradient-to-r from-[#e94560] to-[#8b5cf6] shadow-lg shadow-[#e94560]/25 hover:shadow-xl hover:shadow-[#e94560]/30' : 'shadow-lg shadow-black/20 hover:shadow-xl hover:shadow-black/30'}
+        className={`fixed bottom-6 right-6 z-40 w-14 h-14
+          ${(!canUseAI || isPanelOpen) ? 'rounded-full bg-gradient-to-r from-[#e94560] to-[#8b5cf6] shadow-lg shadow-[#e94560]/25 hover:shadow-xl hover:shadow-[#e94560]/30' : 'rounded-none shadow-lg shadow-black/20 hover:shadow-xl hover:shadow-black/30'}
           flex items-center justify-center
           hover:scale-105 active:scale-95 transition-all duration-200
           ${isLoading ? 'animate-pulse' : ''}

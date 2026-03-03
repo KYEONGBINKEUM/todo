@@ -88,6 +88,52 @@ function getSuggestionsForPage(page: string, t: (key: string) => string): AISugg
   }
 }
 
+// Follow-up suggestions based on the last action performed
+function getFollowUpSuggestions(action: NoahAIAction, page: string, t: (key: string) => string): AISuggestionChip[] {
+  switch (action) {
+    case 'suggest_tasks':
+      return [
+        { id: 'prioritize', label: t('ai.chip.prioritize'), action: 'prioritize', icon: '🎯' },
+        { id: 'schedule', label: t('ai.chip.schedule'), action: 'schedule', icon: '📅' },
+      ];
+    case 'prioritize':
+      return [
+        { id: 'schedule', label: t('ai.chip.schedule'), action: 'schedule', icon: '📅' },
+        { id: 'breakdown', label: t('ai.chip.breakdown'), action: 'breakdown', icon: '📋' },
+      ];
+    case 'schedule':
+      return [
+        { id: 'prioritize', label: t('ai.chip.prioritize'), action: 'prioritize', icon: '🎯' },
+        { id: 'suggest', label: t('ai.chip.suggest'), action: 'suggest_tasks', icon: '💡' },
+      ];
+    case 'breakdown':
+      return [
+        { id: 'prioritize', label: t('ai.chip.prioritize'), action: 'prioritize', icon: '🎯' },
+        { id: 'schedule', label: t('ai.chip.schedule'), action: 'schedule', icon: '📅' },
+      ];
+    case 'auto_write_note':
+    case 'complete_note':
+      return [
+        { id: 'complete', label: t('ai.chip.completeNote'), action: 'complete_note', icon: '📝' },
+        { id: 'youtube_note', label: t('ai.chip.youtubeNote'), action: 'youtube_to_note', icon: '🎬' },
+      ];
+    case 'youtube_to_note':
+      return [
+        { id: 'auto_write', label: t('ai.chip.autoWrite'), action: 'auto_write_note', icon: '✍️' },
+        { id: 'complete', label: t('ai.chip.completeNote'), action: 'complete_note', icon: '📝' },
+      ];
+    case 'generate_mindmap':
+    case 'youtube_to_mindmap':
+      return [
+        { id: 'generate_mindmap', label: t('ai.chip.generateMindmap'), action: 'generate_mindmap', icon: '🧠' },
+        { id: 'youtube_mindmap', label: t('ai.chip.youtubeMindmap'), action: 'youtube_to_mindmap', icon: '🎬' },
+      ];
+    case 'chat':
+    default:
+      return getSuggestionsForPage(page, t);
+  }
+}
+
 // ============================================================================
 // Context types
 // ============================================================================
@@ -130,10 +176,12 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
   const [monthlyUsage, setMonthlyUsage] = useState<{ used: number; limit: number } | null>(null);
   const [plan, setPlan] = useState<Plan>('free');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [dynamicSuggestions, setDynamicSuggestions] = useState<AISuggestionChip[] | null>(null);
 
   // Derive page from pathname
   const currentPage = pathname || '/my-day';
-  const suggestions = getSuggestionsForPage(currentPage, t);
+  const pageSuggestions = getSuggestionsForPage(currentPage, t);
+  const suggestions = dynamicSuggestions ?? pageSuggestions;
   const canUseAI = plan !== 'free';
 
   // Load user settings
@@ -226,6 +274,9 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
         if (response.monthlyUsage) {
           setMonthlyUsage(response.monthlyUsage);
         }
+
+        // Update dynamic suggestions based on action
+        setDynamicSuggestions(getFollowUpSuggestions(action, currentPage, t));
       } catch (error: any) {
         const errorMsg = getErrorMessage(error, t);
         updateMessage(loadingId, {
@@ -236,7 +287,7 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
         setIsLoading(false);
       }
     },
-    [user, isLoading, language, suggestions, t, addMessage, updateMessage]
+    [user, isLoading, language, suggestions, t, addMessage, updateMessage, currentPage]
   );
 
   const sendMessage = useCallback(
@@ -258,7 +309,7 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
     [user, isLoading, currentPage, sendAction]
   );
 
-  const clearMessages = useCallback(() => setMessages([]), []);
+  const clearMessages = useCallback(() => { setMessages([]); setDynamicSuggestions(null); }, []);
 
   return (
     <NoahAIContext.Provider

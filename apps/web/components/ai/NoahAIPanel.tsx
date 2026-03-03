@@ -208,9 +208,7 @@ export default function NoahAIPanel() {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#e94560] to-[#8b5cf6] flex items-center justify-center overflow-hidden">
-              <img src="/symbol.svg" alt="NOAH" className="w-6 h-6 rounded" />
-            </div>
+            <img src="/symbol.svg" alt="NOAH" className="w-8 h-8 rounded-full" />
             <div>
               <h2 className="text-sm font-bold text-text-primary">{t('ai.name')}</h2>
               <div className="w-32 mt-0.5">
@@ -264,9 +262,7 @@ export default function NoahAIPanel() {
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 min-h-0">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-r from-[#e94560]/20 to-[#8b5cf6]/20 flex items-center justify-center mb-4">
-                <span className="text-2xl">🤖</span>
-              </div>
+              <img src="/symbol.svg" alt="NOAH" className="w-16 h-16 rounded-full mb-4" />
               <p className="text-sm font-medium text-text-primary mb-1">{t('ai.greeting')}</p>
               <p className="text-xs text-text-muted max-w-[250px]">{t('ai.greetingDescription')}</p>
             </div>
@@ -305,7 +301,7 @@ export default function NoahAIPanel() {
                           bg-[#e94560]/10 text-[#e94560] hover:bg-[#e94560]/20
                           transition-colors border border-[#e94560]/20 disabled:opacity-50"
                       >
-                        {applying === msg.id ? '적용 중...' : t('ai.apply')}
+                        {applying === msg.id ? t('common.loading') : t('ai.apply')}
                       </button>
                     )}
                   </>

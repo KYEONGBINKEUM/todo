@@ -178,6 +178,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.chip.youtubeNote': '유튜브→노트',
     'ai.chip.generateMindmap': '마인드맵 생성',
     'ai.chip.youtubeMindmap': '유튜브→마인드맵',
+    'mindmap.multiSelect': '다중 선택 모드',
   },
   en: {
     'nav.myDay': 'My Day',
@@ -348,6 +349,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.chip.youtubeNote': 'YouTube→Note',
     'ai.chip.generateMindmap': 'Generate mindmap',
     'ai.chip.youtubeMindmap': 'YouTube→Mindmap',
+    'mindmap.multiSelect': 'Multi-select mode',
   },
   ja: {
     'nav.myDay': '今日のタスク',
@@ -518,6 +520,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.chip.youtubeNote': 'YouTube→ノート',
     'ai.chip.generateMindmap': 'マインドマップ生成',
     'ai.chip.youtubeMindmap': 'YouTube→マインドマップ',
+    'mindmap.multiSelect': '複数選択モード',
   },
   es: {
     'nav.myDay': 'Mi Día',
@@ -688,6 +691,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.chip.youtubeNote': 'YouTube→Nota',
     'ai.chip.generateMindmap': 'Generar mapa mental',
     'ai.chip.youtubeMindmap': 'YouTube→Mapa mental',
+    'mindmap.multiSelect': 'Modo de selección múltiple',
   },
   pt: {
     'nav.myDay': 'Meu Dia',
@@ -858,6 +862,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.chip.youtubeNote': 'YouTube→Nota',
     'ai.chip.generateMindmap': 'Gerar mapa mental',
     'ai.chip.youtubeMindmap': 'YouTube→Mapa mental',
+    'mindmap.multiSelect': 'Modo de seleção múltipla',
   },
   fr: {
     'nav.myDay': 'Ma Journée',
@@ -1028,6 +1033,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.chip.youtubeNote': 'YouTube→Note',
     'ai.chip.generateMindmap': 'Générer carte mentale',
     'ai.chip.youtubeMindmap': 'YouTube→Carte mentale',
+    'mindmap.multiSelect': 'Mode sélection multiple',
   },
 };
 

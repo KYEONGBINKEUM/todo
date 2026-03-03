@@ -5,6 +5,7 @@ import { useNoahAI } from '@/lib/noah-ai-context';
 import { useI18n } from '@/lib/i18n-context';
 import { callNoahAI } from '@/lib/noah-ai';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
+import NoahAIUpgradePrompt from './NoahAIUpgradePrompt';
 
 export interface AIActionItem {
   id: string;
@@ -22,10 +23,11 @@ interface NoahAIPageActionsProps {
 
 export default function NoahAIPageActions({ actions, getContext, onResult }: NoahAIPageActionsProps) {
   const { canUseAI, togglePanel } = useNoahAI();
-  const { language } = useI18n();
+  const { language, t } = useI18n();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,13 +43,13 @@ export default function NoahAIPageActions({ actions, getContext, onResult }: Noa
   const handleAction = async (item: AIActionItem) => {
     if (!canUseAI) {
       setOpen(false);
-      togglePanel();
+      setShowUpgrade(true);
       return;
     }
 
     // For YouTube actions, need URL input
     if (item.action === 'youtube_to_note' || item.action === 'youtube_to_mindmap') {
-      const url = prompt('YouTube URL을 입력하세요:');
+      const url = prompt(t('ai.inputPlaceholder'));
       if (!url?.trim()) { setOpen(false); return; }
       setOpen(false);
       setLoading(true);
@@ -66,7 +68,7 @@ export default function NoahAIPageActions({ actions, getContext, onResult }: Noa
 
     // For mindmap generation, need text input
     if (item.action === 'generate_mindmap') {
-      const text = prompt('마인드맵 주제를 입력하세요:');
+      const text = prompt(t('ai.chip.generateMindmap'));
       if (!text?.trim()) { setOpen(false); return; }
       setOpen(false);
       setLoading(true);
@@ -116,7 +118,7 @@ export default function NoahAIPageActions({ actions, getContext, onResult }: Noa
               <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
               <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
-            <span>AI 작업중...</span>
+            <span>{t('ai.thinking')}</span>
           </>
         ) : (
           <>
@@ -145,15 +147,17 @@ export default function NoahAIPageActions({ actions, getContext, onResult }: Noa
           ))}
           <div className="border-t border-border mt-1 pt-1">
             <button
-              onClick={() => { setOpen(false); togglePanel(); }}
+              onClick={() => { setOpen(false); if (!canUseAI) { setShowUpgrade(true); } else { togglePanel(); } }}
               className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-background-hover transition-colors"
             >
               <span className="text-sm flex-shrink-0">💬</span>
-              <div className="text-xs font-medium text-text-muted">노아AI 채팅 열기</div>
+              <div className="text-xs font-medium text-text-muted">{t('ai.openPanel')}</div>
             </button>
           </div>
         </div>
       )}
+
+      {showUpgrade && <NoahAIUpgradePrompt onClose={() => setShowUpgrade(false)} />}
     </div>
   );
 }

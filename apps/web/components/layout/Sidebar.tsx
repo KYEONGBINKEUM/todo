@@ -156,13 +156,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       `}>
         {/* Logo */}
         <div className="mb-8">
-          <Link href="/my-day" className="flex items-center gap-2.5">
-            <img src="/symbol.svg" alt="NOAH" className="w-8 h-8 rounded-lg" />
-            <div>
-              <h1 className="text-xl font-extrabold bg-gradient-to-r from-text-primary to-[#e94560] bg-clip-text text-transparent">
-                NOAH
-              </h1>
-            </div>
+          <Link href="/my-day" className="flex items-center">
+            <img src="/logo.svg" alt="NOAH" className="h-8" />
           </Link>
         </div>
 

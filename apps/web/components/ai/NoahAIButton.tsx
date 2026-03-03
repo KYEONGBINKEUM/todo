@@ -44,8 +44,8 @@ export default function NoahAIButton() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         ) : (
-          // Noah AI icon — SVG only, no background
-          <img src="/symbol.svg" alt="NOAH" className="w-12 h-12 rounded-full" />
+          // Noah AI icon — SVG only, no background, no clip
+          <img src="/symbol.svg" alt="NOAH" className="w-12 h-12" />
         )}
       </button>
 

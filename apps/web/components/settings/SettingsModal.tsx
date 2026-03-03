@@ -408,9 +408,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 <div className="space-y-4">
                   <div>
                     <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.language')}</p>
-                    <p className="text-[11px] text-text-muted mb-4">
-                      접속 지역 및 IP 주소에 따라 자동으로 언어가 감지됩니다. 수동으로 변경할 수도 있습니다.
-                    </p>
                     <div className="space-y-2">
                       {LANGUAGES.map((lang) => (
                         <button

@@ -74,6 +74,7 @@ function MindmapContent() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [edgeStyle, setEdgeStyle] = useState<'curved' | 'straight'>('curved');
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
 
   // Connection drawing
   const [connectingFrom, setConnectingFrom] = useState<{ nodeId: string; side: string } | null>(null);
@@ -89,7 +90,8 @@ function MindmapContent() {
     longPressTimer: NodeJS.Timeout | null;
     startX: number;
     startY: number;
-  }>({ lastDist: 0, longPressTimer: null, startX: 0, startY: 0 });
+    pendingNodeId: string | null;
+  }>({ lastDist: 0, longPressTimer: null, startX: 0, startY: 0, pendingNodeId: null });
 
   // Undo/Redo
   const historyRef = useRef<Map<string, { past: HistorySnapshot[]; future: HistorySnapshot[] }>>(new Map());
@@ -708,32 +710,51 @@ function MindmapContent() {
     const touch = e.touches[0];
     t.startX = touch.clientX;
     t.startY = touch.clientY;
+    t.pendingNodeId = null;
     const target = e.target as HTMLElement;
     const nodeEl = target.closest('[data-node-id]') as HTMLElement | null;
 
     if (nodeEl) {
       e.preventDefault(); // 브라우저 기본 long-press(텍스트 복사) 방지
       const nodeId = nodeEl.getAttribute('data-node-id')!;
-      if (!selectedNodeIdsRef.current.has(nodeId)) {
-        setSelectedNodeIds(new Set([nodeId]));
-      }
       setSelectedEdgeId(null);
-      startNodeDrag(touch.clientX, touch.clientY, nodeId);
 
-      // Long press = multi-select toggle (500ms)
-      t.longPressTimer = setTimeout(() => {
+      if (multiSelectMode) {
+        // In multi-select mode: tap to toggle node in/out of selection
         setSelectedNodeIds((prev) => {
           const next = new Set(prev);
-          if (next.has(nodeId) && next.size > 1) next.delete(nodeId);
+          if (next.has(nodeId)) next.delete(nodeId);
           else next.add(nodeId);
           return next;
         });
+        return;
+      }
+
+      // Single touch: select node, prepare drag (don't start drag yet)
+      if (!selectedNodeIdsRef.current.has(nodeId)) {
+        setSelectedNodeIds(new Set([nodeId]));
+      }
+      t.pendingNodeId = nodeId;
+
+      // Long press (500ms) = enter multi-select mode
+      t.longPressTimer = setTimeout(() => {
+        t.longPressTimer = null;
+        t.pendingNodeId = null;
         dragRef.current.mode = 'none';
+        setMultiSelectMode(true);
+        if (navigator.vibrate) navigator.vibrate(50);
       }, 500);
       return;
     }
 
-    // Pan canvas
+    // Touch on empty space
+    if (multiSelectMode) {
+      setMultiSelectMode(false);
+      setSelectedNodeIds(new Set());
+      setSelectedEdgeId(null);
+      setEditingNodeId(null);
+      return;
+    }
     setSelectedNodeIds(new Set());
     setSelectedEdgeId(null);
     setEditingNodeId(null);
@@ -742,14 +763,17 @@ function MindmapContent() {
 
   const handleTouchMove = (e: React.TouchEvent) => {
     const t = touchRef.current;
-    // long-press 타이머: 10px 이상 이동 시에만 취소 (미세 떨림으로 취소 방지)
-    if (t.longPressTimer) {
+    // If pending drag: start drag once movement exceeds 10px
+    if (t.longPressTimer || t.pendingNodeId) {
       const touch = e.touches[0];
       const dx = touch.clientX - t.startX;
       const dy = touch.clientY - t.startY;
       if (Math.sqrt(dx * dx + dy * dy) > 10) {
-        clearTimeout(t.longPressTimer);
-        t.longPressTimer = null;
+        if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
+        if (t.pendingNodeId && dragRef.current.mode === 'none') {
+          startNodeDrag(t.startX, t.startY, t.pendingNodeId);
+          t.pendingNodeId = null;
+        }
       }
     }
 
@@ -777,6 +801,7 @@ function MindmapContent() {
   const handleTouchEnd = () => {
     const t = touchRef.current;
     if (t.longPressTimer) { clearTimeout(t.longPressTimer); t.longPressTimer = null; }
+    t.pendingNodeId = null;
     t.lastDist = 0;
 
     if (dragRef.current.mode !== 'none') {
@@ -1056,6 +1081,18 @@ function MindmapContent() {
                 backgroundPosition: `${vp.x}px ${vp.y}px`,
               }}
             />
+
+            {/* Multi-select mode banner (mobile) */}
+            {multiSelectMode && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+                <div className="bg-[#e94560] text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 whitespace-nowrap">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {t('mindmap.multiSelect') || '다중 선택 모드'}
+                </div>
+              </div>
+            )}
 
             {/* Viewport transform wrapper */}
             <div

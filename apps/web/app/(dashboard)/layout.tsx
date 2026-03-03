@@ -69,11 +69,8 @@ export default function DashboardLayout({
             <span className="w-5 h-0.5 bg-current rounded-full" />
             <span className="w-4 h-0.5 bg-current rounded-full" />
           </button>
-          <div className="flex items-center gap-2">
-            <img src="/symbol.svg" alt="NOAH" className="w-6 h-6 rounded-md" />
-            <h1 className="text-lg font-extrabold bg-gradient-to-r from-text-primary to-[#e94560] bg-clip-text text-transparent">
-              NOAH
-            </h1>
+          <div className="flex items-center">
+            <img src="/logo.svg" alt="NOAH" className="h-7" />
           </div>
         </div>
       </div>

@@ -24,6 +24,7 @@ export default function NoahAIPanel() {
     sendAction,
     sendMessage,
     clearMessages,
+    insertMessage,
   } = useNoahAI();
   const { t } = useI18n();
   const dataStore = useDataStore();
@@ -101,15 +102,79 @@ export default function NoahAIPanel() {
     sendAction(chip.action, context);
   };
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || isLoading) return;
-    sendMessage(input.trim());
-    setInput('');
-    // Reset textarea height
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
+  // ── Intent detection helpers ──────────────────────────────────────────────
+
+  /** Returns the topic string if the message is asking to add a note/write content */
+  const detectNoteIntent = (msg: string): string | null => {
+    const patterns = [
+      /(?:노트에?|note에?)\s+(.+?)(?:를?|을?)?\s*(?:추가|저장|작성|써|적어)(?:줘|줄래|해줘|해)?/i,
+      /(.+?)\s*(?:레시피|정보|내용|방법|가이드|설명)\s*(?:를?|을?)?\s*노트에?\s*(?:추가|저장|작성)/i,
+      /(.+?)\s*(?:에\s*대한?|관련\s*)?노트\s*(?:작성|추가)/i,
+    ];
+    for (const p of patterns) {
+      const m = msg.match(p);
+      if (m?.[1]) return m[1].trim();
     }
+    // Fallback: contains "노트에" anywhere
+    if (/노트에/.test(msg)) return msg.replace(/노트에?\s*(추가|저장|작성)?해?줘?/g, '').trim() || msg;
+    return null;
+  };
+
+  /** Returns the task title if the message is asking to add a task */
+  const detectTaskIntent = (msg: string): string | null => {
+    const patterns = [
+      /(?:할일에?|오늘의?\s*할일에?|태스크에?|task에?)\s+(.+?)(?:를?|을?)?\s*(?:추가|등록|넣어)(?:줘|줄래|해줘|해)?/i,
+      /(.+?)(?:를?|을?)?\s*(?:할일에?|오늘의?\s*할일에?|태스크에?)\s*(?:추가|등록)/i,
+    ];
+    for (const p of patterns) {
+      const m = msg.match(p);
+      if (m?.[1]) return m[1].trim();
+    }
+    return null;
+  };
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const msg = input.trim();
+    if (!msg || isLoading || !user) return;
+    setInput('');
+    if (inputRef.current) inputRef.current.style.height = 'auto';
+
+    // ── Task intent: add directly to Firestore ──
+    const taskTitle = detectTaskIntent(msg);
+    if (taskTitle) {
+      insertMessage({ role: 'user', content: msg });
+      try {
+        const today = new Date();
+        const createdDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        await addTaskDB(user.uid, {
+          title: taskTitle,
+          status: 'todo',
+          priority: 'medium',
+          starred: false,
+          listId: lists[0]?.id || '',
+          myDay: true,
+          tags: [],
+          order: Date.now(),
+          createdDate,
+        });
+        insertMessage({ role: 'assistant', content: `✅ "${taskTitle}" 할일을 추가했어요!` });
+        router.push('/my-day');
+      } catch {
+        insertMessage({ role: 'assistant', content: '할일 추가에 실패했어요. 다시 시도해 주세요.' });
+      }
+      return;
+    }
+
+    // ── Note intent: route to auto_write_note so AI writes content + apply button appears ──
+    const noteTopic = detectNoteIntent(msg);
+    if (noteTopic) {
+      await sendAction('auto_write_note', { title: noteTopic, topic: noteTopic }, msg);
+      return;
+    }
+
+    // ── Default: general chat ──
+    sendMessage(msg);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -299,7 +364,7 @@ export default function NoahAIPanel() {
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 min-h-0">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <img src="/symbol.svg" alt="NOAH" className="w-16 h-16 rounded-full mb-4" />
+              <img src="/symbol.svg" alt="NOAH" className="w-16 h-16 mb-4" />
               <p className="text-sm font-medium text-text-primary mb-1">{t('ai.greeting')}</p>
               <p className="text-xs text-text-muted max-w-[250px]">{t('ai.greetingDescription')}</p>
             </div>

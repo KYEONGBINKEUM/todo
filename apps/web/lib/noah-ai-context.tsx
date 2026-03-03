@@ -129,6 +129,12 @@ function getFollowUpSuggestions(action: NoahAIAction, page: string, t: (key: str
         { id: 'youtube_mindmap', label: t('ai.chip.youtubeMindmap'), action: 'youtube_to_mindmap', icon: '🎬' },
       ];
     case 'chat':
+      // After chat, offer note/task creation as natural next steps
+      return [
+        { id: 'auto_write', label: t('ai.chip.autoWrite'), action: 'auto_write_note', icon: '✍️' },
+        { id: 'suggest', label: t('ai.chip.suggest'), action: 'suggest_tasks', icon: '💡' },
+        { id: 'breakdown', label: t('ai.chip.breakdown'), action: 'breakdown', icon: '📋' },
+      ];
     default:
       return getSuggestionsForPage(page, t);
   }
@@ -152,6 +158,7 @@ interface NoahAIContextType {
   sendAction: (action: NoahAIAction, context: Record<string, any>, userMessage?: string) => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   clearMessages: () => void;
+  insertMessage: (msg: Omit<AIMessage, 'id' | 'timestamp'>) => string;
 }
 
 const NoahAIContext = createContext<NoahAIContextType | null>(null);
@@ -311,6 +318,11 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
 
   const clearMessages = useCallback(() => { setMessages([]); setDynamicSuggestions(null); }, []);
 
+  // Exposed so panel can insert direct messages (e.g. for task/note intent handling)
+  const insertMessage = useCallback((msg: Omit<AIMessage, 'id' | 'timestamp'>) => {
+    return addMessage(msg);
+  }, [addMessage]);
+
   return (
     <NoahAIContext.Provider
       value={{
@@ -327,6 +339,7 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
         sendAction,
         sendMessage,
         clearMessages,
+        insertMessage,
       }}
     >
       {children}

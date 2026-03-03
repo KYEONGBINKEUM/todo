@@ -70,7 +70,8 @@ export default function DashboardLayout({
             <span className="w-4 h-0.5 bg-current rounded-full" />
           </button>
           <div className="flex items-center">
-            <img src="/logo.svg" alt="NOAH" className="h-7 dark:brightness-0 dark:invert" />
+            <img src="/logo.svg" alt="NOAH" className="h-7 dark:hidden" />
+            <img src="/logo_w.svg" alt="NOAH" className="h-7 hidden dark:block" />
           </div>
         </div>
       </div>

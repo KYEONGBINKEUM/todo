@@ -7,6 +7,7 @@ import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
 import { usePathname, useRouter } from 'next/navigation';
 import { addNote as addNoteDB, addMindmap as addMindmapDB, addTask as addTaskDB, updateTask } from '@/lib/firestore';
+import { callNoahAI } from '@/lib/noah-ai';
 import NoahAISuggestionChip from './NoahAISuggestionChip';
 import NoahAIUsageBar from './NoahAIUsageBar';
 import type { AISuggestionChip as ChipType, NoahAIAction } from '@/lib/noah-ai-context';
@@ -26,7 +27,7 @@ export default function NoahAIPanel() {
     clearMessages,
     insertMessage,
   } = useNoahAI();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const dataStore = useDataStore();
   const lists = dataStore.lists || [];
   const pathname = usePathname();
@@ -104,31 +105,65 @@ export default function NoahAIPanel() {
 
   // ── Intent detection helpers ──────────────────────────────────────────────
 
-  /** Returns the topic string if the message is asking to add a note/write content */
+  /** Note intent: "OOO 노트에 기록/추가/작성해줘" */
   const detectNoteIntent = (msg: string): string | null => {
     const patterns = [
-      /(?:노트에?|note에?)\s+(.+?)(?:를?|을?)?\s*(?:추가|저장|작성|써|적어)(?:줘|줄래|해줘|해)?/i,
-      /(.+?)\s*(?:레시피|정보|내용|방법|가이드|설명)\s*(?:를?|을?)?\s*노트에?\s*(?:추가|저장|작성)/i,
-      /(.+?)\s*(?:에\s*대한?|관련\s*)?노트\s*(?:작성|추가)/i,
+      /(.+?)\s*(?:를?|을?)?\s*노트에?\s*(?:기록|추가|저장|작성|써|적어)(?:줘|줄래|해줘|해|주세요)?/i,
+      /노트에?\s+(.+?)(?:를?|을?)?\s*(?:기록|추가|저장|작성|써|적어)(?:줘|줄래|해줘|해|주세요)?/i,
+      /(.+?)\s*(?:정보|레시피|내용|방법|가이드|설명)\s*(?:를?|을?)?\s*노트에/i,
+      /(.+?)\s*노트\s*(?:작성|추가|기록)/i,
     ];
     for (const p of patterns) {
       const m = msg.match(p);
-      if (m?.[1]) return m[1].trim();
+      if (m?.[1]?.trim()) return m[1].trim();
     }
-    // Fallback: contains "노트에" anywhere
-    if (/노트에/.test(msg)) return msg.replace(/노트에?\s*(추가|저장|작성)?해?줘?/g, '').trim() || msg;
     return null;
   };
 
-  /** Returns the task title if the message is asking to add a task */
+  /** Task intent: "OOO 할일로 추가해줘" or "할일에 OOO 추가해줘" */
   const detectTaskIntent = (msg: string): string | null => {
+    // Must NOT be a subtask request
+    if (/하위\s*할일|서브태스크|subtask/i.test(msg)) return null;
     const patterns = [
-      /(?:할일에?|오늘의?\s*할일에?|태스크에?|task에?)\s+(.+?)(?:를?|을?)?\s*(?:추가|등록|넣어)(?:줘|줄래|해줘|해)?/i,
-      /(.+?)(?:를?|을?)?\s*(?:할일에?|오늘의?\s*할일에?|태스크에?)\s*(?:추가|등록)/i,
+      /(.+?)(?:를?|을?)?\s*할일(?:로|에)?\s*추가(?:해줘|해|줘|주세요)/i,
+      /(?:할일에?|오늘의?\s*할일에?|태스크에?)\s+(.+?)(?:를?|을?)?\s*추가(?:해줘|해|줘|주세요)/i,
+      /(.+?)(?:를?|을?)?\s*(?:오늘의?\s*)?할일에\s*(?:추가|등록)(?:해줘|해|줘|주세요)?/i,
+      /(.+?)\s*(?:task|태스크)로?\s*추가(?:해줘|해|줘|주세요)/i,
     ];
     for (const p of patterns) {
       const m = msg.match(p);
-      if (m?.[1]) return m[1].trim();
+      const title = m?.[1]?.trim();
+      if (title && title.length > 0 && title.length < 100) return title;
+    }
+    return null;
+  };
+
+  /** Mindmap intent: "OOO 마인드맵 만들어줘" */
+  const detectMindmapIntent = (msg: string): string | null => {
+    const patterns = [
+      /(.+?)\s*(?:에?\s*)?마인드맵\s*(?:만들어줘|생성해줘|그려줘|만들어주세요|생성해주세요|만들어|생성해)/i,
+      /마인드맵\s+(.+?)(?:를?|을?)?\s*(?:만들어줘|생성해줘|그려줘|만들어|생성해)/i,
+      /(.+?)\s*mind\s*map\s*(?:만들어줘|생성해줘|그려줘|만들어|생성해)/i,
+    ];
+    for (const p of patterns) {
+      const m = msg.match(p);
+      if (m?.[1]?.trim()) return m[1].trim();
+    }
+    return null;
+  };
+
+  /** Subtask intent: "OOO 할일에 하위 할일 AAA를 추가해줘" */
+  const detectSubtaskIntent = (msg: string): { parentTitle: string; subtaskTitle: string } | null => {
+    const patterns = [
+      /(.+?)\s*(?:할일|task)에?\s+(?:하위\s*할일|서브태스크|subtask)\s+(.+?)(?:를?|을?)?\s*추가(?:해줘|해|줘|주세요)?/i,
+      /(.+?)\s*에?\s+하위\s*할일\s+(.+?)(?:를?|을?)?\s*추가(?:해줘|해|줘|주세요)?/i,
+      /(.+?)\s*에?\s+(.+?)\s*(?:를?|을?)?\s*하위\s*할일로?\s*추가(?:해줘|해|줘|주세요)?/i,
+    ];
+    for (const p of patterns) {
+      const m = msg.match(p);
+      if (m?.[1]?.trim() && m?.[2]?.trim()) {
+        return { parentTitle: m[1].trim(), subtaskTitle: m[2].trim() };
+      }
     }
     return null;
   };
@@ -139,6 +174,30 @@ export default function NoahAIPanel() {
     if (!msg || isLoading || !user) return;
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
+
+    // ── Subtask intent: add subTask to matching task ──
+    const subtaskIntent = detectSubtaskIntent(msg);
+    if (subtaskIntent) {
+      insertMessage({ role: 'user', content: msg });
+      const allTasks = dataStore.tasks || [];
+      const parent = allTasks.find((t) =>
+        t.title.toLowerCase().includes(subtaskIntent.parentTitle.toLowerCase()) ||
+        subtaskIntent.parentTitle.toLowerCase().includes(t.title.toLowerCase())
+      );
+      if (!parent?.id) {
+        insertMessage({ role: 'assistant', content: `"${subtaskIntent.parentTitle}" 할일을 찾지 못했어요. 할일 이름을 정확히 입력해 주세요.` });
+        return;
+      }
+      try {
+        const existing = (parent as any).subTasks || [];
+        const newSub = { id: `sub-${Date.now()}`, title: subtaskIntent.subtaskTitle, completed: false };
+        await updateTask(user.uid, parent.id, { subTasks: [...existing, newSub] });
+        insertMessage({ role: 'assistant', content: `✅ "${parent.title}" 할일에 하위 항목 "${subtaskIntent.subtaskTitle}"을 추가했어요!` });
+      } catch {
+        insertMessage({ role: 'assistant', content: '하위 할일 추가에 실패했어요. 다시 시도해 주세요.' });
+      }
+      return;
+    }
 
     // ── Task intent: add directly to Firestore ──
     const taskTitle = detectTaskIntent(msg);
@@ -158,18 +217,30 @@ export default function NoahAIPanel() {
           order: Date.now(),
           createdDate,
         });
-        insertMessage({ role: 'assistant', content: `✅ "${taskTitle}" 할일을 추가했어요!` });
-        router.push('/my-day');
+        insertMessage({ role: 'assistant', content: `✅ "${taskTitle}" 할일을 오늘의 할일에 추가했어요!` });
       } catch {
         insertMessage({ role: 'assistant', content: '할일 추가에 실패했어요. 다시 시도해 주세요.' });
       }
       return;
     }
 
-    // ── Note intent: route to auto_write_note so AI writes content + apply button appears ──
+    // ── Note intent: show confirm message first (no AI call = no token waste) ──
     const noteTopic = detectNoteIntent(msg);
     if (noteTopic) {
-      await sendAction('auto_write_note', { title: noteTopic, topic: noteTopic }, msg);
+      insertMessage({ role: 'user', content: msg });
+      insertMessage({
+        role: 'assistant',
+        content: `"${noteTopic}"를 노트에 기록해드릴까요?\n적용하기를 누르면 노트 페이지로 이동해 AI가 직접 작성해드립니다.`,
+        action: 'confirm_write_note',
+        structuredData: { topic: noteTopic },
+      });
+      return;
+    }
+
+    // ── Mindmap intent: generate mindmap from topic ──
+    const mindmapTopic = detectMindmapIntent(msg);
+    if (mindmapTopic) {
+      await sendAction('generate_mindmap', { text: mindmapTopic, topic: mindmapTopic }, msg);
       return;
     }
 
@@ -200,6 +271,23 @@ export default function NoahAIPanel() {
     setApplying(msgId || null);
 
     try {
+      // Confirm write note: navigate to notes, call AI, then stream animation
+      if (action === 'confirm_write_note' && data.topic) {
+        router.push('/notes');
+        await new Promise(r => setTimeout(r, 600));
+        try {
+          const response = await callNoahAI('auto_write_note', { title: data.topic, topic: data.topic }, language);
+          if (response.result?.blocks && response.result.blocks.length > 0) {
+            window.dispatchEvent(new CustomEvent('noah-ai-stream-note', {
+              detail: { title: data.topic, blocks: response.result.blocks }
+            }));
+          }
+        } catch (err) {
+          console.error('Failed to generate note content:', err);
+        }
+        return;
+      }
+
       // Note actions: create a new note with AI blocks
       if ((action === 'auto_write_note' || action === 'complete_note' || action === 'youtube_to_note') && data.blocks) {
         const blocks = data.blocks.map((b: any, i: number) => ({

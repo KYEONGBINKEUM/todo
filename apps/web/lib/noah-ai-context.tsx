@@ -22,7 +22,8 @@ export type NoahAIAction =
   | 'complete_note'
   | 'youtube_to_note'
   | 'youtube_to_mindmap'
-  | 'generate_mindmap';
+  | 'generate_mindmap'
+  | 'confirm_write_note';
 
 export interface AIMessage {
   id: string;

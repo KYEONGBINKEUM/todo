@@ -144,6 +144,7 @@ function NotesContent() {
   const [dragBlockOverIdx, setDragBlockOverIdx] = useState<number | null>(null);
   const dragSrcRef = useRef<number | null>(null);
   const dragDstRef = useRef<number | null>(null);
+  const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Slash command menu state
   const [slashMenuVisible, setSlashMenuVisible] = useState(false);
@@ -309,6 +310,90 @@ function NotesContent() {
     window.addEventListener('noah-ai-apply-note', handleAIApplyNote);
     return () => window.removeEventListener('noah-ai-apply-note', handleAIApplyNote);
   }, [user, activeNoteId, notes, saveNoteToFirestore]);
+
+  // ========== Noah AI: stream note with typing animation ==========
+  useEffect(() => {
+    const handleStreamNote = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !user) return;
+
+      const targetBlocks: NoteBlock[] = (detail.blocks || []).map((b: any, i: number) => ({
+        id: `${Date.now()}-ai-${i}-${Math.random().toString(36).slice(2, 5)}`,
+        type: b.type || 'text',
+        content: b.content || '',
+      }));
+      if (targetBlocks.length === 0) return;
+
+      // Clear any in-progress stream
+      if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+
+      const tempId = `ai-stream-${Date.now()}`;
+      const newNote: Note = {
+        id: tempId,
+        title: detail.title || 'AI 노트',
+        icon: '🤖',
+        blocks: [{ ...targetBlocks[0], content: '' }],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        pinned: false, starred: false, tags: [],
+        folderId: null, linkedTaskId: null, linkedTaskIds: [],
+      };
+
+      setNotes(prev => [newNote, ...prev]);
+      setActiveNoteId(tempId);
+
+      const CHARS_PER_TICK = 20;
+      const TICK_MS = 30;
+      let blockIdx = 0;
+      let charIdx = 0;
+
+      streamIntervalRef.current = setInterval(() => {
+        const block = targetBlocks[blockIdx];
+        if (!block) {
+          clearInterval(streamIntervalRef.current!);
+          streamIntervalRef.current = null;
+          // Final: ensure full content is visible then save
+          setNotes(prev => prev.map(n => n.id === tempId ? { ...n, blocks: targetBlocks } : n));
+          addNoteDB(user.uid, {
+            title: newNote.title, icon: newNote.icon, blocks: targetBlocks,
+            pinned: false, tags: [], folderId: null, linkedTaskId: null, linkedTaskIds: [],
+          }).then(realId => {
+            setNotes(prev => prev.map(n => n.id === tempId ? { ...n, id: realId } : n));
+            setActiveNoteId(realId);
+          }).catch(console.error);
+          return;
+        }
+
+        charIdx = Math.min(charIdx + CHARS_PER_TICK, block.content.length);
+        const displayedContent = block.content.slice(0, charIdx);
+        const isBlockDone = charIdx >= block.content.length;
+
+        setNotes(prev => prev.map(n => {
+          if (n.id !== tempId) return n;
+          const shownBlocks: NoteBlock[] = [];
+          for (let i = 0; i <= blockIdx; i++) {
+            if (i < blockIdx) {
+              shownBlocks.push(targetBlocks[i]);
+            } else {
+              shownBlocks.push({ ...targetBlocks[i], content: displayedContent });
+            }
+          }
+          return { ...n, blocks: shownBlocks };
+        }));
+
+        if (isBlockDone) {
+          blockIdx++;
+          charIdx = 0;
+        }
+      }, TICK_MS);
+    };
+
+    window.addEventListener('noah-ai-stream-note', handleStreamNote);
+    return () => {
+      window.removeEventListener('noah-ai-stream-note', handleStreamNote);
+      if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+    };
+  }, [user]);
 
   // ========== Undo / Redo ==========
 

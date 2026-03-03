@@ -134,7 +134,7 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
   // Derive page from pathname
   const currentPage = pathname || '/my-day';
   const suggestions = getSuggestionsForPage(currentPage, t);
-  const canUseAI = plan !== 'free' || isAdmin;
+  const canUseAI = plan !== 'free';
 
   // Load user settings
   useEffect(() => {

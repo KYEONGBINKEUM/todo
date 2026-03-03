@@ -25,11 +25,9 @@ export default function NoahAIButton() {
       <button
         onClick={handleClick}
         className={`fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full
-          bg-gradient-to-r from-[#e94560] to-[#8b5cf6]
-          shadow-lg shadow-[#e94560]/25
+          ${!canUseAI || isPanelOpen ? 'bg-gradient-to-r from-[#e94560] to-[#8b5cf6] shadow-lg shadow-[#e94560]/25 hover:shadow-xl hover:shadow-[#e94560]/30' : 'shadow-lg shadow-black/20 hover:shadow-xl hover:shadow-black/30'}
           flex items-center justify-center
-          hover:shadow-xl hover:shadow-[#e94560]/30 hover:scale-105
-          active:scale-95 transition-all duration-200
+          hover:scale-105 active:scale-95 transition-all duration-200
           ${isLoading ? 'animate-pulse' : ''}
           ${isPanelOpen ? 'opacity-0 pointer-events-none md:opacity-100 md:pointer-events-auto' : ''}`}
         title={t('ai.name')}
@@ -46,11 +44,8 @@ export default function NoahAIButton() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         ) : (
-          // Noah AI icon
-          <div className="relative">
-            <img src="/symbol.svg" alt="NOAH" className="w-8 h-8 rounded-lg" />
-            <div className="absolute -inset-1 rounded-full bg-white/10 animate-ping opacity-30" />
-          </div>
+          // Noah AI icon — SVG only, no background
+          <img src="/symbol.svg" alt="NOAH" className="w-12 h-12 rounded-full" />
         )}
       </button>
 

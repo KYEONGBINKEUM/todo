@@ -20,7 +20,7 @@ interface SettingsModalProps {
 type Tab = 'account' | 'display' | 'language' | 'info';
 
 function applyFontSize(size: number) {
-  document.documentElement.style.setProperty('--font-size-base', `${size}px`);
+  document.documentElement.style.fontSize = `${size}px`;
 }
 
 const LANGUAGES: { code: Language; name: string; flag: string }[] = [
@@ -535,7 +535,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   )}
 
                   <div className="mt-4 p-3 bg-background rounded-xl border border-border text-[11px] text-text-muted text-center">
-                    © 2026 NOAH · 개인 프로젝트
+                    © 2026 NOAH
                   </div>
                 </div>
               )}

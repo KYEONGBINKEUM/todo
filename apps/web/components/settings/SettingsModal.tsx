@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import { FONT_SIZE_KEY } from '@/app/providers';
 import { useI18n } from '@/lib/i18n-context';
 import { updateUserSettings, getUserSettings, getStorageLimit, type Plan, type Language } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
@@ -44,7 +45,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { t, language, setLanguage } = useI18n();
   const { storageUsed } = useDataStore();
   const [activeTab, setActiveTab] = useState<Tab>('account');
-  const [fontSize, setFontSizeState] = useState<number>(14);
+  const [fontSize, setFontSizeState] = useState<number>(16);
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isTauri, setIsTauri] = useState(false);
@@ -130,14 +131,26 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
   useEffect(() => {
     if (!user) return;
+    // Apply localStorage font size first (instant, device-specific)
+    const localFs = localStorage.getItem(FONT_SIZE_KEY);
+    if (localFs) {
+      const fs = Number(localFs);
+      if (fs >= 10 && fs <= 24) { setFontSizeState(fs); applyFontSize(fs); }
+    }
     getUserSettings(user.uid).then((s) => {
-      const rawFs = s.fontSize ?? 14;
+      const rawFs = s.fontSize ?? 16;
       // Migrate legacy string values
       const fs = typeof rawFs === 'string'
-        ? (rawFs === 'small' ? 12 : rawFs === 'large' ? 16 : 14)
+        ? (rawFs === 'small' ? 12 : rawFs === 'large' ? 16 : 16)
         : (rawFs as number);
-      setFontSizeState(fs);
-      applyFontSize(fs);
+      // Only apply Firestore value if no localStorage value (first time on this device)
+      if (!localFs) {
+        setFontSizeState(fs);
+        applyFontSize(fs);
+        localStorage.setItem(FONT_SIZE_KEY, String(fs));
+      } else {
+        setFontSizeState(Number(localFs));
+      }
       setUserPlan(s.plan || 'free');
       setIsAdmin(s.isAdmin || false);
     });
@@ -156,6 +169,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     const clamped = Math.max(10, Math.min(24, size));
     setFontSizeState(clamped);
     applyFontSize(clamped);
+    localStorage.setItem(FONT_SIZE_KEY, String(clamped));
     if (user) updateUserSettings(user.uid, { fontSize: clamped });
   };
 

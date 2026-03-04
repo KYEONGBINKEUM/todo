@@ -23,7 +23,8 @@ export type NoahAIAction =
   | 'youtube_to_note'
   | 'youtube_to_mindmap'
   | 'generate_mindmap'
-  | 'confirm_write_note';
+  | 'confirm_write_note'
+  | 'youtube_choice';
 
 export interface AIMessage {
   id: string;
@@ -302,19 +303,29 @@ export function NoahAIProvider({ children, t, language }: NoahAIProviderProps) {
     async (message: string) => {
       if (!user || isLoading || !message.trim()) return;
 
-      // Check for YouTube URL
+      // Check for YouTube URL → show choice buttons (no AI call yet)
       const youtubeUrl = detectYouTubeURL(message);
       if (youtubeUrl) {
-        // Determine action based on current page
-        const action: NoahAIAction = currentPage === '/mindmap' ? 'youtube_to_mindmap' : 'youtube_to_note';
-        await sendAction(action, { url: youtubeUrl }, message);
+        addMessage({ role: 'user', content: message });
+        addMessage({
+          role: 'assistant',
+          content: 'YouTube 링크를 어떻게 변환할까요?',
+          action: 'youtube_choice',
+          structuredData: { url: youtubeUrl },
+        });
         return;
       }
 
+      // Include recent chat history for conversation memory
+      const chatHistory = messages
+        .slice(-10)
+        .filter((m) => !m.isLoading && m.content)
+        .map((m) => ({ role: m.role, content: m.content }));
+
       // Default: general chat conversation
-      await sendAction('chat', { userInput: message, currentPage }, message);
+      await sendAction('chat', { userInput: message, currentPage, chatHistory }, message);
     },
-    [user, isLoading, currentPage, sendAction]
+    [user, isLoading, currentPage, sendAction, addMessage, messages]
   );
 
   const clearMessages = useCallback(() => { setMessages([]); setDynamicSuggestions(null); }, []);

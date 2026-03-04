@@ -7,7 +7,7 @@ import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
 import { usePathname, useRouter } from 'next/navigation';
 import { addNote as addNoteDB, addMindmap as addMindmapDB, addTask as addTaskDB, updateTask } from '@/lib/firestore';
-import { callNoahAI } from '@/lib/noah-ai';
+import { callNoahAI, detectYouTubeURL } from '@/lib/noah-ai';
 import NoahAISuggestionChip from './NoahAISuggestionChip';
 import NoahAIUsageBar from './NoahAIUsageBar';
 import type { AISuggestionChip as ChipType, NoahAIAction } from '@/lib/noah-ai-context';
@@ -244,6 +244,19 @@ export default function NoahAIPanel() {
       return;
     }
 
+    // ── YouTube URL: show choice buttons ──
+    const youtubeUrl = detectYouTubeURL(msg);
+    if (youtubeUrl) {
+      insertMessage({ role: 'user', content: msg });
+      insertMessage({
+        role: 'assistant',
+        content: 'YouTube 링크를 어떻게 변환할까요?',
+        action: 'youtube_choice',
+        structuredData: { url: youtubeUrl },
+      });
+      return;
+    }
+
     // ── Default: general chat ──
     sendMessage(msg);
   };
@@ -265,6 +278,36 @@ export default function NoahAIPanel() {
   };
 
   const [applying, setApplying] = useState<string | null>(null);
+  const [youtubeLoading, setYoutubeLoading] = useState<string | null>(null);
+
+  const handleYoutubeChoice = async (url: string, action: 'youtube_to_note' | 'youtube_to_mindmap', msgId: string) => {
+    if (!user) return;
+    const loadingKey = `${msgId}-${action === 'youtube_to_note' ? 'note' : 'mindmap'}`;
+    setYoutubeLoading(loadingKey);
+    try {
+      if (action === 'youtube_to_note') {
+        router.push('/notes');
+        await new Promise(r => setTimeout(r, 600));
+        const response = await callNoahAI('youtube_to_note', { url }, language);
+        if (response.result?.blocks?.length > 0) {
+          window.dispatchEvent(new CustomEvent('noah-ai-stream-note', {
+            detail: { title: response.result.title || 'YouTube 노트', blocks: response.result.blocks }
+          }));
+        }
+      } else {
+        router.push('/mindmap');
+        await new Promise(r => setTimeout(r, 600));
+        const response = await callNoahAI('youtube_to_mindmap', { url }, language);
+        if (response.result?.nodes?.length > 0) {
+          window.dispatchEvent(new CustomEvent('noah-ai-apply-mindmap', { detail: response.result }));
+        }
+      }
+    } catch (err) {
+      console.error('YouTube choice failed:', err);
+    } finally {
+      setYoutubeLoading(null);
+    }
+  };
 
   const handleApplyResult = async (data: any, action?: NoahAIAction, msgId?: string) => {
     if (!data || !user) return;
@@ -482,8 +525,31 @@ export default function NoahAIPanel() {
                 ) : (
                   <>
                     <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                    {/* YouTube choice buttons */}
+                    {msg.role === 'assistant' && msg.action === 'youtube_choice' && msg.structuredData?.url && (
+                      <div className="mt-2 flex gap-1.5">
+                        <button
+                          onClick={() => handleYoutubeChoice(msg.structuredData.url, 'youtube_to_note', msg.id)}
+                          disabled={youtubeLoading !== null}
+                          className="flex-1 py-1.5 px-2 rounded-lg text-xs font-medium
+                            bg-[#e94560]/10 text-[#e94560] hover:bg-[#e94560]/20
+                            border border-[#e94560]/20 disabled:opacity-50 transition-colors"
+                        >
+                          {youtubeLoading === `${msg.id}-note` ? '생성 중...' : '📝 노트로 생성'}
+                        </button>
+                        <button
+                          onClick={() => handleYoutubeChoice(msg.structuredData.url, 'youtube_to_mindmap', msg.id)}
+                          disabled={youtubeLoading !== null}
+                          className="flex-1 py-1.5 px-2 rounded-lg text-xs font-medium
+                            bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20
+                            border border-[#8b5cf6]/20 disabled:opacity-50 transition-colors"
+                        >
+                          {youtubeLoading === `${msg.id}-mindmap` ? '생성 중...' : '🧠 마인드맵으로'}
+                        </button>
+                      </div>
+                    )}
                     {/* Apply button for structured data */}
-                    {msg.role === 'assistant' && msg.structuredData && !msg.isLoading && msg.action !== 'chat' && (
+                    {msg.role === 'assistant' && msg.structuredData && !msg.isLoading && msg.action !== 'chat' && msg.action !== 'youtube_choice' && (
                       <button
                         onClick={() => handleApplyResult(msg.structuredData, msg.action, msg.id)}
                         disabled={applying === msg.id}

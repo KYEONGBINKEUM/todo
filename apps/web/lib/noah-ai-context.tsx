@@ -405,7 +405,7 @@ function formatResult(action: NoahAIAction, result: any, t: (key: string) => str
     }
     case 'youtube_to_mindmap':
     case 'generate_mindmap': {
-      const nodes = result.nodes || [];
+      const nodes = result.nodes || result.mindmap?.nodes || result.data?.nodes || [];
       return `🧠 ${t('ai.mindmapGenerated')} (${nodes.length} ${t('ai.nodes')})`;
     }
     default:

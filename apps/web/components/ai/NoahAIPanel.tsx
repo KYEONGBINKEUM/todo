@@ -289,21 +289,34 @@ export default function NoahAIPanel() {
         router.push('/notes');
         await new Promise(r => setTimeout(r, 600));
         const response = await callNoahAI('youtube_to_note', { url }, language);
-        if (response.result?.blocks?.length > 0) {
-          window.dispatchEvent(new CustomEvent('noah-ai-stream-note', {
-            detail: { title: response.result.title || 'YouTube 노트', blocks: response.result.blocks }
-          }));
+        const blocks = response.result?.blocks || response.result?.content?.blocks || [];
+        if (blocks.length > 0) {
+          const title = response.result?.title || response.result?.content?.title || 'YouTube 노트';
+          window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title, blocks } }));
+          insertMessage({ role: 'assistant', content: `✅ "${title}" 노트가 생성됐어요!` });
+        } else {
+          insertMessage({ role: 'assistant', content: '노트 생성에 실패했어요. 다시 시도해 주세요.' });
         }
       } else {
         router.push('/mindmap');
         await new Promise(r => setTimeout(r, 600));
         const response = await callNoahAI('youtube_to_mindmap', { url }, language);
-        if (response.result?.nodes?.length > 0) {
-          window.dispatchEvent(new CustomEvent('noah-ai-apply-mindmap', { detail: response.result }));
+        // Try multiple possible response structures from the cloud function
+        const result = response.result;
+        const nodes = result?.nodes || result?.mindmap?.nodes || result?.data?.nodes || [];
+        const edges = result?.edges || result?.mindmap?.edges || result?.data?.edges || [];
+        const title = result?.title || result?.mindmap?.title || 'YouTube 마인드맵';
+        if (nodes.length > 0) {
+          window.dispatchEvent(new CustomEvent('noah-ai-apply-mindmap', { detail: { ...result, nodes, edges, title } }));
+          insertMessage({ role: 'assistant', content: `✅ "${title}" 마인드맵이 생성됐어요! (${nodes.length}개 노드)` });
+        } else {
+          // Fallback: try passing raw result (cloud function might structure differently)
+          insertMessage({ role: 'assistant', content: `마인드맵 생성에 실패했어요. (결과: ${JSON.stringify(result)?.slice(0, 100)})` });
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('YouTube choice failed:', err);
+      insertMessage({ role: 'assistant', content: `오류가 발생했어요: ${err?.message || err?.code || '다시 시도해 주세요.'}` });
     } finally {
       setYoutubeLoading(null);
     }
@@ -351,21 +364,24 @@ export default function NoahAIPanel() {
         router.push('/notes');
       }
 
-      // Mindmap actions: create a new mindmap
-      if ((action === 'generate_mindmap' || action === 'youtube_to_mindmap') && data.nodes) {
-        const nodes = data.nodes.map((n: any) => ({
+      // Mindmap actions: create a new mindmap (try multiple response structures)
+      if (action === 'generate_mindmap' || action === 'youtube_to_mindmap') {
+        const rawNodes = data.nodes || data.mindmap?.nodes || data.data?.nodes || [];
+        const rawEdges = data.edges || data.mindmap?.edges || data.data?.edges || [];
+        if (rawNodes.length === 0) return;
+        const nodes = rawNodes.map((n: any) => ({
           id: n.id || `ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           text: n.text || '',
           x: n.x ?? 400, y: n.y ?? 300,
           width: n.width || 180, height: n.height || 70,
           color: n.color || '#e94560',
         }));
-        const edges = (data.edges || []).map((e: any) => ({
+        const edges = rawEdges.map((e: any) => ({
           id: e.id || `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           from: e.from, to: e.to, style: e.style || 'curved',
         }));
         await addMindmapDB(user.uid, {
-          title: data.title || 'AI 마인드맵',
+          title: data.title || data.mindmap?.title || 'AI 마인드맵',
           nodes, edges,
           viewportX: 0, viewportY: 0, zoom: 1,
         });

@@ -87,7 +87,8 @@ function getTaskCreatedDate(task: TaskData): string {
 
 export default function MyDayPage() {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const dateLocale = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[language] ?? 'en-US';
   const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
@@ -174,7 +175,7 @@ export default function MyDayPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeLists]);
 
-  const today = new Date().toLocaleDateString('ko-KR', {
+  const today = new Date().toLocaleDateString(dateLocale, {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
   });
 
@@ -640,7 +641,7 @@ export default function MyDayPage() {
           <div className="mb-4 px-4 py-2.5 bg-[#e94560]/10 border border-[#e94560]/20 rounded-xl flex items-center gap-2 text-xs text-[#e94560]">
             <span>📅</span>
             <span className="font-semibold">
-              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString(dateLocale, { month: 'long', day: 'numeric', weekday: 'short' })}
             </span>
           </div>
         )}

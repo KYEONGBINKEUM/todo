@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { TaskData, SubTask, TaskAttachment, NoteData, RecurrenceRule } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 import { useAuth } from '@/lib/auth-context';
+import { useI18n } from '@/lib/i18n-context';
 import { requestNotificationPermission } from '@/lib/use-reminders';
 import {
   uploadAttachment, openAttachmentByURL, deleteAttachmentFromStorage,
@@ -31,6 +32,8 @@ const MAX_FILE_SIZE = MAX_ATTACHMENT_SIZE; // 10 MB
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: TaskDetailPanelProps) {
   const { user } = useAuth();
   const router = useRouter();
+  const { language } = useI18n();
+  const dateLocale = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[language] ?? 'en-US';
 
   // ── Title ──────────────────────────────────────────────────────────────────
   const [titleValue, setTitleValue] = useState(task.title);
@@ -287,7 +290,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   };
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    new Date(iso).toLocaleDateString(dateLocale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   const completedSubCount = subTasks.filter((s) => s.completed).length;
 

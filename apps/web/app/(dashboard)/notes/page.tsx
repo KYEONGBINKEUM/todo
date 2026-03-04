@@ -92,7 +92,8 @@ const SLASH_COMMANDS = [
 
 function NotesContent() {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const dateLocale = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[language] ?? 'en-US';
   const searchParams = useSearchParams();
   const { notes: storeNotes, folders: storeFolders, loading: storeLoading } = useDataStore();
   const initializedRef = useRef(false);
@@ -1060,7 +1061,7 @@ function NotesContent() {
     if (diffMins < 60) return `${diffMins}분 전`;
     if (diffHours < 24) return `${diffHours}시간 전`;
     if (diffDays < 7) return `${diffDays}일 전`;
-    return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' });
   };
 
   // 자동 높이 조절 textarea 헬퍼

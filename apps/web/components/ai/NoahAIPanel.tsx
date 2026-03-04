@@ -105,13 +105,20 @@ export default function NoahAIPanel() {
 
   // ── Intent detection helpers ──────────────────────────────────────────────
 
-  /** Note intent: "OOO 노트에 기록/추가/작성해줘" */
+  /** Note intent: "OOO 노트에/노트로 기록/추가/작성해줘", "add X to notes", etc. */
   const detectNoteIntent = (msg: string): string | null => {
     const patterns = [
-      /(.+?)\s*(?:를?|을?)?\s*노트에?\s*(?:기록|추가|저장|작성|써|적어)(?:줘|줄래|해줘|해|주세요)?/i,
-      /노트에?\s+(.+?)(?:를?|을?)?\s*(?:기록|추가|저장|작성|써|적어)(?:줘|줄래|해줘|해|주세요)?/i,
-      /(.+?)\s*(?:정보|레시피|내용|방법|가이드|설명)\s*(?:를?|을?)?\s*노트에/i,
+      // Korean: 노트에/노트로/노트 + 동작
+      /(.+?)\s*(?:를?|을?)?\s*노트[에로]?\s*(?:기록|추가|저장|작성|써|적어)(?:줘|줄래|해줘|해|주세요)?/i,
+      /노트[에로]?\s+(.+?)(?:를?|을?)?\s*(?:기록|추가|저장|작성|써|적어)(?:줘|줄래|해줘|해|주세요)?/i,
+      /(.+?)\s*(?:정보|레시피|내용|방법|가이드|설명)\s*(?:를?|을?)?\s*노트[에로]?/i,
       /(.+?)\s*노트\s*(?:작성|추가|기록)/i,
+      // English: add/write/save X to note(s)
+      /(?:add|write|save|create|record|put)\s+(.+?)\s+(?:to\s+|in\s+|into\s+)?notes?/i,
+      /notes?\s+(?:add|write|save|create|record)\s+(.+)/i,
+      /(.+?)\s+notes?\s+(?:add|write|please)/i,
+      /please\s+(?:add|write|create|save)\s+(.+?)\s+(?:to\s+|in\s+)?notes?/i,
+      /(.+?)\s+(?:note\s+add|add\s+note|note\s+please)/i,
     ];
     for (const p of patterns) {
       const m = msg.match(p);
@@ -174,6 +181,33 @@ export default function NoahAIPanel() {
     if (!msg || isLoading || !user) return;
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
+
+    // ── Affirmative response: auto-confirm previous pending action ──
+    const isAffirmative = /^(네|예|응+|ㅇ+|yes|yeah|yep|ok|okay|좋아|알겠어|그래|해줘|ㄱㄱ)[\s!.?]*$/i.test(msg);
+    if (isAffirmative) {
+      const lastActionMsg = [...messages].reverse().find(
+        (m) => m.role === 'assistant' && m.action && !m.isLoading
+      );
+      if (lastActionMsg?.action === 'confirm_write_note' && lastActionMsg.structuredData?.topic) {
+        const topic = lastActionMsg.structuredData.topic;
+        insertMessage({ role: 'user', content: msg });
+        insertMessage({ role: 'assistant', content: `"${topic}" 노트를 작성할게요!` });
+        router.push('/notes');
+        await new Promise(r => setTimeout(r, 600));
+        try {
+          const response = await callNoahAI('auto_write_note', { title: topic, topic }, language);
+          if (response.result?.blocks && response.result.blocks.length > 0) {
+            window.dispatchEvent(new CustomEvent('noah-ai-stream-note', {
+              detail: { title: topic, blocks: response.result.blocks }
+            }));
+          }
+        } catch {
+          insertMessage({ role: 'assistant', content: '노트 작성에 실패했어요.' });
+        }
+        return;
+      }
+      // For other pending actions, fall through to sendMessage so AI can use chat history
+    }
 
     // ── Subtask intent: add subTask to matching task ──
     const subtaskIntent = detectSubtaskIntent(msg);

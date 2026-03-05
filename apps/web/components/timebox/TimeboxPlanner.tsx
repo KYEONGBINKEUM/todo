@@ -29,6 +29,23 @@ function getInitialInterval(): number {
   return INTERVALS.includes(v as any) ? v : 30;
 }
 
+async function requestNotificationPermission(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  try {
+    const mod = await import('@tauri-apps/plugin-notification');
+    if (await mod.isPermissionGranted()) return true;
+    const perm = await mod.requestPermission();
+    return perm === 'granted';
+  } catch {}
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission !== 'denied') {
+    const result = await Notification.requestPermission();
+    return result === 'granted';
+  }
+  return false;
+}
+
 async function fireNotification(title: string, body: string) {
   try {
     const mod = await import('@tauri-apps/plugin-notification');
@@ -37,8 +54,15 @@ async function fireNotification(title: string, body: string) {
       return;
     }
   } catch {}
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-    new Notification(title, { body });
+  if (typeof window !== 'undefined' && 'Notification' in window) {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body });
+      return;
+    }
+  }
+  // In-app fallback
+  if (typeof window !== 'undefined') {
+    alert(`${title}\n${body}`);
   }
 }
 
@@ -70,6 +94,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   const [taskDone, setTaskDone] = useState<Record<string, boolean>>({});
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [showNoteMenu, setShowNoteMenu] = useState(false);
+  const [globalAlarm, setGlobalAlarm] = useState(false);
 
   // Refs
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -166,12 +191,24 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
     debounceSave(next, nextAlarms);
   };
 
-  const toggleAlarm = (e: React.MouseEvent, time: string) => {
+  const toggleAlarm = async (e: React.MouseEvent, time: string) => {
     e.stopPropagation();
     if (!slots[time]) return;
-    const next = { ...slotAlarms, [time]: !slotAlarms[time] };
+    const turning = !slotAlarms[time];
+    if (turning) await requestNotificationPermission();
+    const next = { ...slotAlarms, [time]: turning };
     setSlotAlarms(next);
     debounceSave(slots, next);
+  };
+
+  const toggleGlobalAlarm = async () => {
+    const next = !globalAlarm;
+    setGlobalAlarm(next);
+    if (next) await requestNotificationPermission();
+    const nextAlarms: Record<string, boolean> = {};
+    Object.keys(slots).forEach((time) => { nextAlarms[time] = next; });
+    setSlotAlarms(nextAlarms);
+    debounceSave(slots, nextAlarms);
   };
 
   const handleBrainDumpChange = (text: string) => {
@@ -327,7 +364,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
             </div>
           ) : (
             <button
-              onClick={() => setShowNoteMenu(v => !v)}
+              onClick={(e) => { e.stopPropagation(); setShowNoteMenu(v => !v); }}
               className="text-[10px] text-text-muted hover:text-text-primary flex items-center gap-1 transition-colors"
             >
               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -337,7 +374,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
             </button>
           )}
           {showNoteMenu && (
-            <div className="absolute right-0 top-6 z-50 bg-background-card border border-border rounded-xl shadow-xl overflow-hidden w-52">
+            <div className="absolute right-0 top-6 z-50 bg-background-card border border-border rounded-xl shadow-xl overflow-hidden w-52" onClick={(e) => e.stopPropagation()}>
               <div className="p-1">
                 <button
                   onClick={createNoteFromBrainDump}
@@ -378,9 +415,18 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
         {filledCount > 0 && (
           <span className="text-[10px] text-text-muted">{filledCount}개 배정</span>
         )}
-        {alarmCount > 0 && (
-          <span className="text-[10px] text-[#e94560]">🔔 {alarmCount}개 알람</span>
-        )}
+        {/* Global alarm toggle */}
+        <button
+          onClick={toggleGlobalAlarm}
+          title={globalAlarm ? '전체 알람 끄기' : '전체 알람 켜기'}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+            globalAlarm
+              ? 'bg-[#e94560]/15 text-[#e94560] border border-[#e94560]/30'
+              : 'bg-border/30 text-text-muted hover:bg-border hover:text-text-primary border border-transparent'
+          }`}
+        >
+          {globalAlarm ? '🔔' : '🔕'} 전체 알람
+        </button>
         {/* Interval selector */}
         <div className="ml-auto flex items-center gap-1">
           {INTERVALS.map(v => (

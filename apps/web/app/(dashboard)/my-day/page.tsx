@@ -13,7 +13,6 @@ import { useDataStore } from '@/lib/data-store';
 import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
-import TimeboxPlanner from '@/components/timebox/TimeboxPlanner';
 
 const DEFAULT_LISTS: ListData[] = [
   { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
@@ -93,14 +92,11 @@ export default function MyDayPage() {
   const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
-  const [activeView, setActiveView] = useState<'tasks' | 'timebox'>('tasks');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskList, setNewTaskList] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
   const [filterList, setFilterList] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
@@ -183,9 +179,7 @@ export default function MyDayPage() {
 
   const filteredTasks = tasks
     .filter((t) => !filterList || t.listId === filterList)
-    .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag))
-    .filter((t) => !filterDateFrom || getTaskCreatedDate(t) >= filterDateFrom)
-    .filter((t) => !filterDateTo || getTaskCreatedDate(t) <= filterDateTo);
+    .filter((t) => !filterTag || (t.tags ?? []).includes(filterTag));
 
   const activeTasks = filteredTasks.filter((t) => !completedOnDateIds.has(t.id!));
   const completedTasks = filteredTasks.filter((t) => completedOnDateIds.has(t.id!));
@@ -193,7 +187,7 @@ export default function MyDayPage() {
   const completedCount = completedTasks.length;
   const totalCount = filteredTasks.length;
   const allTags = [...new Set(tasks.flatMap((t) => t.tags ?? []))].filter(Boolean);
-  const canDrag = !filterList && !filterTag && !filterDateFrom && !filterDateTo;
+  const canDrag = !filterList && !filterTag;
 
   // Touch drag refs (모바일)
   const touchDragSrcRef = useRef<number | null>(null);
@@ -319,13 +313,14 @@ export default function MyDayPage() {
     setAdding(true);
     const title = newTaskTitle.trim();
     const tags = parseTags(title);
-    const maxOrder = tasks.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
+    const minOrder = tasks.reduce((m, t) => Math.min(m, t.order ?? Infinity), Infinity);
+    const newOrder = minOrder === Infinity ? 1000 : Math.max(0, minOrder - 1000);
     setNewTaskTitle('');
     try {
       await addTaskDB(user.uid, {
         title, status: 'todo', priority: newTaskPriority,
         starred: false, listId: newTaskList || lists[0]?.id || '',
-        myDay: true, tags, order: maxOrder + 1000,
+        myDay: true, tags, order: newOrder,
         createdDate: selectedDate,
       });
       // onSnapshot이 자동으로 리스트에 추가
@@ -648,47 +643,8 @@ export default function MyDayPage() {
           </div>
         )}
 
-        {/* View Tab Switcher */}
-        <div className="mb-5 flex gap-1 p-1 bg-background-card border border-border rounded-xl">
-          <button
-            onClick={() => setActiveView('tasks')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-              activeView === 'tasks'
-                ? 'bg-[#e94560] text-white shadow-sm'
-                : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/>
-              <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>
-            </svg>
-            할일 목록
-          </button>
-          <button
-            onClick={() => setActiveView('timebox')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-              activeView === 'timebox'
-                ? 'bg-[#e94560] text-white shadow-sm'
-                : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>
-            </svg>
-            타임박스
-          </button>
-        </div>
-
-        {/* ── TIMEBOX VIEW ── */}
-        {activeView === 'timebox' && (
-          <TimeboxPlanner
-            date={selectedDate}
-            tasks={tasks.filter(t => t.myDay)}
-          />
-        )}
-
         {/* ── TASKS VIEW ── */}
-        {activeView === 'tasks' && (<>
+        {(<>
 
         {/* Progress Bar */}
         <div className="mb-6 p-4 bg-background-card border border-border rounded-xl">
@@ -743,34 +699,6 @@ export default function MyDayPage() {
             ))}
           </div>
         )}
-
-        {/* 기간 필터 */}
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider">📅 등록일</span>
-          <input
-            type="date"
-            value={filterDateFrom}
-            onChange={(e) => setFilterDateFrom(e.target.value)}
-            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
-            title="시작일"
-          />
-          <span className="text-text-muted text-xs">~</span>
-          <input
-            type="date"
-            value={filterDateTo}
-            onChange={(e) => setFilterDateTo(e.target.value)}
-            className="h-7 px-2 bg-background-card border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
-            title="종료일"
-          />
-          {(filterDateFrom || filterDateTo) && (
-            <button
-              onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); }}
-              className="px-2 py-0.5 text-[10px] text-[#e94560] border border-[#e94560]/30 rounded-lg hover:bg-[#e94560]/10 transition-colors"
-            >
-              초기화
-            </button>
-          )}
-        </div>
 
         {/* Add Task Input */}
         <div className="mb-6 flex gap-2">

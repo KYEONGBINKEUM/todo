@@ -49,6 +49,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isTauri, setIsTauri] = useState(false);
+  const [autostart, setAutostart] = useState(false);
+  const [autostartLoading, setAutostartLoading] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [updateVersion, setUpdateVersion] = useState('');
   const [currentVersion, setCurrentVersion] = useState('');
@@ -61,6 +63,9 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     if (isTauriApp) {
       import('@tauri-apps/api/app').then(({ getVersion }) => {
         getVersion().then(setCurrentVersion).catch(() => {});
+      });
+      import('@tauri-apps/plugin-autostart').then(({ isEnabled }) => {
+        isEnabled().then(setAutostart).catch(() => {});
       });
     }
   }, []);
@@ -118,6 +123,24 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       setUpdateStatus('error');
     }
   }, []);
+
+  const handleAutostartToggle = useCallback(async () => {
+    setAutostartLoading(true);
+    try {
+      const { enable, disable } = await import('@tauri-apps/plugin-autostart');
+      if (autostart) {
+        await disable();
+        setAutostart(false);
+      } else {
+        await enable();
+        setAutostart(true);
+      }
+    } catch (err) {
+      console.error('Autostart toggle failed:', err);
+    } finally {
+      setAutostartLoading(false);
+    }
+  }, [autostart]);
 
   const restartApp = useCallback(async () => {
     try {
@@ -455,6 +478,25 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     <h3 className="text-lg font-extrabold text-text-primary mb-1">NOAH</h3>
                     <p className="text-xs text-text-muted">버전 {currentVersion || '1.0.0'}{isTauri ? ' (Desktop)' : ' (Web)'}</p>
                   </div>
+
+                  {/* 시작 프로그램 — Tauri 전용 */}
+                  {isTauri && (
+                    <div className="p-4 bg-background rounded-xl border border-border">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-text-primary">시작 프로그램</p>
+                          <p className="text-[11px] text-text-muted mt-0.5">컴퓨터 시작 시 자동으로 실행</p>
+                        </div>
+                        <button
+                          onClick={handleAutostartToggle}
+                          disabled={autostartLoading}
+                          className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${autostart ? 'bg-[#e94560]' : 'bg-border'} disabled:opacity-50`}
+                        >
+                          <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${autostart ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 업데이트 섹션 — Tauri 전용 */}
                   {isTauri && (

@@ -8,6 +8,9 @@
     "core:default",
     "shell:allow-open",
     "updater:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     "os:default",
     "notification:default"
   ]

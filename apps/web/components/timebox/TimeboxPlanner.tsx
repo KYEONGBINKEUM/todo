@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { useI18n } from '@/lib/i18n-context';
 import {
   getTimebox, saveTimebox, updateTask, addNote as addNoteDB,
+  getUserSettings,
   type TaskData,
 } from '@/lib/firestore';
 
@@ -14,7 +16,7 @@ const INTERVALS = [5, 10, 15, 30, 60] as const;
 
 function generateSlots(interval: number): string[] {
   const result: string[] = [];
-  for (let m = 4 * 60; m < 24 * 60; m += interval) {
+  for (let m = 0; m < 24 * 60; m += interval) {
     const h = Math.floor(m / 60);
     const min = m % 60;
     result.push(`${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
@@ -69,6 +71,7 @@ interface Toast { id: number; title: string; body: string; }
 // ── Component ────────────────────────────────────────────────────────────────
 export default function TimeboxPlanner({ date, tasks }: Props) {
   const { user } = useAuth();
+  const { t } = useI18n();
   const router = useRouter();
 
   // Settings
@@ -88,6 +91,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   const [globalAlarm, setGlobalAlarm] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dragSrcSlot, setDragSrcSlot] = useState<string | null>(null);
+  const [alarmDefault, setAlarmDefault] = useState(true);
 
   // Refs
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -129,6 +133,9 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
       setBrainDump(data.brainDump || '');
       setLoading(false);
     });
+    getUserSettings(user.uid).then((s) => {
+      setAlarmDefault(s.timeboxAlarmDefault ?? true);
+    });
   }, [user, date]);
 
   // ── Auto-scroll to current time ───────────────────────────────────────────
@@ -155,8 +162,8 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
       const delay = fireAt.getTime() - now.getTime();
       if (delay <= 0 || delay > 86_400_000) return;
       const timer = setTimeout(() => {
-        showToast('⏰ 타임박스 알람', `${time} — ${slots[time]}`);
-        trySystemNotification('NOAH 타임박스', `⏰ ${time} — ${slots[time]}`);
+        showToast(`⏰ ${t('timebox.alarm')}`, `${time} — ${slots[time]}`);
+        trySystemNotification(t('timebox.notification'), `⏰ ${time} — ${slots[time]}`);
       }, delay);
       alarmTimers.current.push(timer);
     });
@@ -184,7 +191,9 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   const handleSlotChange = (time: string, text: string) => {
     const next = { ...slots };
     if (text) next[time] = text; else delete next[time];
-    const nextAlarms = text ? slotAlarms : { ...slotAlarms, [time]: false };
+    const nextAlarms = text
+      ? { ...slotAlarms, [time]: slotAlarms[time] ?? alarmDefault }
+      : { ...slotAlarms, [time]: false };
     setSlots(next);
     setSlotAlarms(nextAlarms);
     debounceSave(next, nextAlarms);
@@ -284,11 +293,11 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
     if (!user || !brainDump.trim()) return;
     try {
       await addNoteDB(user.uid, {
-        title: `브레인덤프 — ${date}`,
+        title: `${t('timebox.brainDumpTitle')} — ${date}`,
         icon: '🧠',
         blocks: [{ id: `block-${Date.now()}`, type: 'text', content: brainDump }],
         pinned: false,
-        tags: ['타임박스'],
+        tags: [t('timebox.tag')],
         folderId: null,
         linkedTaskId: null,
         linkedTaskIds: [],
@@ -307,13 +316,13 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   const TodoSection = (
     <div className="bg-background-card rounded-2xl border border-border flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-        <span className="text-xs font-bold text-text-primary tracking-wide">할 일 목록</span>
+        <span className="text-xs font-bold text-text-primary tracking-wide">{t('timebox.todoList')}</span>
         {activeTasks.length > 0 && (
-          <span className="ml-auto text-[10px] text-text-muted bg-border/60 px-1.5 py-0.5 rounded-full">{activeTasks.length}개</span>
+          <span className="ml-auto text-[10px] text-text-muted bg-border/60 px-1.5 py-0.5 rounded-full">{activeTasks.length}{t('timebox.items')}</span>
         )}
       </div>
       {activeTasks.length === 0 ? (
-        <p className="px-4 py-6 text-xs text-text-muted text-center">오늘 완료된 할 일이 없어요 🎉</p>
+        <p className="px-4 py-6 text-xs text-text-muted text-center">{t('timebox.allDone')}</p>
       ) : (
         <div className="divide-y divide-border/30 overflow-y-auto" style={{ maxHeight: 260 }}>
           {activeTasks.map((task) => (
@@ -343,7 +352,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   const BrainDumpSection = (
     <div className="bg-background-card rounded-2xl border border-border flex flex-col flex-1 overflow-hidden min-h-0">
       <div className="px-4 py-3 border-b border-border flex items-center gap-2 flex-shrink-0">
-        <span className="text-xs font-bold text-text-primary tracking-wide">브레인 덤프</span>
+        <span className="text-xs font-bold text-text-primary tracking-wide">{t('timebox.brainDump')}</span>
         <button
           onClick={createNoteFromBrainDump}
           disabled={!brainDump.trim()}
@@ -353,13 +362,13 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
           </svg>
-          노트로 추가
+          {t('timebox.addToNote')}
         </button>
       </div>
       <textarea
         value={brainDump}
         onChange={(e) => handleBrainDumpChange(e.target.value)}
-        placeholder="아이디어, 메모, 생각을 자유롭게 적어보세요..."
+        placeholder={t('timebox.brainDumpPlaceholder')}
         className="flex-1 w-full px-4 py-3 bg-transparent text-xs text-text-primary placeholder:text-text-muted/40 resize-none outline-none leading-relaxed"
         style={{ minHeight: 100 }}
       />
@@ -370,22 +379,22 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
     <div className="bg-background-card rounded-2xl border border-border flex flex-col overflow-hidden flex-1">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center gap-2 flex-shrink-0 flex-wrap gap-y-1.5">
-        <span className="text-xs font-bold text-text-primary tracking-wide">타임 플랜</span>
+        <span className="text-xs font-bold text-text-primary tracking-wide">{t('timebox.title')}</span>
         {filledCount > 0 && (
-          <span className="text-[10px] text-text-muted bg-border/50 px-1.5 py-0.5 rounded-full">{filledCount}개</span>
+          <span className="text-[10px] text-text-muted bg-border/50 px-1.5 py-0.5 rounded-full">{filledCount}{t('timebox.items')}</span>
         )}
 
         {/* Global alarm toggle */}
         <button
           onClick={toggleGlobalAlarm}
-          title={globalAlarm ? '전체 알람 끄기' : '전체 알람 켜기'}
+          title={globalAlarm ? t('timebox.globalAlarmOff') : t('timebox.globalAlarmOn')}
           className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-all ${
             globalAlarm
               ? 'bg-[#e94560]/15 text-[#e94560] border border-[#e94560]/30'
               : 'border border-border text-text-muted hover:text-text-primary hover:bg-border/50'
           }`}
         >
-          {globalAlarm ? '🔔' : '🔕'} 전체 알람{alarmOnCount > 0 && ` (${alarmOnCount})`}
+          {globalAlarm ? '🔔' : '🔕'} {t('timebox.globalAlarm')}{alarmOnCount > 0 && ` (${alarmOnCount})`}
         </button>
 
         {/* Interval selector */}
@@ -400,7 +409,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
                   : 'text-text-muted hover:bg-border/60 hover:text-text-primary'
               }`}
             >
-              {v}분
+              {v}{t('timebox.min')}
             </button>
           ))}
         </div>
@@ -433,7 +442,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
                 <div
                   key={time}
                   className={`flex items-center gap-0 relative group transition-colors cursor-text select-none
-                    ${isHour ? 'border-t border-border/70' : ''}
+                    ${isHour ? 'border-t border-border/70' : 'border-t border-border/20'}
                     ${isDragOver ? 'bg-[#e94560]/10' : isCurrent ? 'bg-[#e94560]/5' : hasTask ? 'bg-border/5' : 'hover:bg-border/5'}
                     ${isDragSrc ? 'opacity-40' : ''}
                   `}
@@ -477,7 +486,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
                           }
                           if (e.key === 'Escape') setEditingSlot(null);
                         }}
-                        placeholder={isDragOver ? '여기에 놓기' : '할 일 입력...'}
+                        placeholder={isDragOver ? t('timebox.dropHere') : t('timebox.inputPlaceholder')}
                         className="w-full bg-transparent text-xs text-text-primary placeholder:text-text-muted/40 outline-none py-1"
                         onClick={e => e.stopPropagation()}
                       />
@@ -493,7 +502,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
                             : 'text-text-muted/20 group-hover:text-text-muted/40 transition-colors'
                         }`}
                       >
-                        {isDragOver ? '여기에 놓기 ↓' : hasTask ? slots[time] : isHour ? '—' : ''}
+                        {isDragOver ? `${t('timebox.dropHere')} ↓` : hasTask ? slots[time] : isHour ? '—' : ''}
                       </span>
                     )}
                   </div>
@@ -502,7 +511,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
                   {hasTask && !isEditing && (
                     <button
                       onClick={(e) => toggleAlarm(e, time)}
-                      title={alarmOn ? '알람 끄기' : '알람 켜기'}
+                      title={alarmOn ? t('timebox.alarmOff') : t('timebox.alarmOn')}
                       className={`flex-shrink-0 w-7 h-full flex items-center justify-center transition-all ${
                         alarmOn
                           ? 'text-[#e94560] opacity-100'

@@ -14,16 +14,16 @@ function toLocalDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function generateCalendarDays(centerDateStr: string) {
+function generateCalendarDays(centerDateStr: string, locale: string = 'ko-KR') {
   const center = new Date(centerDateStr + 'T00:00:00');
   const todayStr = getTodayStr();
-  const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
   const days = [];
   for (let i = -3; i <= 3; i++) {
     const d = new Date(center);
     d.setDate(center.getDate() + i);
     const ds = toLocalDateStr(d);
-    days.push({ dateStr: ds, day: d.getDate(), weekday: weekdays[d.getDay()], isToday: ds === todayStr });
+    const weekday = d.toLocaleDateString(locale, { weekday: 'short' });
+    days.push({ dateStr: ds, day: d.getDate(), weekday, isToday: ds === todayStr });
   }
   return days;
 }
@@ -37,7 +37,7 @@ export default function TimeboxPage() {
 
   const dateLocale = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[language] ?? 'en-US';
   const isViewingToday = selectedDate === todayStr;
-  const calendarDays = generateCalendarDays(selectedDate);
+  const calendarDays = generateCalendarDays(selectedDate, dateLocale);
 
   const shiftCalendar = (days: number) => {
     const d = new Date(selectedDate + 'T00:00:00');
@@ -65,13 +65,13 @@ export default function TimeboxPage() {
                   onClick={() => setSelectedDate(todayStr)}
                   className="px-3 py-1.5 text-[11px] font-bold bg-[#e94560]/15 text-[#e94560] rounded-lg hover:bg-[#e94560]/25 transition-colors"
                 >
-                  오늘
+                  {t('timebox.today')}
                 </button>
               )}
               <button
                 onClick={() => datePickerRef.current?.showPicker()}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-[#e94560] hover:bg-border/50 transition-colors border border-border"
-                title="날짜 선택"
+                title={t('timebox.datePicker')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
@@ -97,7 +97,7 @@ export default function TimeboxPage() {
             <button
               onClick={() => shiftCalendar(-7)}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border/50 transition-colors flex-shrink-0"
-              title="이전 7일"
+              title={t('timebox.prev7Days')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6"/>
@@ -128,7 +128,7 @@ export default function TimeboxPage() {
             <button
               onClick={() => shiftCalendar(7)}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border/50 transition-colors flex-shrink-0"
-              title="다음 7일"
+              title={t('timebox.next7Days')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 18 15 12 9 6"/>

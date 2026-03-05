@@ -34,9 +34,9 @@ const LANGUAGES: { code: Language; name: string; flag: string }[] = [
 ];
 
 const PLANS: { value: Plan; label: string; desc: string; color: string }[] = [
-  { value: 'free', label: 'Free', desc: '기본 기능 무제한', color: '#64748b' },
-  { value: 'pro', label: 'Pro', desc: 'AI + 10GB 스토리지', color: '#e94560' },
-  { value: 'team', label: 'Team', desc: '무제한 협업 + 관리자 기능', color: '#8b5cf6' },
+  { value: 'free', label: 'Free', desc: 'settings.freeDesc', color: '#64748b' },
+  { value: 'pro', label: 'Pro', desc: 'settings.planFeatures.ai', color: '#e94560' },
+  { value: 'team', label: 'Team', desc: 'settings.planFeatures.collaboration', color: '#8b5cf6' },
 ];
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
@@ -56,6 +56,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [currentVersion, setCurrentVersion] = useState('');
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [updateError, setUpdateError] = useState('');
+  const [hideFutureTasks, setHideFutureTasksState] = useState(true);
+  const [timeboxAlarmDefault, setTimeboxAlarmDefaultState] = useState(true);
 
   useEffect(() => {
     const isTauriApp = isTauriEnv();
@@ -84,7 +86,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         setUpdateStatus('up-to-date');
       }
     } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : '업데이트 확인 실패');
+      setUpdateError(err instanceof Error ? err.message : 'Update check failed');
       setUpdateStatus('error');
     }
   }, []);
@@ -119,7 +121,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
       setUpdateStatus('ready');
     } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : '업데이트 다운로드 실패');
+      setUpdateError(err instanceof Error ? err.message : 'Update download failed');
       setUpdateStatus('error');
     }
   }, []);
@@ -176,6 +178,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       }
       setUserPlan(s.plan || 'free');
       setIsAdmin(s.isAdmin || false);
+      setHideFutureTasksState(s.hideFutureTasks ?? true);
+      setTimeboxAlarmDefaultState(s.timeboxAlarmDefault ?? true);
     });
   }, [user]);
 
@@ -198,6 +202,16 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
   const handleLanguageChange = (lang: Language) => {
     setLanguage(lang);
+  };
+
+  const handleHideFutureTasks = (val: boolean) => {
+    setHideFutureTasksState(val);
+    if (user) updateUserSettings(user.uid, { hideFutureTasks: val });
+  };
+
+  const handleTimeboxAlarmDefault = (val: boolean) => {
+    setTimeboxAlarmDefaultState(val);
+    if (user) updateUserSettings(user.uid, { timeboxAlarmDefault: val });
   };
 
   const handlePlanChange = (plan: Plan) => {
@@ -274,7 +288,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-text-primary truncate">
-                          {user?.displayName || '사용자'}
+                          {user?.displayName || t('common.user')}
                         </p>
                         <p className="text-xs text-text-muted truncate">{user?.email}</p>
                       </div>
@@ -288,10 +302,10 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <span className="text-xs font-bold text-text-primary">
-                            {userPlan === 'free' ? 'Free' : userPlan === 'pro' ? 'Pro' : 'Team'} 플랜
+                            {userPlan === 'free' ? 'Free' : userPlan === 'pro' ? 'Pro' : 'Team'} {t('settings.plan.label')}
                           </span>
                           <p className="text-[11px] text-text-muted mt-0.5">
-                            {PLANS.find(p => p.value === userPlan)?.desc}
+                            {t(PLANS.find(p => p.value === userPlan)?.desc || '')}
                           </p>
                         </div>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ color: PLANS.find(p => p.value === userPlan)?.color, backgroundColor: `${PLANS.find(p => p.value === userPlan)?.color}20` }}>
@@ -300,19 +314,19 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       </div>
                       <div className="space-y-1.5 mb-4">
                         {[
-                          { label: '할일 목록 관리', included: true },
-                          { label: '노트 작성', included: true },
-                          { label: '기기 동기화', included: true },
-                          { label: 'AI 자동 작성/요약', included: userPlan !== 'free' },
-                          { label: '무제한 공유 협업', included: userPlan === 'team' },
-                          { label: '파일 스토리지 10GB', included: userPlan !== 'free' },
+                          { key: 'settings.planFeatures.tasks', included: true },
+                          { key: 'settings.planFeatures.notes', included: true },
+                          { key: 'settings.planFeatures.sync', included: true },
+                          { key: 'settings.planFeatures.ai', included: userPlan !== 'free' },
+                          { key: 'settings.planFeatures.collaboration', included: userPlan === 'team' },
+                          { key: 'settings.planFeatures.storage', included: userPlan !== 'free' },
                         ].map((item) => (
-                          <div key={item.label} className="flex items-center gap-2 text-[11px]">
+                          <div key={item.key} className="flex items-center gap-2 text-[11px]">
                             <span className={item.included ? 'text-[#22c55e]' : 'text-text-inactive'}>
                               {item.included ? '✓' : '–'}
                             </span>
                             <span className={item.included ? 'text-text-secondary' : 'text-text-inactive'}>
-                              {item.label}
+                              {t(item.key)}
                             </span>
                           </div>
                         ))}
@@ -323,7 +337,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         <div className="mb-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
                           <div className="flex items-center gap-2 mb-2">
                             <span className="text-xs">🔧</span>
-                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">관리자 전용</span>
+                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">{t('settings.adminOnly')}</span>
                           </div>
                           <div className="grid grid-cols-3 gap-2">
                             {PLANS.map((plan) => (
@@ -337,7 +351,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                                 }`}
                               >
                                 <span className="text-xs font-bold block" style={{ color: plan.color }}>{plan.label}</span>
-                                <span className="text-[9px] text-text-muted">{plan.desc}</span>
+                                <span className="text-[9px] text-text-muted">{t(plan.desc)}</span>
                               </button>
                             ))}
                           </div>
@@ -349,7 +363,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-red-500 opacity-70 cursor-not-allowed"
                           disabled
                         >
-                          {t('settings.upgrade')} (준비 중)
+                          {t('settings.upgrade')} ({t('settings.preparing')})
                         </button>
                       )}
                     </div>
@@ -357,10 +371,10 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
                   {/* Storage */}
                   <div>
-                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">스토리지</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.storage')}</p>
                     <div className="p-4 bg-background rounded-xl border border-border">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-text-secondary">사용량</span>
+                        <span className="text-xs text-text-secondary">{t('settings.usage')}</span>
                         <span className="text-xs font-bold text-text-primary">
                           {formatSize(storageUsed)} / {formatSize(storageLimit)}
                         </span>
@@ -374,8 +388,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         />
                       </div>
                       <p className="text-[10px] text-text-muted">
-                        {userPlan === 'free' ? 'Free 플랜: 100 MB' : userPlan === 'pro' ? 'Pro 플랜: 10 GB' : 'Team 플랜: 50 GB'}
-                        {storagePercent > 90 && <span className="text-[#e94560] ml-1 font-semibold">— 용량이 거의 찼습니다</span>}
+                        {userPlan === 'free' ? `Free ${t('settings.plan.label')}: 100 MB` : userPlan === 'pro' ? `Pro ${t('settings.plan.label')}: 10 GB` : `Team ${t('settings.plan.label')}: 50 GB`}
+                        {storagePercent > 90 && <span className="text-[#e94560] ml-1 font-semibold">— {t('settings.storageFull')}</span>}
                       </p>
                     </div>
                   </div>
@@ -437,6 +451,37 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       min: 10px · max: 24px
                     </p>
                   </div>
+
+                  {/* Hide future tasks */}
+                  <div>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">{t('settings.behavior')}</p>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-background rounded-xl border border-border">
+                        <div>
+                          <p className="text-xs font-semibold text-text-primary">{t('settings.hideFutureTasks')}</p>
+                          <p className="text-[11px] text-text-muted mt-0.5">{t('settings.hideFutureTasksDesc')}</p>
+                        </div>
+                        <button
+                          onClick={() => handleHideFutureTasks(!hideFutureTasks)}
+                          className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${hideFutureTasks ? 'bg-[#e94560]' : 'bg-border'}`}
+                        >
+                          <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${hideFutureTasks ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-background rounded-xl border border-border">
+                        <div>
+                          <p className="text-xs font-semibold text-text-primary">{t('settings.timeboxAlarmDefault')}</p>
+                          <p className="text-[11px] text-text-muted mt-0.5">{t('settings.timeboxAlarmDefaultDesc')}</p>
+                        </div>
+                        <button
+                          onClick={() => handleTimeboxAlarmDefault(!timeboxAlarmDefault)}
+                          className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${timeboxAlarmDefault ? 'bg-[#e94560]' : 'bg-border'}`}
+                        >
+                          <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${timeboxAlarmDefault ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -476,7 +521,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   <div className="text-center py-4">
                     <img src="/symbol.svg" alt="NOAH" className="w-16 h-16 mx-auto mb-3 rounded-2xl" />
                     <h3 className="text-lg font-extrabold text-text-primary mb-1">NOAH</h3>
-                    <p className="text-xs text-text-muted">버전 {currentVersion || '1.0.0'}{isTauri ? ' (Desktop)' : ' (Web)'}</p>
+                    <p className="text-xs text-text-muted">{t('settings.version')} {currentVersion || '1.0.0'}{isTauri ? ' (Desktop)' : ' (Web)'}</p>
                   </div>
 
                   {/* 시작 프로그램 — Tauri 전용 */}
@@ -484,15 +529,15 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     <div className="p-4 bg-background rounded-xl border border-border">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-text-primary">시작 프로그램</p>
-                          <p className="text-[11px] text-text-muted mt-0.5">컴퓨터 시작 시 자동으로 실행</p>
+                          <p className="text-xs font-semibold text-text-primary">{t('settings.autostart')}</p>
+                          <p className="text-[11px] text-text-muted mt-0.5">{t('settings.autostartDesc')}</p>
                         </div>
                         <button
                           onClick={handleAutostartToggle}
                           disabled={autostartLoading}
                           className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${autostart ? 'bg-[#e94560]' : 'bg-border'} disabled:opacity-50`}
                         >
-                          <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${autostart ? 'translate-x-6' : 'translate-x-1'}`} />
+                          <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${autostart ? 'translate-x-5' : 'translate-x-0'}`} />
                         </button>
                       </div>
                     </div>
@@ -502,7 +547,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   {isTauri && (
                     <div className="p-4 bg-background rounded-xl border border-border space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-wider font-semibold text-text-muted">소프트웨어 업데이트</span>
+                        <span className="text-[10px] uppercase tracking-wider font-semibold text-text-muted">{t('settings.softwareUpdate')}</span>
                       </div>
 
                       {updateStatus === 'idle' && (
@@ -510,21 +555,21 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           onClick={checkForUpdates}
                           className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold bg-[#e94560] hover:bg-[#d63b55] text-white transition-all"
                         >
-                          업데이트 확인
+                          {t('settings.checkUpdate')}
                         </button>
                       )}
 
                       {updateStatus === 'checking' && (
                         <div className="flex items-center justify-center gap-2 py-2.5">
                           <div className="w-4 h-4 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
-                          <span className="text-xs text-text-secondary">업데이트 확인 중...</span>
+                          <span className="text-xs text-text-secondary">{t('settings.checking')}</span>
                         </div>
                       )}
 
                       {updateStatus === 'up-to-date' && (
                         <div className="flex items-center justify-center gap-2 py-2.5">
                           <span className="text-[#22c55e] text-sm">✓</span>
-                          <span className="text-xs text-text-secondary">최신 버전입니다 {currentVersion ? `(v${currentVersion})` : ''}</span>
+                          <span className="text-xs text-text-secondary">{t('settings.upToDate')} {currentVersion ? `(v${currentVersion})` : ''}</span>
                         </div>
                       )}
 
@@ -532,13 +577,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         <div className="space-y-2">
                           <div className="flex items-center justify-center gap-2">
                             <span className="text-[#f59e0b] text-sm">●</span>
-                            <span className="text-xs text-text-primary font-semibold">v{updateVersion} 업데이트 가능</span>
+                            <span className="text-xs text-text-primary font-semibold">v{updateVersion} {t('settings.updateAvailable')}</span>
                           </div>
                           <button
                             onClick={downloadAndInstall}
                             className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold bg-[#22c55e] hover:bg-[#16a34a] text-white transition-all"
                           >
-                            지금 업데이트
+                            {t('settings.updateNow')}
                           </button>
                         </div>
                       )}
@@ -546,7 +591,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       {updateStatus === 'downloading' && (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-xs text-text-secondary">
-                            <span>다운로드 중...</span>
+                            <span>{t('settings.downloading')}</span>
                             <span>{downloadProgress}%</span>
                           </div>
                           <div className="w-full h-2 bg-border rounded-full overflow-hidden">
@@ -562,13 +607,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         <div className="space-y-2">
                           <div className="flex items-center justify-center gap-2">
                             <span className="text-[#22c55e] text-sm">✓</span>
-                            <span className="text-xs text-text-primary">업데이트 설치 완료</span>
+                            <span className="text-xs text-text-primary">{t('settings.updateReady')}</span>
                           </div>
                           <button
                             onClick={restartApp}
                             className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold bg-[#8b5cf6] hover:bg-[#7c3aed] text-white transition-all"
                           >
-                            재시작하여 적용
+                            {t('settings.restart')}
                           </button>
                         </div>
                       )}
@@ -580,7 +625,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                             onClick={checkForUpdates}
                             className="w-full py-2 px-4 rounded-xl text-xs font-semibold border border-border hover:border-border-hover text-text-secondary transition-all"
                           >
-                            다시 시도
+                            {t('settings.retry')}
                           </button>
                         </div>
                       )}

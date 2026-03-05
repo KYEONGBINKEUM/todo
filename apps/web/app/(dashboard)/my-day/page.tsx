@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
   addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
+  getUserSettings, updateUserSettings,
   type TaskData, type ListData, type RecurrenceRule,
 } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
@@ -21,10 +22,10 @@ const DEFAULT_LISTS: ListData[] = [
 ];
 
 const priorityColors = {
-  urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30', label: '긴급' },
-  high: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30', label: '높음' },
-  medium: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', label: '보통' },
-  low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', label: '낮음' },
+  urgent: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30', labelKey: 'priority.urgent' },
+  high: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30', labelKey: 'priority.high' },
+  medium: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', labelKey: 'priority.medium' },
+  low: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', labelKey: 'priority.low' },
 };
 
 function parseTags(title: string): string[] {
@@ -40,21 +41,21 @@ function getTodayStr() {
 }
 
 // 선택 날짜 중심으로 ±3일 (7일) 캘린더 생성
-function generateCalendarDays(centerDateStr: string): { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean; month: number }[] {
+function generateCalendarDays(centerDateStr: string, locale: string = 'ko-KR'): { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean; month: number }[] {
   const center = new Date(centerDateStr + 'T00:00:00');
   const todayStr = getTodayStr();
   const days: { date: Date; dateStr: string; day: number; weekday: string; isToday: boolean; month: number }[] = [];
-  const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 
   for (let i = -3; i <= 3; i++) {
     const d = new Date(center);
     d.setDate(center.getDate() + i);
     const ds = toLocalDateStr(d);
+    const weekday = d.toLocaleDateString(locale, { weekday: 'short' });
     days.push({
       date: d,
       dateStr: ds,
       day: d.getDate(),
-      weekday: weekdays[d.getDay()],
+      weekday,
       isToday: ds === todayStr,
       month: d.getMonth() + 1,
     });
@@ -101,6 +102,7 @@ export default function MyDayPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [showCompleted, setShowCompleted] = useState(true);
+  const [hideFutureTasks, setHideFutureTasks] = useState(true);
 
   // Drag state
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
@@ -122,9 +124,17 @@ export default function MyDayPage() {
   const datePickerRef = useRef<HTMLInputElement>(null);
   const todayStr = getTodayStr();
   const isViewingToday = selectedDate === todayStr;
-  const calendarDays = generateCalendarDays(selectedDate);
+  const calendarDays = generateCalendarDays(selectedDate, dateLocale);
 
   useTaskReminders(tasks);
+
+  // Load hideFutureTasks setting
+  useEffect(() => {
+    if (!user) return;
+    getUserSettings(user.uid).then((s) => {
+      setHideFutureTasks(s.hideFutureTasks ?? true);
+    });
+  }, [user]);
 
   // 캘린더 네비게이션
   const shiftCalendar = (days: number) => {
@@ -142,8 +152,11 @@ export default function MyDayPage() {
     const myDayAll = storeTasks.filter((t) => t.myDay);
 
     // 활성 작업: 등록일 <= 선택일 && (미완료 또는 완료일 > 선택일)
+    const todayDate = getTodayStr();
     const activeDateTasks = myDayAll.filter((t) => {
       const cd = getTaskCreatedDate(t);
+      // hideFutureTasks: 오늘 이후 등록된 작업 숨기기
+      if (hideFutureTasks && cd > todayDate) return false;
       if (cd > selectedDate) return false;
       if (t.status !== 'completed') return true;
       return t.completedDate != null && t.completedDate > selectedDate;
@@ -162,7 +175,7 @@ export default function MyDayPage() {
       return 0;
     });
     setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
-  }, [storeTasks, selectedDate]);
+  }, [storeTasks, selectedDate, hideFutureTasks]);
 
   // 스토어 lists → 로컬 lists
   useEffect(() => {
@@ -325,7 +338,7 @@ export default function MyDayPage() {
       });
       // onSnapshot이 자동으로 리스트에 추가
     } catch {
-      setError('할일 추가 실패');
+      setError(t('myDay.addError'));
     } finally {
       setAdding(false);
     }
@@ -383,7 +396,7 @@ export default function MyDayPage() {
       const cd = getTaskCreatedDate(t);
       return cd < todayDate && t.status === 'completed';
     });
-    if (!targets.length) { alert('삭제할 완료된 과거 기록이 없습니다.'); return; }
+    if (!targets.length) { alert(t('myDay.noRecords')); return; }
     if (!confirm(`오늘 이전 완료된 기록 ${targets.length}개를 삭제하시겠습니까?`)) return;
     for (const t of targets) {
       if (t.attachments?.length) await deleteAttachmentsFromStorage(t.attachments);
@@ -395,7 +408,7 @@ export default function MyDayPage() {
   const handleCleanupAll = async () => {
     if (!user) return;
     const targets = storeTasks.filter((t) => t.myDay);
-    if (!targets.length) { alert('삭제할 기록이 없습니다.'); return; }
+    if (!targets.length) { alert(t('myDay.noRecords')); return; }
     if (!confirm(`My Day 전체 기록 ${targets.length}개를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
     for (const t of targets) {
       if (t.attachments?.length) await deleteAttachmentsFromStorage(t.attachments);
@@ -437,9 +450,9 @@ export default function MyDayPage() {
             <div className="ml-auto flex items-center gap-2 relative">
               <NoahAIPageActions
                 actions={[
-                  { id: 'prioritize', label: '우선순위 분석', icon: '🎯', action: 'prioritize' as NoahAIAction, description: '오늘 할 일 우선순위 분석' },
-                  { id: 'suggest', label: '작업 제안', icon: '💡', action: 'suggest_tasks' as NoahAIAction, description: '오늘에 맞는 작업 추천' },
-                  { id: 'breakdown', label: '작업 분해', icon: '📋', action: 'breakdown' as NoahAIAction, description: '작업을 세부 단위로 분해' },
+                  { id: 'prioritize', label: t('ai.chip.prioritize'), icon: '🎯', action: 'prioritize' as NoahAIAction, description: t('ai.chip.prioritize') },
+                  { id: 'suggest', label: t('ai.chip.suggest'), icon: '💡', action: 'suggest_tasks' as NoahAIAction, description: t('ai.chip.suggest') },
+                  { id: 'breakdown', label: t('ai.chip.breakdown'), icon: '📋', action: 'breakdown' as NoahAIAction, description: t('ai.chip.breakdown') },
                 ]}
                 getContext={(action) => {
                   const taskSummaries = tasks.slice(0, 20).map((t) => ({
@@ -566,13 +579,13 @@ export default function MyDayPage() {
                   onClick={() => setSelectedDate(todayStr)}
                   className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#e94560]/15 text-[#e94560] hover:bg-[#e94560]/25 transition-colors"
                 >
-                  오늘
+                  {t('myDay.today')}
                 </button>
               )}
               <button
                 onClick={() => datePickerRef.current?.showPicker()}
                 className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-[#e94560] hover:bg-border/50 transition-colors"
-                title="날짜 선택"
+                title={t('myDay.datePicker')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -597,7 +610,7 @@ export default function MyDayPage() {
             <button
               onClick={() => shiftCalendar(-7)}
               className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border/50 transition-colors flex-shrink-0"
-              title="이전 7일"
+              title={t('myDay.prev7Days')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
             </button>
@@ -626,7 +639,7 @@ export default function MyDayPage() {
             <button
               onClick={() => shiftCalendar(7)}
               className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border/50 transition-colors flex-shrink-0"
-              title="다음 7일"
+              title={t('myDay.next7Days')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
@@ -772,7 +785,7 @@ export default function MyDayPage() {
                 {canDrag && (
                   <span
                     className="opacity-60 md:opacity-0 group-hover:opacity-100 text-text-inactive text-xs cursor-grab active:cursor-grabbing flex-shrink-0 select-none touch-none"
-                    title="드래그하여 순서 변경"
+                    title={t('myDay.dragReorder')}
                     onTouchStart={(e) => { e.stopPropagation(); handleTouchDragStart(index); }}
                   >
                     ⋮⋮
@@ -812,14 +825,14 @@ export default function MyDayPage() {
                   <span className="hidden sm:inline text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
                 )}
                 <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                <span className={`hidden sm:inline px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
+                <span className={`hidden sm:inline px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{t(priority.labelKey)}</span>
                 <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all duration-200 flex-shrink-0 ${task.starred ? 'text-amber-400' : 'text-text-inactive hover:text-amber-400/60'}`}>
                   {task.starred ? '★' : '☆'}
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); setSelectedTaskId(task.id!); }}
                   className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-text-secondary transition-all flex-shrink-0"
-                  title="상세 보기 / 편집"
+                  title={t('myDay.viewDetail')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -885,7 +898,7 @@ export default function MyDayPage() {
                         <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
                       )}
                       <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{priority.label}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${priority.bg} ${priority.text} ${priority.border}`}>{t(priority.labelKey)}</span>
                       <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
                     </div>
                   );

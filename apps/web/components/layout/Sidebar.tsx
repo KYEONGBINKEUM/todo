@@ -124,7 +124,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     }
   };
 
-  const displayName = user?.displayName || '사용자';
+  const displayName = user?.displayName || t('common.user');
   const photoURL = user?.photoURL;
   const initials = displayName.charAt(0).toUpperCase();
   const planLabel = userPlan === 'free' ? t('freePlan') : userPlan === 'pro' ? 'Pro Plan' : 'Team Plan';
@@ -215,7 +215,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                       value={editingColor}
                       onChange={(e) => setEditingColor(e.target.value)}
                       className="w-6 h-6 rounded cursor-pointer border border-border flex-shrink-0 p-0 bg-transparent"
-                      title="색상 선택"
+                      title={t('sidebar.colorPicker')}
                     />
                     <input
                       value={editingLabel}
@@ -227,12 +227,12 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                     <button
                       onClick={() => handleRenameList(list.id!)}
                       className="flex-shrink-0 text-[11px] text-[#e94560] hover:text-[#ff5a7a] transition-colors font-semibold"
-                      title="저장"
+                      title={t('common.save')}
                     >✓</button>
                     <button
                       onClick={() => setEditingListId(null)}
                       className="flex-shrink-0 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
-                      title="취소"
+                      title={t('common.cancel')}
                     >✕</button>
                   </div>
                 ) : (
@@ -247,14 +247,14 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                       <button
                         onClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); setEditingColor(list.color); }}
                         className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-text-secondary transition-colors text-[11px]"
-                        title="이름/색상 변경"
+                        title={t('sidebar.renameColor')}
                       >
                         ✏️
                       </button>
                       <button
                         onClick={(e) => { e.preventDefault(); handleDeleteList(list.id!); }}
                         className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-[#e94560] transition-colors text-sm"
-                        title="목록 삭제"
+                        title={t('sidebar.deleteList')}
                       >
                         ×
                       </button>
@@ -271,7 +271,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   onChange={(e) => setNewListLabel(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleAddList(); if (e.key === 'Escape') setShowAddList(false); }}
                   onBlur={handleAddList}
-                  placeholder="목록 이름..."
+                  placeholder={t('sidebar.listPlaceholder')}
                   autoFocus
                   className="flex-1 bg-transparent text-text-primary text-sm placeholder-text-muted outline-none border-b border-[#e94560]"
                 />
@@ -339,7 +339,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             <button
               onClick={handleSignOut}
               className="text-text-inactive hover:text-[#e94560] transition-colors text-xs flex-shrink-0"
-              title="로그아웃"
+              title={t('sidebar.signOut')}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

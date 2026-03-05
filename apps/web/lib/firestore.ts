@@ -609,21 +609,23 @@ export async function seedDefaultData(uid: string): Promise<void> {
 
 export interface TimeboxData {
   date: string;
-  slots: Record<string, string>; // "08:00" -> task text
+  slots: Record<string, string>;        // "08:00" -> task text
+  slotAlarms: Record<string, boolean>;  // "08:00" -> alarm on/off
   brainDump?: string;
+  linkedNoteId?: string;               // brain dump linked note id
 }
 
 export async function getTimebox(uid: string, date: string): Promise<TimeboxData> {
   const ref = doc(db, 'users', uid, 'timebox', date);
   const snap = await getDoc(ref);
   if (snap.exists()) return snap.data() as TimeboxData;
-  return { date, slots: {}, brainDump: '' };
+  return { date, slots: {}, slotAlarms: {}, brainDump: '' };
 }
 
 export async function saveTimebox(
   uid: string,
   date: string,
-  data: { slots?: Record<string, string>; brainDump?: string }
+  data: Partial<Omit<TimeboxData, 'date'>>
 ): Promise<void> {
   const ref = doc(db, 'users', uid, 'timebox', date);
   await setDoc(ref, { date, ...data }, { merge: true });

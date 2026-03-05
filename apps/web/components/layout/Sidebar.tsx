@@ -59,6 +59,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
     { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
     { icon: '⏱️', labelKey: 'nav.timebox', href: '/timebox' },
+    { icon: '🧮', labelKey: 'nav.calculator', href: '/calculator' },
     // { icon: '🧠', labelKey: 'nav.mindmap', href: '/mindmap' }, // TODO: 추후 오픈 예정
     // { icon: '👥', labelKey: 'nav.shared', href: '/shared' }, // TODO: Firestore 권한 규칙 수정 후 부활
     { icon: '⭐', labelKey: 'nav.important', href: '/important' },

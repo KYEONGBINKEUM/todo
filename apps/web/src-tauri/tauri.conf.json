@@ -1,6 +1,6 @@
 {
   "productName": "NOAH",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "identifier": "aitodo.firstb.aitodo",
   "build": {
     "frontendDist": "../out",

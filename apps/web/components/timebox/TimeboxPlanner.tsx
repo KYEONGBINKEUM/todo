@@ -3,11 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { useDataStore } from '@/lib/data-store';
 import {
   getTimebox, saveTimebox, updateTask, addNote as addNoteDB,
-  updateNote,
-  type TaskData, type NoteBlock,
+  type TaskData,
 } from '@/lib/firestore';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -72,7 +70,6 @@ interface Toast { id: number; title: string; body: string; }
 export default function TimeboxPlanner({ date, tasks }: Props) {
   const { user } = useAuth();
   const router = useRouter();
-  const { notes, folders } = useDataStore();
 
   // Settings
   const [interval, setIntervalMin] = useState<number>(getInitialInterval);
@@ -82,14 +79,12 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   const [slots, setSlots] = useState<Record<string, string>>({});
   const [slotAlarms, setSlotAlarms] = useState<Record<string, boolean>>({});
   const [brainDump, setBrainDump] = useState('');
-  const [linkedNoteId, setLinkedNoteId] = useState<string | undefined>();
 
   // UI state
   const [loading, setLoading] = useState(true);
   const [editingSlot, setEditingSlot] = useState<string | null>(null);
   const [taskDone, setTaskDone] = useState<Record<string, boolean>>({});
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
-  const [showNoteMenu, setShowNoteMenu] = useState(false);
   const [globalAlarm, setGlobalAlarm] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dragSrcSlot, setDragSrcSlot] = useState<string | null>(null);
@@ -132,7 +127,6 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
       setSlots(data.slots || {});
       setSlotAlarms(data.slotAlarms || {});
       setBrainDump(data.brainDump || '');
-      setLinkedNoteId(data.linkedNoteId);
       setLoading(false);
     });
   }, [user, date]);
@@ -175,7 +169,6 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
     s: Record<string, string>,
     a: Record<string, boolean>,
     bd?: string,
-    nid?: string,
   ) => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -184,7 +177,6 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
         slots: s,
         slotAlarms: a,
         ...(bd !== undefined ? { brainDump: bd } : {}),
-        ...(nid !== undefined ? { linkedNoteId: nid } : {}),
       });
     }, 700);
   }, [user, date]);
@@ -291,7 +283,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   const createNoteFromBrainDump = async () => {
     if (!user || !brainDump.trim()) return;
     try {
-      const noteId = await addNoteDB(user.uid, {
+      await addNoteDB(user.uid, {
         title: `브레인덤프 — ${date}`,
         icon: '🧠',
         blocks: [{ id: `block-${Date.now()}`, type: 'text', content: brainDump }],
@@ -301,48 +293,14 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
         linkedTaskId: null,
         linkedTaskIds: [],
       });
-      await saveTimebox(user.uid, date, { linkedNoteId: noteId });
-      setLinkedNoteId(noteId);
-      setShowNoteMenu(false);
       router.push('/notes');
     } catch (err) { console.error(err); }
   };
 
-  const appendToNote = async (noteId: string) => {
-    if (!user || !brainDump.trim()) return;
-    const note = notes?.find(n => n.id === noteId);
-    if (!note) return;
-    const newBlocks: NoteBlock[] = [
-      { id: `block-divider-${Date.now()}`, type: 'divider', content: '' },
-      { id: `block-heading-${Date.now()}`, type: 'heading3', content: `브레인덤프 (${date})` },
-      { id: `block-text-${Date.now()}`, type: 'text', content: brainDump },
-    ];
-    await updateNote(user.uid, noteId, { blocks: [...(note.blocks || []), ...newBlocks] });
-    await saveTimebox(user.uid, date, { linkedNoteId: noteId });
-    setLinkedNoteId(noteId);
-    setShowNoteMenu(false);
-    router.push('/notes');
-  };
-
-  const unlinkNote = async () => {
-    if (!user) return;
-    await saveTimebox(user.uid, date, { linkedNoteId: '' });
-    setLinkedNoteId(undefined);
-  };
-
   // ── Derived ───────────────────────────────────────────────────────────────
-  const linkedNote = notes?.find(n => n.id === linkedNoteId);
   const filledCount = Object.keys(slots).length;
   const alarmOnCount = Object.values(slotAlarms).filter(Boolean).length;
   const activeTasks = tasks.filter(t => !(taskDone[t.id!] ?? t.status === 'completed'));
-
-  // Notes grouped by folder for note menu
-  const noFolderNotes = (notes || []).filter(n => !n.deleted);
-  const folderGroups = (folders || []).map(f => ({
-    folder: f,
-    notes: noFolderNotes.filter(n => n.folderId === f.id),
-  })).filter(g => g.notes.length > 0);
-  const ungroupedNotes = noFolderNotes.filter(n => !n.folderId);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -367,7 +325,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
             >
               <button
                 onClick={() => toggleTask(task)}
-                className="w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all border-border group-hover:border-[#e94560]/60 hover:border-[#e94560]"
+                className="w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all border-text-muted/50 group-hover:border-[#e94560]/70 hover:border-[#e94560]"
               />
               <span className="text-xs flex-1 select-none text-text-primary leading-relaxed truncate">{task.title}</span>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="text-text-muted/30 group-hover:text-text-muted/60 flex-shrink-0">
@@ -386,81 +344,17 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
     <div className="bg-background-card rounded-2xl border border-border flex flex-col flex-1 overflow-hidden min-h-0">
       <div className="px-4 py-3 border-b border-border flex items-center gap-2 flex-shrink-0">
         <span className="text-xs font-bold text-text-primary tracking-wide">브레인 덤프</span>
-        <div className="ml-auto relative">
-          {linkedNote ? (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => router.push('/notes')}
-                className="text-[10px] text-[#e94560] hover:underline flex items-center gap-1 max-w-[120px] truncate"
-              >
-                {linkedNote.icon} {linkedNote.title}
-              </button>
-              <button onClick={unlinkNote} className="text-text-muted hover:text-[#e94560] text-sm leading-none">×</button>
-            </div>
-          ) : (
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowNoteMenu(v => !v); }}
-              className="text-[10px] text-text-muted hover:text-[#e94560] flex items-center gap-1 transition-colors py-1 px-2 rounded-lg hover:bg-[#e94560]/8"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-              </svg>
-              노트 연결
-            </button>
-          )}
-
-          {showNoteMenu && (
-            <div
-              className="absolute right-0 top-full mt-1 z-50 bg-background-card border border-border rounded-xl shadow-2xl w-60 overflow-hidden"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="p-1.5 max-h-72 overflow-y-auto">
-                <button
-                  onClick={createNoteFromBrainDump}
-                  disabled={!brainDump.trim()}
-                  className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-[#e94560]/10 text-[#e94560] font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  <span className="text-base">+</span> 새 노트로 저장
-                </button>
-
-                {ungroupedNotes.length > 0 && (
-                  <>
-                    <div className="px-3 pt-2 pb-1 text-[9px] text-text-muted uppercase tracking-widest font-semibold">노트</div>
-                    {ungroupedNotes.slice(0, 6).map(note => (
-                      <button
-                        key={note.id}
-                        onClick={() => appendToNote(note.id!)}
-                        className="w-full text-left px-3 py-1.5 text-xs rounded-lg hover:bg-border/50 text-text-primary flex items-center gap-2 truncate"
-                      >
-                        <span className="flex-shrink-0">{note.icon}</span>
-                        <span className="truncate">{note.title}</span>
-                      </button>
-                    ))}
-                  </>
-                )}
-
-                {folderGroups.map(({ folder, notes: fNotes }) => (
-                  <div key={folder.id}>
-                    <div className="px-3 pt-2 pb-1 text-[9px] text-text-muted uppercase tracking-widest font-semibold flex items-center gap-1">
-                      <span>📁</span>{folder.name}
-                    </div>
-                    {fNotes.slice(0, 6).map(note => (
-                      <button
-                        key={note.id}
-                        onClick={() => appendToNote(note.id!)}
-                        className="w-full text-left px-3 py-1.5 text-xs rounded-lg hover:bg-border/50 text-text-primary flex items-center gap-2 truncate"
-                      >
-                        <span className="flex-shrink-0">{note.icon}</span>
-                        <span className="truncate">{note.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <button
+          onClick={createNoteFromBrainDump}
+          disabled={!brainDump.trim()}
+          className="ml-auto text-[10px] text-text-muted hover:text-[#e94560] flex items-center gap-1 transition-colors py-1 px-2 rounded-lg hover:bg-[#e94560]/10 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          노트로 추가
+        </button>
       </div>
       <textarea
         value={brainDump}
@@ -500,7 +394,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
             <button
               key={v}
               onClick={() => changeInterval(v)}
-              className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
                 interval === v
                   ? 'bg-[#e94560] text-white shadow-sm'
                   : 'text-text-muted hover:bg-border/60 hover:text-text-primary'
@@ -517,7 +411,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
         ref={gridRef}
         className="overflow-y-auto flex-1"
         style={{ maxHeight: '70vh' }}
-        onClick={() => { setShowNoteMenu(false); }}
+
       >
         {loading ? (
           <div className="flex items-center justify-center py-16">
@@ -539,12 +433,12 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
                 <div
                   key={time}
                   className={`flex items-center gap-0 relative group transition-colors cursor-text select-none
-                    ${isHour ? 'border-t border-border/40' : ''}
+                    ${isHour ? 'border-t border-border/70' : ''}
                     ${isDragOver ? 'bg-[#e94560]/10' : isCurrent ? 'bg-[#e94560]/5' : hasTask ? 'bg-border/5' : 'hover:bg-border/5'}
                     ${isDragSrc ? 'opacity-40' : ''}
                   `}
                   style={{ minHeight: rowH }}
-                  onClick={() => { setShowNoteMenu(false); setEditingSlot(time); }}
+                  onClick={() => { setEditingSlot(time); }}
                   onDragOver={(e) => handleSlotDragOver(e, time)}
                   onDragLeave={() => { setDragOverSlot(null); }}
                   onDrop={(e) => handleSlotDrop(e, time)}
@@ -555,7 +449,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
 
                   {/* Time label */}
                   <div className="w-14 flex-shrink-0 flex items-center justify-end pr-3">
-                    <span className={`font-mono leading-none select-none ${interval <= 10 ? 'text-[9px]' : 'text-[11px]'} ${
+                    <span className={`font-mono leading-none select-none ${interval <= 10 ? 'text-[10px]' : 'text-[11px]'} ${
                       isCurrent ? 'text-[#e94560] font-bold' :
                       isHour ? 'text-text-secondary' : 'text-text-muted/35'
                     }`}>
@@ -564,7 +458,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
                   </div>
 
                   {/* Divider line */}
-                  <div className={`w-px self-stretch flex-shrink-0 ${isHour ? 'bg-border/50' : 'bg-border/15'}`} />
+                  <div className={`w-px self-stretch flex-shrink-0 ${isHour ? 'bg-border/80' : 'bg-border/35'}`} />
 
                   {/* Content area */}
                   <div className="flex-1 px-3 flex items-center min-h-full">
@@ -643,7 +537,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
   );
 
   return (
-    <div className="pb-10" onClick={() => setShowNoteMenu(false)}>
+    <div className="pb-10">
       {/* Desktop: 2-column */}
       <div className="hidden md:flex gap-4" style={{ minHeight: '70vh' }}>
         {/* Left column */}

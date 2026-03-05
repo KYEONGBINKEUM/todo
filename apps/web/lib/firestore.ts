@@ -602,3 +602,29 @@ export async function seedDefaultData(uid: string): Promise<void> {
   await addFolder(uid, { name: '개인', color: '#06b6d4', icon: '🏠' });
   await addFolder(uid, { name: '아이디어', color: '#f59e0b', icon: '💡' });
 }
+
+// ============================================================================
+// Timebox
+// ============================================================================
+
+export interface TimeboxData {
+  date: string;
+  slots: Record<string, string>; // "08:00" -> task text
+  brainDump?: string;
+}
+
+export async function getTimebox(uid: string, date: string): Promise<TimeboxData> {
+  const ref = doc(db, 'users', uid, 'timebox', date);
+  const snap = await getDoc(ref);
+  if (snap.exists()) return snap.data() as TimeboxData;
+  return { date, slots: {}, brainDump: '' };
+}
+
+export async function saveTimebox(
+  uid: string,
+  date: string,
+  data: { slots?: Record<string, string>; brainDump?: string }
+): Promise<void> {
+  const ref = doc(db, 'users', uid, 'timebox', date);
+  await setDoc(ref, { date, ...data }, { merge: true });
+}

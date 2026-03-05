@@ -13,6 +13,7 @@ import { useDataStore } from '@/lib/data-store';
 import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
+import TimeboxPlanner from '@/components/timebox/TimeboxPlanner';
 
 const DEFAULT_LISTS: ListData[] = [
   { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
@@ -92,6 +93,7 @@ export default function MyDayPage() {
   const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
+  const [activeView, setActiveView] = useState<'tasks' | 'timebox'>('tasks');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskList, setNewTaskList] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
@@ -646,6 +648,48 @@ export default function MyDayPage() {
           </div>
         )}
 
+        {/* View Tab Switcher */}
+        <div className="mb-5 flex gap-1 p-1 bg-background-card border border-border rounded-xl">
+          <button
+            onClick={() => setActiveView('tasks')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+              activeView === 'tasks'
+                ? 'bg-[#e94560] text-white shadow-sm'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/>
+              <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+            </svg>
+            할일 목록
+          </button>
+          <button
+            onClick={() => setActiveView('timebox')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+              activeView === 'timebox'
+                ? 'bg-[#e94560] text-white shadow-sm'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>
+            </svg>
+            타임박스
+          </button>
+        </div>
+
+        {/* ── TIMEBOX VIEW ── */}
+        {activeView === 'timebox' && (
+          <TimeboxPlanner
+            date={selectedDate}
+            tasks={tasks.filter(t => t.myDay)}
+          />
+        )}
+
+        {/* ── TASKS VIEW ── */}
+        {activeView === 'tasks' && (<>
+
         {/* Progress Bar */}
         <div className="mb-6 p-4 bg-background-card border border-border rounded-xl">
           <div className="flex items-center justify-between mb-2">
@@ -922,6 +966,7 @@ export default function MyDayPage() {
             )}
           </div>
         )}
+        </>)}
       </div>
 
       {selectedTask && (

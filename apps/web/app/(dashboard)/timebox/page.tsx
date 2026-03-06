@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import { useDataStore } from '@/lib/data-store';
+import { getUserSettings } from '@/lib/firestore';
 import TimeboxPlanner from '@/components/timebox/TimeboxPlanner';
 
 function getTodayStr() {
@@ -30,14 +32,23 @@ function generateCalendarDays(centerDateStr: string, locale: string = 'ko-KR') {
 
 export default function TimeboxPage() {
   const { t, language } = useI18n();
+  const { user } = useAuth();
   const { tasks: storeTasks } = useDataStore();
   const todayStr = getTodayStr();
   const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [hideFutureTasks, setHideFutureTasks] = useState(true);
   const datePickerRef = useRef<HTMLInputElement>(null);
 
   const dateLocale = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[language] ?? 'en-US';
   const isViewingToday = selectedDate === todayStr;
   const calendarDays = generateCalendarDays(selectedDate, dateLocale);
+
+  useEffect(() => {
+    if (!user) return;
+    getUserSettings(user.uid).then((s) => {
+      setHideFutureTasks(s.hideFutureTasks ?? true);
+    });
+  }, [user]);
 
   const shiftCalendar = (days: number) => {
     const d = new Date(selectedDate + 'T00:00:00');
@@ -45,7 +56,16 @@ export default function TimeboxPage() {
     setSelectedDate(toLocalDateStr(d));
   };
 
-  const myDayTasks = storeTasks.filter((t) => t.myDay);
+  const myDayTasks = storeTasks.filter((t) => {
+    if (!t.myDay) return false;
+    if (hideFutureTasks) {
+      const cd = t.createdDate ?? (t.createdAt && typeof t.createdAt.toDate === 'function'
+        ? (() => { const d = t.createdAt.toDate(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })()
+        : null);
+      if (cd && cd > todayStr) return false;
+    }
+    return true;
+  });
 
   const dateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString(dateLocale, {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',

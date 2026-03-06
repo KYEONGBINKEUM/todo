@@ -20,11 +20,11 @@ interface TaskDetailPanelProps {
   onDelete: () => void;
 }
 
-const PRIORITY_OPTIONS = [
-  { value: 'urgent', label: '긴급', color: '#ef4444' },
-  { value: 'high', label: '높음', color: '#f97316' },
-  { value: 'medium', label: '보통', color: '#eab308' },
-  { value: 'low', label: '낮음', color: '#22c55e' },
+const PRIORITY_VALUES = [
+  { value: 'urgent', color: '#ef4444' },
+  { value: 'high', color: '#f97316' },
+  { value: 'medium', color: '#eab308' },
+  { value: 'low', color: '#22c55e' },
 ] as const;
 
 const MAX_FILE_SIZE = MAX_ATTACHMENT_SIZE; // 10 MB
@@ -32,7 +32,7 @@ const MAX_FILE_SIZE = MAX_ATTACHMENT_SIZE; // 10 MB
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: TaskDetailPanelProps) {
   const { user } = useAuth();
   const router = useRouter();
-  const { language } = useI18n();
+  const { t, language } = useI18n();
   const dateLocale = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[language] ?? 'en-US';
 
   // ── Title ──────────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
     setTitleValue(value);
     if (titleTimer.current) clearTimeout(titleTimer.current);
     titleTimer.current = setTimeout(() => {
-      onUpdate({ title: value.trim() || '제목 없음' });
+      onUpdate({ title: value.trim() || t('notes.untitled') });
     }, 400);
   };
 
@@ -174,7 +174,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/g;
 
   const handleLinkClick = (url: string) => {
-    if (confirm(`이 링크를 브라우저에서 열까요?\n\n${url}`)) {
+    if (confirm(`Open link in browser?\n\n${url}`)) {
       window.open(url, '_blank', 'noopener,noreferrer');
     }
   };
@@ -230,7 +230,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
     const files = allFiles.filter((f) => {
       if (f.size > MAX_FILE_SIZE) {
-        alert(`"${f.name}"은 10 MB를 초과하여 첨부할 수 없습니다.`);
+        alert(`"${f.name}" exceeds 10 MB and cannot be attached.`);
         return false;
       }
       return true;
@@ -315,13 +315,13 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
         {/* Header — editable title */}
         <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-border flex-shrink-0">
           <div className="flex-1 pr-3">
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-1">할일 상세</p>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-1">{t('detail.title')}</p>
             <textarea
               value={titleValue}
               onChange={(e) => handleTitleChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } }}
               rows={2}
-              placeholder="할일 제목..."
+              placeholder={t('detail.titlePlaceholder')}
               className="w-full bg-transparent text-base font-bold text-text-primary leading-snug resize-none focus:outline-none border-b border-transparent hover:border-border focus:border-[#e94560]/50 transition-colors placeholder-text-muted"
             />
           </div>
@@ -343,7 +343,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             {/* List */}
             {allLists.length > 0 && (
               <div className="flex items-center gap-3">
-                <span className="text-text-muted text-xs w-16 flex-shrink-0">목록</span>
+                <span className="text-text-muted text-xs w-16 flex-shrink-0">{t('detail.list')}</span>
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <span
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0"
@@ -364,9 +364,9 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
             {/* Priority */}
             <div className="flex items-center gap-3">
-              <span className="text-text-muted text-xs w-16 flex-shrink-0">중요도</span>
+              <span className="text-text-muted text-xs w-16 flex-shrink-0">{t('detail.priority')}</span>
               <div className="flex gap-1.5">
-                {PRIORITY_OPTIONS.map((p) => (
+                {PRIORITY_VALUES.map((p) => (
                   <button
                     key={p.value}
                     onClick={() => onUpdate({ priority: p.value })}
@@ -377,7 +377,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                         : { borderColor: 'transparent', color: 'var(--color-text-inactive)' }
                     }
                   >
-                    {p.label}
+                    {t(`priority.${p.value}`)}
                   </button>
                 ))}
               </div>
@@ -385,7 +385,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
             {/* Due Date */}
             <div className="flex items-center gap-3">
-              <span className="text-text-muted text-xs w-16 flex-shrink-0">마감일</span>
+              <span className="text-text-muted text-xs w-16 flex-shrink-0">{t('detail.dueDate')}</span>
               <div className="flex items-center gap-2 flex-1">
                 <input
                   type="date"
@@ -394,14 +394,14 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                   className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
                 />
                 {task.dueDate && (
-                  <button onClick={() => onUpdate({ dueDate: null })} className="text-text-muted hover:text-[#e94560] text-sm transition-colors" title="마감일 제거">×</button>
+                  <button onClick={() => onUpdate({ dueDate: null })} className="text-text-muted hover:text-[#e94560] text-sm transition-colors">×</button>
                 )}
               </div>
             </div>
 
             {/* Created Date (등록일) */}
             <div className="flex items-center gap-3">
-              <span className="text-text-muted text-xs w-16 flex-shrink-0">등록일</span>
+              <span className="text-text-muted text-xs w-16 flex-shrink-0">{t('detail.createdDate')}</span>
               <div className="flex items-center gap-2 flex-1">
                 <input
                   type="date"
@@ -414,28 +414,28 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
 
             {/* Recurrence (반복) */}
             <div className="flex items-center gap-3">
-              <span className="text-text-muted text-xs w-16 flex-shrink-0">반복</span>
+              <span className="text-text-muted text-xs w-16 flex-shrink-0">{t('recurrence.label')}</span>
               <div className="flex items-center gap-2 flex-1">
                 <select
                   value={recurrencePreset}
                   onChange={(e) => handleRecurrenceChange(e.target.value as RecurrencePreset)}
                   className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
                 >
-                  <option value="none">없음</option>
-                  <option value="daily">매일</option>
-                  <option value="weekly">매주</option>
-                  <option value="monthly">매월</option>
-                  <option value="yearly">매년</option>
-                  <option value="custom">커스텀</option>
+                  <option value="none">{t('recurrence.none')}</option>
+                  <option value="daily">{t('recurrence.daily')}</option>
+                  <option value="weekly">{t('recurrence.weekly')}</option>
+                  <option value="monthly">{t('recurrence.monthly')}</option>
+                  <option value="yearly">{t('recurrence.yearly')}</option>
+                  <option value="custom">{t('recurrence.custom')}</option>
                 </select>
                 {task.recurrence_rule && (
-                  <button onClick={() => handleRecurrenceChange('none')} className="text-text-muted hover:text-[#e94560] text-sm transition-colors flex-shrink-0" title="반복 제거">×</button>
+                  <button onClick={() => handleRecurrenceChange('none')} className="text-text-muted hover:text-[#e94560] text-sm transition-colors flex-shrink-0">×</button>
                 )}
               </div>
             </div>
             {recurrencePreset === 'custom' && (
               <div className="flex items-center gap-3">
-                <span className="text-text-muted text-xs w-16 flex-shrink-0">간격</span>
+                <span className="text-text-muted text-xs w-16 flex-shrink-0">{t('detail.interval')}</span>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
@@ -449,25 +449,25 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                     onChange={(e) => setCustomFreq(e.target.value as RecurrenceRule['freq'])}
                     className="px-2 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560]"
                   >
-                    <option value="daily">일</option>
-                    <option value="weekly">주</option>
-                    <option value="monthly">개월</option>
-                    <option value="yearly">년</option>
+                    <option value="daily">{t('recurrence.unit.days')}</option>
+                    <option value="weekly">{t('recurrence.unit.weeks')}</option>
+                    <option value="monthly">{t('recurrence.unit.months')}</option>
+                    <option value="yearly">{t('recurrence.unit.years')}</option>
                   </select>
-                  <button onClick={applyCustomRecurrence} className="px-2.5 py-1.5 bg-[#e94560] text-white text-xs rounded-lg hover:bg-[#ff5a7a] transition-colors">적용</button>
+                  <button onClick={applyCustomRecurrence} className="px-2.5 py-1.5 bg-[#e94560] text-white text-xs rounded-lg hover:bg-[#ff5a7a] transition-colors">{t('recurrence.apply')}</button>
                 </div>
               </div>
             )}
             {task.recurrence_rule && (
               <p className="text-[10px] text-[#8b5cf6] flex items-center gap-1 pl-20">
                 <span>🔁</span>
-                <span>완료 시 다음 반복이 자동으로 등록됩니다</span>
+                <span>{t('detail.recurrenceAuto')}</span>
               </p>
             )}
 
             {/* Reminder */}
             <div className="flex items-center gap-3">
-              <span className="text-text-muted text-xs w-16 flex-shrink-0">알림</span>
+              <span className="text-text-muted text-xs w-16 flex-shrink-0">{t('detail.reminder')}</span>
               <div className="flex items-center gap-2 flex-1">
                 <input
                   type="datetime-local"
@@ -480,7 +480,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                   className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-[#e94560] transition-colors"
                 />
                 {task.reminder && (
-                  <button onClick={() => onUpdate({ reminder: null })} className="text-text-muted hover:text-[#e94560] text-sm transition-colors" title="알림 제거">×</button>
+                  <button onClick={() => onUpdate({ reminder: null })} className="text-text-muted hover:text-[#e94560] text-sm transition-colors">×</button>
                 )}
               </div>
             </div>
@@ -488,7 +488,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             {task.reminder && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied' && (
               <p className="text-[10px] text-amber-400 flex items-center gap-1">
                 <span>⚠️</span>
-                <span>브라우저 알림이 차단되어 있습니다. 브라우저 설정에서 허용해 주세요.</span>
+                <span>{t('detail.notifBlocked')}</span>
               </p>
             )}
           </div>
@@ -497,7 +497,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
           <div className="px-5 py-4 border-b border-border">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm">📋</span>
-              <span className="text-xs font-bold text-text-primary">하위 할일</span>
+              <span className="text-xs font-bold text-text-primary">{t('detail.subTasks')}</span>
               {subTasks.length > 0 && (
                 <span className="text-[10px] text-text-muted">{completedSubCount}/{subTasks.length}</span>
               )}
@@ -576,11 +576,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 value={subTaskInput}
                 onChange={(e) => setSubTaskInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') addSubTask(); if (e.key === 'Escape') setSubTaskInput(''); }}
-                placeholder="하위 할일 추가..."
+                placeholder={t('detail.addSubTask')}
                 className="flex-1 bg-transparent text-xs text-text-primary placeholder-text-inactive outline-none"
               />
               {subTaskInput.trim() && (
-                <button onClick={addSubTask} className="text-[10px] px-2 py-0.5 bg-[#e94560] text-white rounded font-semibold">추가</button>
+                <button onClick={addSubTask} className="text-[10px] px-2 py-0.5 bg-[#e94560] text-white rounded font-semibold">{t('common.add')}</button>
               )}
             </div>
           </div>
@@ -589,7 +589,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
           <div className="px-5 py-4 border-b border-border">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm">📝</span>
-              <span className="text-xs font-bold text-text-primary">메모</span>
+              <span className="text-xs font-bold text-text-primary">{t('detail.memo')}</span>
             </div>
             <textarea
               ref={memoRef}
@@ -597,7 +597,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
               onChange={(e) => handleMemoChange(e.target.value)}
               onFocus={() => setMemoFocused(true)}
               onBlur={() => setMemoFocused(false)}
-              placeholder="메모를 입력하세요..."
+              placeholder={t('detail.memoPlaceholder')}
               rows={1}
               style={{ minHeight: '80px', overflow: 'hidden' }}
               className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-xs text-text-primary placeholder-text-inactive resize-none focus:outline-none focus:border-[#e94560] transition-colors leading-relaxed"
@@ -610,18 +610,18 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm">📎</span>
-                <span className="text-xs font-bold text-text-primary">파일 첨부</span>
-                {attachments.length > 0 && <span className="text-[10px] text-text-muted">{attachments.length}개</span>}
+                <span className="text-xs font-bold text-text-primary">{t('detail.attachments')}</span>
+                {attachments.length > 0 && <span className="text-[10px] text-text-muted">{attachments.length}</span>}
               </div>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-secondary hover:border-[#e94560] hover:text-[#e94560] transition-colors font-semibold"
               >
-                + 파일 추가
+                {t('detail.addFile')}
               </button>
               <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
             </div>
-            <p className="text-[10px] text-text-muted mb-3">최대 10 MB · 클릭하면 열기/다운로드</p>
+            <p className="text-[10px] text-text-muted mb-3">{t('detail.fileLimit')}</p>
 
             {/* 업로드 진행률 */}
             {uploading && uploadProgress.length > 0 && (
@@ -648,7 +648,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full py-4 border-2 border-dashed border-border rounded-lg text-center text-text-inactive text-xs hover:border-[#e94560]/40 hover:text-text-muted transition-colors"
               >
-                파일을 클릭하여 첨부
+                {t('detail.dropFile')}
               </button>
             ) : (
               <div className="space-y-1.5">
@@ -681,11 +681,11 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
           <div className="px-5 py-4 border-b border-border">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm">⚙️</span>
-              <span className="text-xs font-bold text-text-primary">상태</span>
+              <span className="text-xs font-bold text-text-primary">{t('detail.status')}</span>
             </div>
             <div className="flex gap-2">
               {(['todo', 'in_progress', 'completed'] as const).map((s) => {
-                const labels = { todo: '할 일', in_progress: '진행 중', completed: '완료' };
+                const labels = { todo: t('status.todo'), in_progress: t('status.inProgress'), completed: t('status.completed') };
                 const colors = { todo: '#64748b', in_progress: '#f59e0b', completed: '#22c55e' };
                 const isActive = task.status === s;
                 return (
@@ -711,7 +711,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm">📝</span>
-                <span className="text-xs font-bold text-text-primary">연결된 노트</span>
+                <span className="text-xs font-bold text-text-primary">{t('detail.linkedNotes')}</span>
                 {(task.linkedNoteIds?.length ?? 0) > 0 && (
                   <span className="text-[10px] text-text-muted">{task.linkedNoteIds!.length}개</span>
                 )}
@@ -720,7 +720,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                 onClick={() => setShowNoteSelector(!showNoteSelector)}
                 className="text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-secondary hover:border-[#e94560] hover:text-[#e94560] transition-colors font-semibold"
               >
-                + 노트 연결
+                {t('detail.linkNote')}
               </button>
             </div>
 
@@ -777,7 +777,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
                     </button>
                   ))}
                 {allNotes.filter((n) => !(task.linkedNoteIds ?? []).includes(n.id!)).length === 0 && (
-                  <p className="text-xs text-text-muted text-center py-3">연결 가능한 노트가 없습니다</p>
+                  <p className="text-xs text-text-muted text-center py-3">{t('detail.noNotesAvail')}</p>
                 )}
               </div>
             )}
@@ -785,7 +785,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             {task.status === 'completed' && (task.linkedNoteIds?.length ?? 0) > 0 && (
               <p className="text-[10px] text-amber-400 mt-2 flex items-center gap-1">
                 <span>⚠️</span>
-                <span>완료된 할일의 노트 연결은 자동으로 해제됩니다</span>
+                <span>{t('detail.completedNoteWarning')}</span>
               </p>
             )}
           </div>
@@ -795,14 +795,14 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
         <div className="px-5 py-4 border-t border-border flex-shrink-0">
           <button
             onClick={() => {
-              if (confirm('이 할일을 삭제할까요?')) {
+              if (confirm(t('detail.delete') + '?')) {
                 onDelete();
                 onClose();
               }
             }}
             className="w-full py-2.5 rounded-xl border border-[#e94560]/30 text-[#e94560] text-sm font-semibold hover:bg-[#e94560]/10 transition-colors"
           >
-            할일 삭제
+            {t('detail.delete')}
           </button>
         </div>
       </div>

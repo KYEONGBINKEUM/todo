@@ -2254,8 +2254,8 @@ function NoteTreeItem({
       <span className="text-base flex-shrink-0">{note.icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-text-primary truncate">{note.title}</p>
-        {preview && <p className="text-[10px] text-text-inactive truncate">{preview}</p>}
-        <p className="text-[9px] text-text-inactive">{getRelativeTime(note.updated_at)}</p>
+        {preview && <p className="text-[10px] text-text-muted truncate">{preview}</p>}
+        <p className="text-[9px] text-text-muted">{getRelativeTime(note.updated_at)}</p>
       </div>
       <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-0.5">
         <button onClick={(e) => { e.stopPropagation(); onToggleStar(); }} className={`w-5 h-5 flex items-center justify-center rounded text-[10px] ${note.starred ? 'text-amber-400' : 'text-text-muted hover:text-amber-400'}`}>{note.starred ? '★' : '☆'}</button>

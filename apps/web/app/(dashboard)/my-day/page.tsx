@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
   addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
-  getUserSettings, updateUserSettings,
   type TaskData, type ListData, type RecurrenceRule,
 } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
@@ -102,7 +101,6 @@ export default function MyDayPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [showCompleted, setShowCompleted] = useState(true);
-  const [hideFutureTasks, setHideFutureTasks] = useState(true);
 
   // Drag state
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
@@ -128,13 +126,6 @@ export default function MyDayPage() {
 
   useTaskReminders(tasks);
 
-  // Load hideFutureTasks setting
-  useEffect(() => {
-    if (!user) return;
-    getUserSettings(user.uid).then((s) => {
-      setHideFutureTasks(s.hideFutureTasks ?? true);
-    });
-  }, [user]);
 
   // 캘린더 네비게이션
   const shiftCalendar = (days: number) => {
@@ -155,8 +146,6 @@ export default function MyDayPage() {
     const todayDate = getTodayStr();
     const activeDateTasks = myDayAll.filter((t) => {
       const cd = getTaskCreatedDate(t);
-      // hideFutureTasks: 오늘 이후 등록된 작업 숨기기
-      if (hideFutureTasks && cd > todayDate) return false;
       if (cd > selectedDate) return false;
       if (t.status !== 'completed') return true;
       return t.completedDate != null && t.completedDate > selectedDate;
@@ -175,7 +164,7 @@ export default function MyDayPage() {
       return 0;
     });
     setTasks(sorted.map((t, i) => ({ ...t, order: t.order ?? (i + 1) * 1000 })));
-  }, [storeTasks, selectedDate, hideFutureTasks]);
+  }, [storeTasks, selectedDate]);
 
   // 스토어 lists → 로컬 lists
   useEffect(() => {

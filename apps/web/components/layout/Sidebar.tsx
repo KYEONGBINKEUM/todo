@@ -1,16 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
-import { addList, updateList, deleteList, getUserSettings, getStorageLimit, type ListData, type Plan } from '@/lib/firestore';
+import { getUserSettings, getStorageLimit, type Plan } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
 import SettingsModal from '@/components/settings/SettingsModal';
 
-const LIST_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
+const DEFAULT_NAV = [
+  { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
+  { icon: '📋', labelKey: 'nav.allTasks', href: '/tasks' },
+  { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
+  { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
+  { icon: '⏱️', labelKey: 'nav.timebox', href: '/timebox' },
+  { icon: '🧮', labelKey: 'nav.calculator', href: '/calculator' },
+  { icon: '🌐', labelKey: 'nav.translate', href: '/translate' },
+  { icon: '⭐', labelKey: 'nav.important', href: '/important' },
+];
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -23,16 +32,31 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
-  const { lists: storeLists, storageUsed } = useDataStore();
-  const [lists, setLists] = useState<ListData[]>([]);
-  const [editingListId, setEditingListId] = useState<string | null>(null);
-  const [editingLabel, setEditingLabel] = useState('');
-  const [editingColor, setEditingColor] = useState('');
-  const [showAddList, setShowAddList] = useState(false);
-  const [newListLabel, setNewListLabel] = useState('');
+  const { storageUsed } = useDataStore();
   const [showSettings, setShowSettings] = useState(false);
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [hasUpdate, setHasUpdate] = useState(false);
+
+  // Nav drag state
+  const [navItems, setNavItems] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_NAV;
+    try {
+      const saved = localStorage.getItem('navOrder');
+      if (!saved) return DEFAULT_NAV;
+      const order: string[] = JSON.parse(saved);
+      return [...DEFAULT_NAV].sort((a, b) => {
+        const ai = order.indexOf(a.href);
+        const bi = order.indexOf(b.href);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+    } catch { return DEFAULT_NAV; }
+  });
+  const [dragNavSrc, setDragNavSrc] = useState<number | null>(null);
+  const [dragNavOver, setDragNavOver] = useState<number | null>(null);
+  const touchNavSrcRef = useRef<number | null>(null);
+  const navItemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Tauri: 앱 시작 시 백그라운드 업데이트 확인
   useEffect(() => {
@@ -53,29 +77,53 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     return () => clearTimeout(timer);
   }, []);
 
-  const NAV_ITEMS = [
-    { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
-    { icon: '📋', labelKey: 'nav.allTasks', href: '/tasks' },
-    { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
-    { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
-    { icon: '⏱️', labelKey: 'nav.timebox', href: '/timebox' },
-    { icon: '🧮', labelKey: 'nav.calculator', href: '/calculator' },
-    { icon: '🌐', labelKey: 'nav.translate', href: '/translate' },
-    // { icon: '🧠', labelKey: 'nav.mindmap', href: '/mindmap' }, // TODO: 추후 오픈 예정
-    // { icon: '👥', labelKey: 'nav.shared', href: '/shared' }, // TODO: Firestore 권한 규칙 수정 후 부활
-    { icon: '⭐', labelKey: 'nav.important', href: '/important' },
-  ];
+  const saveNavOrder = (items: typeof DEFAULT_NAV) => {
+    localStorage.setItem('navOrder', JSON.stringify(items.map(i => i.href)));
+  };
+
+  const handleNavDrop = (toIdx: number) => {
+    setNavItems(prev => {
+      if (dragNavSrc === null || dragNavSrc === toIdx) return prev;
+      const next = [...prev];
+      const [item] = next.splice(dragNavSrc, 1);
+      next.splice(toIdx, 0, item);
+      saveNavOrder(next);
+      return next;
+    });
+    setDragNavSrc(null);
+    setDragNavOver(null);
+  };
+
+  const handleNavTouchStart = (idx: number) => {
+    touchNavSrcRef.current = idx;
+    setDragNavSrc(idx);
+  };
+
+  const handleNavTouchMove = (e: React.TouchEvent) => {
+    if (touchNavSrcRef.current === null) return;
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const navEl = el?.closest('[data-nav-idx]');
+    if (navEl) {
+      const idx = parseInt(navEl.getAttribute('data-nav-idx') ?? '-1', 10);
+      if (idx >= 0) setDragNavOver(idx);
+    }
+  };
+
+  const handleNavTouchEnd = () => {
+    if (touchNavSrcRef.current !== null && dragNavOver !== null) {
+      handleNavDrop(dragNavOver);
+    }
+    touchNavSrcRef.current = null;
+    setDragNavSrc(null);
+    setDragNavOver(null);
+  };
 
   const THEME_OPTIONS = [
     { value: 'system' as const, icon: '🖥', labelKey: 'nav.themeSystem' },
     { value: 'light' as const, icon: '☀️', labelKey: 'nav.themeLight' },
     { value: 'dark' as const, icon: '🌙', labelKey: 'nav.themeDark' },
   ];
-
-  // storeLists(onSnapshot)로 목록 동기화 — getDocs 호출 제거
-  useEffect(() => {
-    setLists(storeLists);
-  }, [storeLists]);
 
   // 요금제 정보 — 세션당 1회만 조회
   useEffect(() => {
@@ -88,42 +136,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const handleSignOut = async () => {
     await signOut();
     router.push('/login');
-  };
-
-  const handleDeleteList = async (listId: string) => {
-    setLists((prev) => prev.filter((l) => l.id !== listId));
-    try {
-      await deleteList(user!.uid, listId);
-    } catch (err) {
-      console.error('Failed to delete list:', err);
-    }
-  };
-
-  const handleRenameList = async (listId: string) => {
-    if (!user || !editingLabel.trim()) { setEditingListId(null); return; }
-    const label = editingLabel.trim();
-    const color = editingColor;
-    setLists((prev) => prev.map((l) => l.id === listId ? { ...l, label, color } : l));
-    setEditingListId(null);
-    try {
-      await updateList(user.uid, listId, { label, color });
-    } catch (err) {
-      console.error('Failed to rename list:', err);
-    }
-  };
-
-  const handleAddList = async () => {
-    if (!user || !newListLabel.trim()) { setShowAddList(false); return; }
-    const color = LIST_COLORS[lists.length % LIST_COLORS.length];
-    const label = newListLabel.trim();
-    setNewListLabel('');
-    setShowAddList(false);
-    try {
-      await addList(user.uid, { label, color });
-      // onSnapshot이 storeLists를 갱신 → useEffect가 local lists를 자동 동기화
-    } catch (err) {
-      console.error('Failed to add list:', err);
-    }
   };
 
   const displayName = user?.displayName || t('common.user');
@@ -165,125 +177,51 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </Link>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-shrink-0 space-y-1">
-          {NAV_ITEMS.map((item) => {
+        {/* Navigation — draggable */}
+        <nav
+          className="flex-shrink-0 space-y-1"
+          onTouchMove={handleNavTouchMove}
+          onTouchEnd={handleNavTouchEnd}
+        >
+          {navItems.map((item, idx) => {
             const isActive = pathname === item.href || (item.href === '/tasks' && pathname?.startsWith('/tasks'));
+            const isDragging = dragNavSrc === idx;
+            const isOver = dragNavOver === idx && dragNavSrc !== idx;
             return (
-              <Link
+              <div
                 key={item.href}
-                href={item.href}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                  isActive
-                    ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
-                    : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
-                }`}
+                data-nav-idx={idx}
+                ref={el => { navItemRefs.current[idx] = el; }}
+                draggable
+                onDragStart={e => { setDragNavSrc(idx); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragOver={e => { e.preventDefault(); setDragNavOver(idx); }}
+                onDrop={() => handleNavDrop(idx)}
+                onDragEnd={() => { setDragNavSrc(null); setDragNavOver(null); }}
+                onTouchStart={() => handleNavTouchStart(idx)}
+                className={`transition-all ${isDragging ? 'opacity-40' : ''} ${isOver ? 'border-t-2 border-[#e94560]/60' : ''}`}
               >
-                <span className="text-base">{item.icon}</span>
-                <span className="flex-1 text-left">{t(item.labelKey)}</span>
-              </Link>
+                <Link
+                  href={item.href}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all cursor-grab active:cursor-grabbing ${
+                    isActive
+                      ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
+                      : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
+                  }`}
+                >
+                  <span className="text-base">{item.icon}</span>
+                  <span className="flex-1 text-left">{t(item.labelKey)}</span>
+                  <span className="text-text-muted/30 text-xs select-none">⠿</span>
+                </Link>
+              </div>
             );
           })}
         </nav>
 
-        {/* Lists — flex-1 + min-h-0으로 독립 스크롤 */}
-        <div className="mt-4 flex-1 min-h-0 overflow-y-auto">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">
-              {t('nav.lists')}
-            </span>
-            <button
-              onClick={() => setShowAddList(!showAddList)}
-              className="text-text-inactive hover:text-[#e94560] transition-colors text-sm"
-              title={t('common.add')}
-            >
-              +
-            </button>
-          </div>
-          <div className="space-y-1">
-            {lists.map((list) => (
-              <div
-                key={list.id}
-                className="group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary transition-all"
-              >
-                <span
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: list.color }}
-                />
-                {editingListId === list.id ? (
-                  <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                    <input
-                      type="color"
-                      value={editingColor}
-                      onChange={(e) => setEditingColor(e.target.value)}
-                      className="w-6 h-6 rounded cursor-pointer border border-border flex-shrink-0 p-0 bg-transparent"
-                      title={t('sidebar.colorPicker')}
-                    />
-                    <input
-                      value={editingLabel}
-                      onChange={(e) => setEditingLabel(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
-                      autoFocus
-                      className="flex-1 min-w-0 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
-                    />
-                    <button
-                      onClick={() => handleRenameList(list.id!)}
-                      className="flex-shrink-0 text-[11px] text-[#e94560] hover:text-[#ff5a7a] transition-colors font-semibold"
-                      title={t('common.save')}
-                    >✓</button>
-                    <button
-                      onClick={() => setEditingListId(null)}
-                      className="flex-shrink-0 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
-                      title={t('common.cancel')}
-                    >✕</button>
-                  </div>
-                ) : (
-                  <>
-                    <Link
-                      href={`/tasks?list=${list.id}`}
-                      className="flex-1 cursor-pointer truncate"
-                    >
-                      {list.label}
-                    </Link>
-                    <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <button
-                        onClick={(e) => { e.preventDefault(); setEditingListId(list.id!); setEditingLabel(list.label); setEditingColor(list.color); }}
-                        className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-text-secondary transition-colors text-[11px]"
-                        title={t('sidebar.renameColor')}
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={(e) => { e.preventDefault(); handleDeleteList(list.id!); }}
-                        className="w-5 h-5 flex items-center justify-center text-text-inactive hover:text-[#e94560] transition-colors text-sm"
-                        title={t('sidebar.deleteList')}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-            {showAddList && (
-              <div className="flex items-center gap-2 px-3 py-1.5">
-                <span className="w-3 h-3 rounded-full flex-shrink-0 bg-[#e94560]" />
-                <input
-                  value={newListLabel}
-                  onChange={(e) => setNewListLabel(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddList(); if (e.key === 'Escape') setShowAddList(false); }}
-                  onBlur={handleAddList}
-                  placeholder={t('sidebar.listPlaceholder')}
-                  autoFocus
-                  className="flex-1 bg-transparent text-text-primary text-sm placeholder-text-muted outline-none border-b border-[#e94560]"
-                />
-              </div>
-            )}
-          </div>
-        </div>
+        {/* spacer */}
+        <div className="flex-1" />
 
         {/* Theme Toggle */}
-        <div className="mt-6 pt-4 border-t border-border flex-shrink-0">
+        <div className="pt-4 border-t border-border flex-shrink-0">
           <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2">{t('nav.theme')}</p>
           <div className="flex gap-1">
             {THEME_OPTIONS.map((opt) => (

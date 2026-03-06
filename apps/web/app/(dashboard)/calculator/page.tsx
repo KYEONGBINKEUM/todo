@@ -39,7 +39,7 @@ function HistoryPanel({
   };
 
   return (
-    <div className="w-48 flex-shrink-0 flex flex-col gap-2">
+    <div className="flex-1 min-w-0 flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider">기록</span>
         {items.length > 0 && (
@@ -70,7 +70,7 @@ function HistoryPanel({
               </button>
               <button
                 onClick={() => onDelete(h.id)}
-                className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-text-muted opacity-0 group-hover:opacity-100 hover:text-[#e94560] hover:bg-[#e94560]/10 transition-all text-xs"
+                className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-[#e94560] hover:bg-[#e94560]/10 transition-all text-xs"
               >
                 ×
               </button>
@@ -232,9 +232,9 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
           <div>
             <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">원본 크기 (W × H)</p>
             <div className="flex items-center gap-2">
-              <input value={ow} onChange={e => setOw(e.target.value)} placeholder="1920" className={ic} />
+              <input value={ow} onChange={e => { setOw(e.target.value); setResH(''); setResW(''); }} placeholder="1920" className={ic} />
               <span className="text-text-muted font-bold text-lg">×</span>
-              <input value={oh} onChange={e => setOh(e.target.value)} placeholder="1080" className={ic} />
+              <input value={oh} onChange={e => { setOh(e.target.value); setResH(''); setResW(''); }} placeholder="1080" className={ic} />
             </div>
           </div>
           <div className="h-px bg-border" />
@@ -262,10 +262,10 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
           <div>
             <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">비율 (예: 16 : 9)</p>
             <div className="flex items-center gap-3">
-              <input value={r1} onChange={e => setR1(e.target.value)}
+              <input value={r1} onChange={e => { setR1(e.target.value); setROut(''); }}
                 className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
               <span className="text-text-muted font-bold text-xl">:</span>
-              <input value={r2} onChange={e => setR2(e.target.value)}
+              <input value={r2} onChange={e => { setR2(e.target.value); setROut(''); }}
                 className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
             </div>
           </div>

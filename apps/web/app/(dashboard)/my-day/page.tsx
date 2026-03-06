@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
   addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB,
+  addList, updateList, deleteList,
   type TaskData, type ListData, type RecurrenceRule,
 } from '@/lib/firestore';
 import { useTaskReminders } from '@/lib/use-reminders';
@@ -115,6 +116,14 @@ export default function MyDayPage() {
   const [showCleanup, setShowCleanup] = useState(false);
   const [cleanupFrom, setCleanupFrom] = useState('');
   const [cleanupTo, setCleanupTo] = useState('');
+  // 목록 관리
+  const [showListManager, setShowListManager] = useState(false);
+  const [editingListId, setEditingListId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
+  const [editingColor, setEditingColor] = useState('');
+  const [showAddList, setShowAddList] = useState(false);
+  const [newListLabel, setNewListLabel] = useState('');
+  const LIST_COLORS = ['#e94560', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ec4899'];
   // storeTasks 폴백: 등록일 변경으로 현재 날짜 필터에서 사라진 경우에도 패널 유지
   const selectedTask = tasks.find((t) => t.id === selectedTaskId)
     ?? storeTasks.find((t) => t.id === selectedTaskId) ?? null;
@@ -408,6 +417,31 @@ export default function MyDayPage() {
 
   const getListInfo = (listId: string) =>
     lists.find((l) => l.id === listId) || lists[0] || DEFAULT_LISTS[0];
+
+  // 목록 관리
+  const handleAddList = async () => {
+    if (!user || !newListLabel.trim()) { setShowAddList(false); setNewListLabel(''); return; }
+    const color = LIST_COLORS[lists.length % LIST_COLORS.length];
+    const label = newListLabel.trim();
+    setNewListLabel('');
+    setShowAddList(false);
+    try { await addList(user.uid, { label, color }); } catch (err) { console.error(err); }
+  };
+
+  const handleRenameList = async (listId: string) => {
+    if (!user || !editingLabel.trim()) { setEditingListId(null); return; }
+    const label = editingLabel.trim();
+    const color = editingColor;
+    setLists(prev => prev.map(l => l.id === listId ? { ...l, label, color } : l));
+    setEditingListId(null);
+    try { await updateList(user.uid, listId, { label, color }); } catch (err) { console.error(err); }
+  };
+
+  const handleDeleteList = async (listId: string) => {
+    if (!user) return;
+    setLists(prev => prev.filter(l => l.id !== listId));
+    try { await deleteList(user.uid, listId); } catch (err) { console.error(err); }
+  };
 
   if (loading) {
     return (
@@ -897,6 +931,82 @@ export default function MyDayPage() {
           </div>
         )}
         </>)}
+      </div>
+
+      {/* 목록 관리 */}
+      <div className="mt-8 border-t border-border pt-6">
+        <button
+          onClick={() => setShowListManager(!showListManager)}
+          className="flex items-center gap-2 text-sm text-text-muted hover:text-text-primary transition-colors mb-3"
+        >
+          <span className={`transition-transform duration-200 text-xs ${showListManager ? 'rotate-90' : ''}`}>▶</span>
+          <span className="font-semibold">목록 관리</span>
+          <span className="text-[10px] bg-border px-2 py-0.5 rounded-full">{lists.length}</span>
+        </button>
+        {showListManager && (
+          <div className="bg-background-card border border-border rounded-xl p-4 space-y-2">
+            {lists.map(list => (
+              <div key={list.id} className="group flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-background-hover transition-colors">
+                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                {editingListId === list.id ? (
+                  <div className="flex-1 flex items-center gap-2 min-w-0">
+                    <input
+                      type="color"
+                      value={editingColor}
+                      onChange={e => setEditingColor(e.target.value)}
+                      className="w-6 h-6 rounded cursor-pointer border border-border flex-shrink-0 p-0 bg-transparent"
+                    />
+                    <input
+                      value={editingLabel}
+                      onChange={e => setEditingLabel(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
+                      autoFocus
+                      className="flex-1 min-w-0 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
+                    />
+                    <button onClick={() => handleRenameList(list.id!)} className="text-[11px] text-[#e94560] font-semibold">✓</button>
+                    <button onClick={() => setEditingListId(null)} className="text-[11px] text-text-muted">✕</button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="flex-1 text-sm text-text-secondary truncate">{list.label}</span>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => { setEditingListId(list.id!); setEditingLabel(list.label); setEditingColor(list.color); }}
+                        className="w-6 h-6 flex items-center justify-center text-text-muted hover:text-text-primary transition-colors text-xs"
+                      >✏️</button>
+                      <button
+                        onClick={() => handleDeleteList(list.id!)}
+                        className="w-6 h-6 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-colors"
+                      >×</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            {showAddList ? (
+              <div className="flex items-center gap-2 px-3 py-2">
+                <span className="w-3 h-3 rounded-full flex-shrink-0 bg-[#e94560]" />
+                <input
+                  value={newListLabel}
+                  onChange={e => setNewListLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddList(); if (e.key === 'Escape') { setShowAddList(false); setNewListLabel(''); } }}
+                  onBlur={handleAddList}
+                  placeholder="목록 이름 입력..."
+                  autoFocus
+                  className="flex-1 bg-transparent text-text-primary text-sm placeholder-text-muted outline-none border-b border-[#e94560]"
+                />
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAddList(true)}
+                className="w-full text-left px-3 py-2 text-sm text-text-muted hover:text-[#e94560] transition-colors flex items-center gap-2"
+              >
+                <span className="text-base font-light">+</span>
+                <span>새 목록 추가</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {selectedTask && (

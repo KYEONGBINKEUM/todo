@@ -16,6 +16,25 @@ import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import hljs from 'highlight.js/lib/common';
 
+// ── Copy Code Button ──────────────────────────────────────────────────────────
+function CopyCodeBtn({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={e => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(code).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="text-[10px] text-text-muted hover:text-[#e94560] transition-colors font-medium px-1.5 py-0.5 rounded hover:bg-[#e94560]/10"
+    >
+      {copied ? '✓ 복사됨' : '복사'}
+    </button>
+  );
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -1163,8 +1182,11 @@ function NotesContent() {
         }
         const isCodeEditing = !readOnly && editingCodeIds.has(block.id);
         return (
-          <div className="bg-background-card border border-border rounded-lg relative">
-            <div className="absolute top-2 right-2 text-[9px] text-text-inactive font-mono uppercase z-10">{detectedLang}</div>
+          <div className="bg-background-card border border-border rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-border/20">
+              <span className="text-[10px] text-text-inactive font-mono uppercase">{detectedLang}</span>
+              <CopyCodeBtn code={codeBody} />
+            </div>
             {isCodeEditing ? (
               <textarea
                 data-block-id={block.id}

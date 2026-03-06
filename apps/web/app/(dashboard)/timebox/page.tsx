@@ -73,7 +73,7 @@ export default function TimeboxPage() {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-5">
           <div className="flex items-center gap-3 mb-1">

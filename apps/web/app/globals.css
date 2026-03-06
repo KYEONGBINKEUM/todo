@@ -10,14 +10,14 @@
   --font-size-base: 14px;
 
   /* Background */
-  --color-bg-base:    #08081a;
-  --color-bg-card:    #111128;
-  --color-bg-hover:   #1a1a40;
-  --color-bg-sidebar: #111128;
+  --color-bg-base:    #18181f;
+  --color-bg-card:    #22222c;
+  --color-bg-hover:   #2a2a36;
+  --color-bg-sidebar: #22222c;
 
   /* Border */
-  --color-border:       #1e1e3a;
-  --color-border-hover: #333355;
+  --color-border:       #32323e;
+  --color-border-hover: #48485a;
 
   /* Text */
   --color-text-primary:   #e2e8f0;

@@ -1,32 +1,119 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import {
+  getCalcHistory,
+  addCalcHistory,
+  deleteCalcHistory,
+  clearCalcHistoryByMode,
+} from '@/lib/firestore';
 
-type Mode = 'general' | 'ratio' | 'percent' | 'unit' | 'color';
+type Mode = 'general' | 'ratio' | 'unit' | 'color';
+
+interface HistItem { id: string; mode: Mode; expr: string; result: string; }
+
+// ── History Panel ─────────────────────────────────────────────────────────────
+function HistoryPanel({
+  items,
+  onUse,
+  onDelete,
+  onClearAll,
+}: {
+  items: HistItem[];
+  onUse?: (result: string) => void;
+  onDelete: (id: string) => void;
+  onClearAll: () => void;
+}) {
+  const [copied, setCopied] = useState('');
+
+  const handleClick = (item: HistItem) => {
+    if (onUse) {
+      onUse(item.result);
+    } else {
+      navigator.clipboard.writeText(item.result).then(() => {
+        setCopied(item.id);
+        setTimeout(() => setCopied(''), 1200);
+      });
+    }
+  };
+
+  return (
+    <div className="w-48 flex-shrink-0 flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider">기록</span>
+        {items.length > 0 && (
+          <button
+            onClick={onClearAll}
+            className="text-[10px] px-2 py-0.5 rounded-md border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
+          >
+            전체 삭제
+          </button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <div className="flex items-center justify-center h-20 text-text-muted text-[11px] text-center">
+          기록 없음
+        </div>
+      ) : (
+        <div className="space-y-1.5 max-h-96 overflow-y-auto">
+          {items.map((h) => (
+            <div key={h.id} className="group flex items-center gap-1">
+              <button
+                onClick={() => handleClick(h)}
+                className="flex-1 min-w-0 text-right p-2.5 bg-background rounded-xl border border-border hover:border-[#e94560]/30 transition-colors"
+              >
+                <p className="text-[10px] text-text-muted font-mono truncate">{h.expr}</p>
+                <p className="text-sm font-semibold text-text-primary group-hover:text-[#e94560] transition-colors truncate">
+                  {copied === h.id ? '✓ 복사됨' : h.result}
+                </p>
+              </button>
+              <button
+                onClick={() => onDelete(h.id)}
+                className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-text-muted opacity-0 group-hover:opacity-100 hover:text-[#e94560] hover:bg-[#e94560]/10 transition-all text-xs"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── General Calculator ────────────────────────────────────────────────────────
-interface CalcHistory { expr: string; result: string; }
-
-function GeneralCalc() {
+function GeneralCalc({
+  onResult,
+  externalValue,
+  onExternalValueConsumed,
+}: {
+  onResult: (expr: string, result: string) => void;
+  externalValue?: string | null;
+  onExternalValueConsumed?: () => void;
+}) {
   const [display, setDisplay] = useState('0');
   const [expr, setExpr] = useState('');
   const [justCalc, setJustCalc] = useState(false);
-  const [history, setHistory] = useState<CalcHistory[]>([]);
+
+  useEffect(() => {
+    if (externalValue) {
+      setDisplay(externalValue);
+      setExpr('');
+      setJustCalc(true);
+      onExternalValueConsumed?.();
+    }
+  }, [externalValue, onExternalValueConsumed]);
 
   const press = useCallback((val: string) => {
     if (val === 'C') { setDisplay('0'); setExpr(''); setJustCalc(false); return; }
-    if (val === '⌫') {
-      setDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : '0');
-      return;
-    }
+    if (val === '⌫') { setDisplay(p => p.length > 1 ? p.slice(0, -1) : '0'); return; }
     if (val === '=') {
       try {
-        const fullExpr = (justCalc ? display : expr + display);
-        const result = Function('"use strict"; return (' + fullExpr + ')')();
-        const r = parseFloat(result.toFixed(10)).toString();
-        if (fullExpr.trim() && fullExpr !== r) {
-          setHistory(prev => [{ expr: fullExpr + ' =', result: r }, ...prev].slice(0, 20));
-        }
+        const full = justCalc ? display : expr + display;
+        const res = Function('"use strict"; return (' + full + ')')();
+        const r = parseFloat(res.toFixed(10)).toString();
+        if (full.trim() && full !== r) onResult(full + ' =', r);
         setDisplay(r); setExpr(''); setJustCalc(true);
       } catch { setDisplay('Error'); setExpr(''); }
       return;
@@ -38,17 +125,15 @@ function GeneralCalc() {
       return;
     }
     if (val === '.') {
-      if (display.includes('.')) return;
-      setDisplay(prev => prev + '.');
-      setJustCalc(false);
+      if (!display.includes('.')) { setDisplay(p => p + '.'); setJustCalc(false); }
       return;
     }
-    if (val === '±') { setDisplay(prev => prev.startsWith('-') ? prev.slice(1) : '-' + prev); return; }
-    setDisplay(prev => justCalc ? val : prev === '0' ? val : prev + val);
+    if (val === '±') { setDisplay(p => p.startsWith('-') ? p.slice(1) : '-' + p); return; }
+    setDisplay(p => justCalc ? val : p === '0' ? val : p + val);
     setJustCalc(false);
-  }, [display, expr, justCalc]);
+  }, [display, expr, justCalc, onResult]);
 
-  const buttons = [
+  const rows = [
     ['C', '±', '%', '÷'],
     ['7', '8', '9', '×'],
     ['4', '5', '6', '-'],
@@ -57,264 +142,157 @@ function GeneralCalc() {
   ];
 
   return (
-    <div className="flex gap-6">
-      {/* Calculator */}
-      <div className="w-64 flex-shrink-0">
-        {/* Display */}
-        <div className="bg-background rounded-2xl border border-border p-4 mb-3">
-          <p className="text-xs text-text-muted h-5 text-right truncate font-mono">{expr || '\u00a0'}</p>
-          <p className="text-4xl font-light text-text-primary text-right mt-1 truncate">{display}</p>
-        </div>
-        {/* Buttons */}
-        <div className="grid grid-cols-4 gap-2">
-          {buttons.flat().map((btn, i) => {
-            const isOp = ['÷','×','-','+'].includes(btn);
-            const isEq = btn === '=';
-            const isUtil = ['C','±','%','⌫'].includes(btn);
-            return (
-              <button
-                key={i}
-                onClick={() => press(btn)}
-                className={`h-12 rounded-xl text-base font-semibold transition-all active:scale-95 ${
-                  isEq ? 'bg-[#e94560] text-white hover:bg-[#d63b55]' :
-                  isOp ? 'bg-[#e94560]/15 text-[#e94560] hover:bg-[#e94560]/25' :
-                  isUtil ? 'bg-border/60 text-text-secondary hover:bg-border' :
-                  'bg-background-card border border-border text-text-primary hover:bg-border/30'
-                }`}
-              >
-                {btn}
-              </button>
-            );
-          })}
-        </div>
+    <div className="w-60 flex-shrink-0">
+      <div className="bg-background rounded-2xl border border-border p-4 mb-3">
+        <p className="text-xs text-text-muted h-5 text-right truncate font-mono">{expr || '\u00a0'}</p>
+        <p className="text-4xl font-light text-text-primary text-right mt-1 truncate">{display}</p>
       </div>
-
-      {/* History */}
-      <div className="w-56 flex-shrink-0 flex flex-col">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">계산 기록</span>
-          {history.length > 0 && (
+      <div className="grid grid-cols-4 gap-2">
+        {rows.flat().map((btn, i) => {
+          const isEq = btn === '=';
+          const isOp = ['+', '-', '×', '÷'].includes(btn);
+          const isUtil = ['C', '±', '%', '⌫'].includes(btn);
+          return (
             <button
-              onClick={() => setHistory([])}
-              className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
+              key={i}
+              onClick={() => press(btn)}
+              className={`h-12 rounded-xl text-base font-semibold transition-all active:scale-95 ${
+                isEq ? 'bg-[#e94560] text-white hover:bg-[#d63b55]' :
+                isOp ? 'bg-[#e94560]/15 text-[#e94560] hover:bg-[#e94560]/25' :
+                isUtil ? 'bg-border/60 text-text-secondary hover:bg-border' :
+                'bg-background-card border border-border text-text-primary hover:bg-border/30'
+              }`}
             >
-              지우기
+              {btn}
             </button>
-          )}
-        </div>
-        <div className="max-h-72 overflow-y-auto space-y-2">
-          {history.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-text-muted text-xs">계산 결과가 여기에 표시됩니다</div>
-          ) : (
-            history.map((h, i) => (
-              <button
-                key={i}
-                onClick={() => { setDisplay(h.result); setExpr(''); setJustCalc(true); }}
-                className="w-full text-right p-3 bg-background-card rounded-xl border border-border hover:border-[#e94560]/30 transition-colors group"
-              >
-                <p className="text-[11px] text-text-muted font-mono truncate">{h.expr}</p>
-                <p className="text-lg font-semibold text-text-primary group-hover:text-[#e94560] transition-colors">{h.result}</p>
-              </button>
-            ))
-          )}
-        </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 // ── Ratio Calculator ──────────────────────────────────────────────────────────
-function RatioCalc() {
-  const [w1, setW1] = useState('');
-  const [h1, setH1] = useState('');
-  const [w2, setW2] = useState('');
-  const [h2, setH2] = useState('');
-  const [mode, setMode] = useState<'wh' | 'ratio'>('wh');
+function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => void }) {
+  const [tab, setTab] = useState<'scale' | 'ratio'>('scale');
 
-  const calcH2 = () => {
-    const n = parseFloat(w2), ow = parseFloat(w1), oh = parseFloat(h1);
-    if (!isNaN(n) && !isNaN(ow) && !isNaN(oh) && ow > 0)
-      setH2(parseFloat(((n * oh) / ow).toFixed(4)).toString());
+  // Scale mode
+  const [ow, setOw] = useState(''); const [oh, setOh] = useState('');
+  const [nw, setNw] = useState(''); const [nh, setNh] = useState('');
+  const [resH, setResH] = useState(''); const [resW, setResW] = useState('');
+
+  const scaleH = () => {
+    const [a, b, c] = [ow, oh, nw].map(parseFloat);
+    if ([a, b, c].some(isNaN) || a === 0) return;
+    const r = parseFloat(((c * b) / a).toFixed(2)).toString();
+    setResH(r); onResult(`${a}×${b} → W${c}`, `H = ${r}`);
   };
-  const calcW2 = () => {
-    const n = parseFloat(h2), ow = parseFloat(w1), oh = parseFloat(h1);
-    if (!isNaN(n) && !isNaN(ow) && !isNaN(oh) && oh > 0)
-      setW2(parseFloat(((n * ow) / oh).toFixed(4)).toString());
+  const scaleW = () => {
+    const [a, b, c] = [ow, oh, nh].map(parseFloat);
+    if ([a, b, c].some(isNaN) || b === 0) return;
+    const r = parseFloat(((c * a) / b).toFixed(2)).toString();
+    setResW(r); onResult(`${a}×${b} → H${c}`, `W = ${r}`);
   };
 
-  const [r1, setR1] = useState('16');
-  const [r2, setR2] = useState('9');
-  const [rVal, setRVal] = useState('');
-  const [rResult, setRResult] = useState('');
-  const [rDir, setRDir] = useState<'w'|'h'>('w');
+  // Ratio mode
+  const [r1, setR1] = useState('16'); const [r2, setR2] = useState('9');
+  const [rIn, setRIn] = useState(''); const [rOut, setROut] = useState('');
+  const [rDir, setRDir] = useState<'wh' | 'hw'>('wh');
+
   const calcRatio = () => {
-    const v = parseFloat(rVal), a = parseFloat(r1), b = parseFloat(r2);
-    if (isNaN(v) || isNaN(a) || isNaN(b) || a === 0 || b === 0) return;
-    if (rDir === 'w') setRResult(parseFloat(((v * b) / a).toFixed(4)).toString());
-    else setRResult(parseFloat(((v * a) / b).toFixed(4)).toString());
+    const [v, a, b] = [rIn, r1, r2].map(parseFloat);
+    if ([v, a, b].some(isNaN) || a === 0 || b === 0) return;
+    const r = rDir === 'wh'
+      ? parseFloat(((v * b) / a).toFixed(2)).toString()
+      : parseFloat(((v * a) / b).toFixed(2)).toString();
+    setROut(r);
+    onResult(
+      rDir === 'wh' ? `${r1}:${r2}, W=${rIn}` : `${r1}:${r2}, H=${rIn}`,
+      rDir === 'wh' ? `H = ${r}` : `W = ${r}`
+    );
   };
+
+  const ic = "w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors";
+  const rc = "px-3 py-2.5 bg-[#e94560]/5 border border-[#e94560]/20 rounded-xl text-sm font-bold text-[#e94560] min-h-[42px] flex items-center";
+  const calcBtn = "px-3 py-2.5 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] transition-colors flex-shrink-0";
 
   return (
-    <div className="space-y-5 max-w-lg">
-      {/* Mode tabs */}
-      <div className="flex gap-2 p-1 bg-border/30 rounded-xl w-fit">
-        {([['wh','크기 비례'], ['ratio','비율→크기']] as const).map(([m, label]) => (
-          <button key={m} onClick={() => setMode(m)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === m ? 'bg-[#e94560] text-white' : 'text-text-muted hover:text-text-primary'}`}>
-            {label}
+    <div className="space-y-5">
+      <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
+        {([['scale', '크기 비례'], ['ratio', '비율 계산']] as const).map(([m, l]) => (
+          <button key={m} onClick={() => setTab(m)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === m ? 'bg-[#e94560] text-white' : 'text-text-muted hover:text-text-primary'}`}>
+            {l}
           </button>
         ))}
       </div>
 
-      {mode === 'wh' ? (
-        <div className="space-y-4">
-          <p className="text-xs text-text-muted">원본 크기를 입력하고 새 너비 또는 높이를 입력하면 비율에 맞는 값을 계산합니다.</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">원본 너비</label>
-              <input value={w1} onChange={e => setW1(e.target.value)} placeholder="1920" className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors" />
-            </div>
-            <div>
-              <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">원본 높이</label>
-              <input value={h1} onChange={e => setH1(e.target.value)} placeholder="1080" className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors" />
+      {tab === 'scale' ? (
+        <div className="space-y-4 max-w-sm">
+          <div>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">원본 크기 (W × H)</p>
+            <div className="flex items-center gap-2">
+              <input value={ow} onChange={e => setOw(e.target.value)} placeholder="1920" className={ic} />
+              <span className="text-text-muted font-bold text-lg">×</span>
+              <input value={oh} onChange={e => setOh(e.target.value)} placeholder="1080" className={ic} />
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-[10px] text-text-muted px-2 uppercase tracking-wider">변환</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">새 너비 → 높이 계산</label>
-              <div className="flex gap-2">
-                <input value={w2} onChange={e => setW2(e.target.value)} placeholder="1280"
-                  className="flex-1 min-w-0 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors"
-                  onKeyDown={e => e.key === 'Enter' && calcH2()} />
-                <button onClick={calcH2} className="px-3 py-2 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] transition-colors">→</button>
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">결과 높이</label>
-              <div className="px-3 py-2.5 bg-[#e94560]/5 border border-[#e94560]/20 rounded-xl text-sm font-bold text-[#e94560] min-h-[42px]">{h2 || '—'}</div>
+          <div className="h-px bg-border" />
+          <div>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">너비로 높이 계산</p>
+            <div className="flex items-center gap-2">
+              <input value={nw} onChange={e => { setNw(e.target.value); setResH(''); }} placeholder="새 너비"
+                className={ic} onKeyDown={e => e.key === 'Enter' && scaleH()} />
+              <button onClick={scaleH} className={calcBtn}>→</button>
+              <div className={`${rc} flex-1 min-w-0`}>{resH || '—'}</div>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">새 높이 → 너비 계산</label>
-              <div className="flex gap-2">
-                <input value={h2} onChange={e => setH2(e.target.value)} placeholder="720"
-                  className="flex-1 min-w-0 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors"
-                  onKeyDown={e => e.key === 'Enter' && calcW2()} />
-                <button onClick={calcW2} className="px-3 py-2 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] transition-colors">→</button>
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">결과 너비</label>
-              <div className="px-3 py-2.5 bg-[#e94560]/5 border border-[#e94560]/20 rounded-xl text-sm font-bold text-[#e94560] min-h-[42px]">{w2 && h2 ? w2 : '—'}</div>
+          <div>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">높이로 너비 계산</p>
+            <div className="flex items-center gap-2">
+              <input value={nh} onChange={e => { setNh(e.target.value); setResW(''); }} placeholder="새 높이"
+                className={ic} onKeyDown={e => e.key === 'Enter' && scaleW()} />
+              <button onClick={scaleW} className={calcBtn}>→</button>
+              <div className={`${rc} flex-1 min-w-0`}>{resW || '—'}</div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <p className="text-xs text-text-muted">비율(예: 16:9)을 입력하고 너비 또는 높이 중 하나를 입력하면 나머지를 계산합니다.</p>
-          <div className="flex items-center gap-3">
-            <input value={r1} onChange={e => setR1(e.target.value)} className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
-            <span className="text-text-muted font-bold text-xl">:</span>
-            <input value={r2} onChange={e => setR2(e.target.value)} className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
+        <div className="space-y-4 max-w-xs">
+          <div>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">비율 (예: 16 : 9)</p>
+            <div className="flex items-center gap-3">
+              <input value={r1} onChange={e => setR1(e.target.value)}
+                className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
+              <span className="text-text-muted font-bold text-xl">:</span>
+              <input value={r2} onChange={e => setR2(e.target.value)}
+                className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
+            </div>
           </div>
-          <div className="flex gap-2 p-1 bg-border/30 rounded-xl w-fit">
-            {([['w','너비 → 높이'], ['h','높이 → 너비']] as const).map(([d, label]) => (
-              <button key={d} onClick={() => setRDir(d)}
+          <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
+            {([['wh', '너비 → 높이'], ['hw', '높이 → 너비']] as const).map(([d, l]) => (
+              <button key={d} onClick={() => { setRDir(d); setROut(''); }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${rDir === d ? 'bg-background-card text-text-primary shadow-sm' : 'text-text-muted'}`}>
-                {label}
+                {l}
               </button>
             ))}
           </div>
-          <div className="flex gap-2 items-end max-w-xs">
-            <div className="flex-1">
-              <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">{rDir === 'w' ? '너비' : '높이'} 입력</label>
-              <input value={rVal} onChange={e => setRVal(e.target.value)} placeholder="1920"
-                className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors"
-                onKeyDown={e => e.key === 'Enter' && calcRatio()} />
+          <div>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">
+              {rDir === 'wh' ? '너비' : '높이'} 입력
+            </p>
+            <div className="flex gap-2">
+              <input value={rIn} onChange={e => { setRIn(e.target.value); setROut(''); }} placeholder="값 입력"
+                className={ic} onKeyDown={e => e.key === 'Enter' && calcRatio()} />
+              <button onClick={calcRatio} className={calcBtn}>계산</button>
             </div>
-            <button onClick={calcRatio} className="px-4 py-2.5 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] transition-colors">계산</button>
+            {rOut && (
+              <div className={`mt-3 ${rc} gap-2`}>
+                <span className="text-xs text-text-muted">{rDir === 'wh' ? '높이 =' : '너비 ='}</span>
+                <span className="text-lg font-bold text-[#e94560]">{rOut}</span>
+              </div>
+            )}
           </div>
-          {rResult && (
-            <div className="p-4 bg-[#e94560]/5 border border-[#e94560]/20 rounded-xl max-w-xs">
-              <p className="text-xs text-text-muted mb-1">{rDir === 'w' ? '계산된 높이' : '계산된 너비'}</p>
-              <p className="text-3xl font-bold text-[#e94560]">{rResult}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Percent Calculator ────────────────────────────────────────────────────────
-function PercentCalc() {
-  type SubMode = 'of' | 'change' | 'add' | 'remove' | 'reverse';
-  const [sub, setSub] = useState<SubMode>('of');
-  const [a, setA] = useState('');
-  const [b, setB] = useState('');
-  const [result, setResult] = useState<string | null>(null);
-
-  const calc = () => {
-    const na = parseFloat(a), nb = parseFloat(b);
-    if (isNaN(na) || isNaN(nb)) return;
-    let r: number;
-    switch (sub) {
-      case 'of': r = (na / 100) * nb; break;
-      case 'change': r = ((nb - na) / Math.abs(na)) * 100; break;
-      case 'add': r = na * (1 + nb / 100); break;
-      case 'remove': r = na * (1 - nb / 100); break;
-      case 'reverse': r = na / (nb / 100); break;
-    }
-    setResult(parseFloat(r!.toFixed(6)).toString());
-  };
-
-  const SUBS: { id: SubMode; label: string; desc: string; aLabel: string; bLabel: string; rLabel: string }[] = [
-    { id: 'of', label: 'A%의 B', desc: 'A%는 B의 얼마인가', aLabel: '퍼센트 (A%)', bLabel: '전체 값 (B)', rLabel: '결과' },
-    { id: 'change', label: '변화율', desc: 'A → B의 증감률 (%)', aLabel: '이전 값 (A)', bLabel: '이후 값 (B)', rLabel: '변화율 (%)' },
-    { id: 'add', label: '% 추가', desc: 'A에 B% 더한 값', aLabel: '원래 값 (A)', bLabel: '추가 % (B)', rLabel: '결과' },
-    { id: 'remove', label: '% 제거', desc: 'A에서 B% 뺀 값', aLabel: '원래 값 (A)', bLabel: '제거 % (B)', rLabel: '결과' },
-    { id: 'reverse', label: '역산', desc: 'A가 B%일 때 전체 값', aLabel: '부분 값 (A)', bLabel: '퍼센트 (B%)', rLabel: '전체 값' },
-  ];
-  const s = SUBS.find(x => x.id === sub)!;
-
-  return (
-    <div className="space-y-5 max-w-sm">
-      <div className="flex flex-wrap gap-2">
-        {SUBS.map(({ id, label }) => (
-          <button key={id} onClick={() => { setSub(id); setResult(null); setA(''); setB(''); }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${sub === id ? 'bg-[#e94560] text-white' : 'bg-border/40 text-text-muted hover:text-text-primary'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <p className="text-xs text-text-muted">{s.desc}</p>
-      <div className="space-y-3">
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">{s.aLabel}</label>
-          <input value={a} onChange={e => { setA(e.target.value); setResult(null); }} placeholder="0"
-            className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors" />
-        </div>
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 block font-medium">{s.bLabel}</label>
-          <input value={b} onChange={e => { setB(e.target.value); setResult(null); }} placeholder="0"
-            className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors"
-            onKeyDown={e => e.key === 'Enter' && calc()} />
-        </div>
-        <button onClick={calc} className="w-full py-2.5 bg-[#e94560] text-white rounded-xl font-semibold hover:bg-[#d63b55] transition-colors">계산</button>
-      </div>
-      {result !== null && (
-        <div className="p-4 bg-[#e94560]/5 border border-[#e94560]/20 rounded-xl">
-          <p className="text-xs text-text-muted mb-1">{s.rLabel}</p>
-          <p className="text-3xl font-bold text-[#e94560]">{result}{sub === 'change' ? '%' : ''}</p>
         </div>
       )}
     </div>
@@ -322,20 +300,9 @@ function PercentCalc() {
 }
 
 // ── Unit Converter ────────────────────────────────────────────────────────────
-type UnitCategory = 'length' | 'px' | 'weight' | 'area' | 'temp';
+type UnitCategory = 'length' | 'weight' | 'area' | 'temp';
 
 const UNIT_DEFS: Record<UnitCategory, { label: string; units: { id: string; label: string; toBase: (v: number) => number; fromBase: (v: number) => number }[] }> = {
-  px: {
-    label: 'CSS 단위',
-    units: [
-      { id: 'px', label: 'px', toBase: v => v, fromBase: v => v },
-      { id: 'rem', label: 'rem (16px)', toBase: v => v * 16, fromBase: v => v / 16 },
-      { id: 'em', label: 'em (16px)', toBase: v => v * 16, fromBase: v => v / 16 },
-      { id: 'pt', label: 'pt', toBase: v => v * 1.3333, fromBase: v => v / 1.3333 },
-      { id: 'vw', label: 'vw (1920px)', toBase: v => v * 19.2, fromBase: v => v / 19.2 },
-      { id: 'percent', label: '% (1920px)', toBase: v => v * 19.2, fromBase: v => v / 19.2 },
-    ],
-  },
   length: {
     label: '길이',
     units: [
@@ -375,11 +342,11 @@ const UNIT_DEFS: Record<UnitCategory, { label: string; units: { id: string; labe
   },
 };
 
-function UnitConv() {
-  const [cat, setCat] = useState<UnitCategory>('px');
+function UnitConv({ onResult }: { onResult: (expr: string, result: string) => void }) {
+  const [cat, setCat] = useState<UnitCategory>('length');
   const [from, setFrom] = useState('');
-  const [fromUnit, setFromUnit] = useState('px');
-  const [toUnit, setToUnit] = useState('rem');
+  const [fromUnit, setFromUnit] = useState('mm');
+  const [toUnit, setToUnit] = useState('cm');
 
   const def = UNIT_DEFS[cat];
   const fromDef = def.units.find(u => u.id === fromUnit) ?? def.units[0];
@@ -388,8 +355,7 @@ function UnitConv() {
   const result = (() => {
     const v = parseFloat(from);
     if (isNaN(v)) return '';
-    const base = fromDef.toBase(v);
-    return parseFloat(toDef.fromBase(base).toFixed(8)).toString();
+    return parseFloat(toDef.fromBase(fromDef.toBase(v)).toFixed(8)).toString();
   })();
 
   const swap = () => { setFromUnit(toUnit); setToUnit(fromUnit); };
@@ -401,8 +367,12 @@ function UnitConv() {
     setFrom('');
   }, [cat]);
 
+  const handleSave = () => {
+    if (result) onResult(`${from} ${fromDef.label}`, `${result} ${toDef.label}`);
+  };
+
   return (
-    <div className="space-y-5 max-w-md">
+    <div className="max-w-md space-y-5">
       <div className="flex flex-wrap gap-2">
         {(Object.entries(UNIT_DEFS) as [UnitCategory, typeof UNIT_DEFS[UnitCategory]][]).map(([id, { label }]) => (
           <button key={id} onClick={() => setCat(id)}
@@ -437,12 +407,19 @@ function UnitConv() {
           </div>
         </div>
       </div>
+
+      {result && (
+        <button onClick={handleSave}
+          className="text-xs px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">
+          기록에 저장
+        </button>
+      )}
     </div>
   );
 }
 
 // ── Color Converter ───────────────────────────────────────────────────────────
-function ColorCalc() {
+function ColorCalc({ onResult }: { onResult: (expr: string, result: string) => void }) {
   const [hex, setHex] = useState('#e94560');
   const [r, setR] = useState('233');
   const [g, setG] = useState('69');
@@ -457,8 +434,8 @@ function ColorCalc() {
     return { r: parseInt(m[0], 16), g: parseInt(m[1], 16), b: parseInt(m[2], 16) };
   };
   const rgbToHsl = (r: number, g: number, b: number) => {
-    const rr = r/255, gg = g/255, bb = b/255;
-    const max = Math.max(rr,gg,bb), min = Math.min(rr,gg,bb);
+    const rr = r / 255, gg = g / 255, bb = b / 255;
+    const max = Math.max(rr, gg, bb), min = Math.min(rr, gg, bb);
     let hue = 0, sat = 0;
     const lig = (max + min) / 2;
     if (max !== min) {
@@ -470,16 +447,16 @@ function ColorCalc() {
         case bb: hue = ((rr - gg) / d + 4) / 6; break;
       }
     }
-    return { h: Math.round(hue*360), s: Math.round(sat*100), l: Math.round(lig*100) };
+    return { h: Math.round(hue * 360), s: Math.round(sat * 100), l: Math.round(lig * 100) };
   };
   const hslToRgb = (h: number, s: number, l: number) => {
-    const hs = s/100, ll = l/100;
-    const c = (1 - Math.abs(2*ll - 1)) * hs;
-    const x = c * (1 - Math.abs((h/60) % 2 - 1));
-    const m = ll - c/2;
-    let rr=0,gg=0,bb=0;
-    if (h<60){rr=c;gg=x;}else if(h<120){rr=x;gg=c;}else if(h<180){gg=c;bb=x;}else if(h<240){gg=x;bb=c;}else if(h<300){rr=x;bb=c;}else{rr=c;bb=x;}
-    return { r: Math.round((rr+m)*255), g: Math.round((gg+m)*255), b: Math.round((bb+m)*255) };
+    const hs = s / 100, ll = l / 100;
+    const c = (1 - Math.abs(2 * ll - 1)) * hs;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = ll - c / 2;
+    let rr = 0, gg = 0, bb = 0;
+    if (h < 60) { rr = c; gg = x; } else if (h < 120) { rr = x; gg = c; } else if (h < 180) { gg = c; bb = x; } else if (h < 240) { gg = x; bb = c; } else if (h < 300) { rr = x; bb = c; } else { rr = c; bb = x; }
+    return { r: Math.round((rr + m) * 255), g: Math.round((gg + m) * 255), b: Math.round((bb + m) * 255) };
   };
   const toHex = (n: number) => n.toString(16).padStart(2, '0');
 
@@ -492,16 +469,16 @@ function ColorCalc() {
     setH(String(hsl.h)); setS(String(hsl.s)); setL(String(hsl.l));
   };
   const fromRgb = () => {
-    const rv=parseInt(r), gv=parseInt(g), bv=parseInt(b);
-    if ([rv,gv,bv].some(isNaN)) return;
+    const rv = parseInt(r), gv = parseInt(g), bv = parseInt(b);
+    if ([rv, gv, bv].some(isNaN)) return;
     const hexVal = '#' + toHex(rv) + toHex(gv) + toHex(bv);
     setHex(hexVal);
     const hsl = rgbToHsl(rv, gv, bv);
     setH(String(hsl.h)); setS(String(hsl.s)); setL(String(hsl.l));
   };
   const fromHsl = () => {
-    const hv=parseInt(h), sv=parseInt(s), lv=parseInt(l);
-    if ([hv,sv,lv].some(isNaN)) return;
+    const hv = parseInt(h), sv = parseInt(s), lv = parseInt(l);
+    if ([hv, sv, lv].some(isNaN)) return;
     const rgb = hslToRgb(hv, sv, lv);
     setR(String(rgb.r)); setG(String(rgb.g)); setB(String(rgb.b));
     const hexVal = '#' + toHex(rgb.r) + toHex(rgb.g) + toHex(rgb.b);
@@ -521,7 +498,7 @@ function ColorCalc() {
   );
 
   return (
-    <div className="space-y-4 max-w-md">
+    <div className="max-w-md space-y-4">
       {/* Preview */}
       <div className="flex items-center gap-4 p-4 bg-background rounded-2xl border border-border">
         <div className="w-16 h-16 rounded-2xl shadow-lg flex-shrink-0 border border-white/10" style={{ backgroundColor: hex }} />
@@ -530,8 +507,15 @@ function ColorCalc() {
           <p className="text-xs text-text-muted mt-0.5">rgb({r}, {g}, {b})</p>
           <p className="text-xs text-text-muted">hsl({h}, {s}%, {l}%)</p>
         </div>
-        <input type="color" value={hex} onChange={e => fromHex(e.target.value)}
-          className="w-10 h-10 rounded-xl cursor-pointer border border-border p-0.5 bg-transparent" />
+        <div className="flex flex-col items-center gap-1.5">
+          <input type="color" value={hex} onChange={e => fromHex(e.target.value)}
+            className="w-10 h-10 rounded-xl cursor-pointer border border-border p-0.5 bg-transparent" />
+          <button
+            onClick={() => onResult(hex.toUpperCase(), `rgb(${r},${g},${b})`)}
+            className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors whitespace-nowrap">
+            저장
+          </button>
+        </div>
       </div>
 
       {/* HEX */}
@@ -554,7 +538,7 @@ function ColorCalc() {
           {[['R', r, setR, '#ef4444'], ['G', g, setG, '#22c55e'], ['B', b, setB, '#3b82f6']].map(([label, val, setter, color]) => (
             <div key={label as string}>
               <label className="text-[10px] mb-1.5 block font-bold" style={{ color: color as string }}>{label as string}</label>
-              <input value={val as string} onChange={e => (setter as (v:string)=>void)(e.target.value)} onBlur={fromRgb}
+              <input value={val as string} onChange={e => (setter as (v: string) => void)(e.target.value)} onBlur={fromRgb}
                 className="w-full px-2 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary outline-none focus:border-[#e94560] text-center transition-colors" />
             </div>
           ))}
@@ -571,21 +555,21 @@ function ColorCalc() {
           {[['H°', h, setH], ['S%', s, setS], ['L%', l, setL]].map(([label, val, setter]) => (
             <div key={label as string}>
               <label className="text-[10px] text-text-muted mb-1.5 block font-medium">{label as string}</label>
-              <input value={val as string} onChange={e => (setter as (v:string)=>void)(e.target.value)} onBlur={fromHsl}
+              <input value={val as string} onChange={e => (setter as (v: string) => void)(e.target.value)} onBlur={fromHsl}
                 className="w-full px-2 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary outline-none focus:border-[#e94560] text-center transition-colors" />
             </div>
           ))}
         </div>
       </div>
 
-      {/* Tailwind-like shades */}
+      {/* Color scale */}
       <div className="p-3.5 bg-background-card border border-border rounded-xl">
         <div className="flex items-center justify-between mb-3">
           <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">색상 스케일</p>
           <span className="text-[9px] text-text-muted">클릭하여 선택</span>
         </div>
         <div className="flex gap-1 mb-2">
-          {[95,85,75,65,55,45,35,25,15,5].map(lv => {
+          {[95, 85, 75, 65, 55, 45, 35, 25, 15, 5].map(lv => {
             const rgb = hslToRgb(parseInt(h), parseInt(s), lv);
             const c = '#' + toHex(rgb.r) + toHex(rgb.g) + toHex(rgb.b);
             return (
@@ -606,75 +590,122 @@ function ColorCalc() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const MODES: { id: Mode; icon: string; label: string; desc: string }[] = [
-  { id: 'general', icon: '🔢', label: '일반 계산기', desc: '사칙연산 + 기록' },
-  { id: 'ratio', icon: '📐', label: '비율 계산기', desc: '크기·비율 변환' },
-  { id: 'percent', icon: '%', label: '퍼센트', desc: '증감률·역산' },
-  { id: 'unit', icon: '📏', label: '단위 변환', desc: 'px·rem·길이·무게' },
-  { id: 'color', icon: '🎨', label: '색상 변환', desc: 'HEX·RGB·HSL' },
+  { id: 'general', icon: '🔢', label: '일반', desc: '사칙연산' },
+  { id: 'ratio', icon: '📐', label: '비율', desc: '크기 비례' },
+  { id: 'unit', icon: '📏', label: '단위', desc: '길이·무게·온도' },
+  { id: 'color', icon: '🎨', label: '색상', desc: 'HEX·RGB·HSL' },
 ];
 
 export default function CalculatorPage() {
   const [mode, setMode] = useState<Mode>('general');
+  const { user } = useAuth();
+  const [history, setHistory] = useState<HistItem[]>([]);
+  const [generalValue, setGeneralValue] = useState<string | null>(null);
+
   const activeMode = MODES.find(m => m.id === mode)!;
+
+  useEffect(() => {
+    if (!user) return;
+    getCalcHistory(user.uid).then(items => {
+      setHistory(items.map(item => ({
+        id: item.id,
+        mode: item.mode as Mode,
+        expr: item.expr,
+        result: item.result,
+      })));
+    });
+  }, [user]);
+
+  const handleResult = useCallback(async (expr: string, result: string) => {
+    const tempId = `temp_${Date.now()}`;
+    const newItem: HistItem = { id: tempId, mode, expr, result };
+    setHistory(prev => [newItem, ...prev].slice(0, 100));
+    if (user) {
+      const id = await addCalcHistory(user.uid, { mode, expr, result });
+      setHistory(prev => prev.map(h => h.id === tempId ? { ...h, id } : h));
+    }
+  }, [mode, user]);
+
+  const handleDelete = useCallback(async (id: string) => {
+    setHistory(prev => prev.filter(h => h.id !== id));
+    if (user && !id.startsWith('temp_')) await deleteCalcHistory(user.uid, id);
+  }, [user]);
+
+  const handleClearAll = useCallback(async () => {
+    setHistory(prev => prev.filter(h => h.mode !== mode));
+    if (user) await clearCalcHistoryByMode(user.uid, mode);
+  }, [mode, user]);
+
+  const modeHistory = history.filter(h => h.mode === mode);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8">
-      <div className="max-w-5xl mx-auto">
-      {/* Page header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="mb-5 flex items-center gap-3">
           <span className="text-2xl">🧮</span>
           <h2 className="text-2xl font-extrabold text-text-primary">계산기</h2>
         </div>
-      </div>
 
-      <div className="flex gap-6">
-        {/* Left: mode selector */}
-        <div className="w-44 flex-shrink-0">
-          <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold px-1 mb-2">계산 도구</p>
-          <nav className="space-y-0.5">
-            {MODES.map(m => (
-              <button
-                key={m.id}
-                onClick={() => setMode(m.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-xl transition-all ${
-                  mode === m.id
-                    ? 'bg-[#e94560]/10 text-[#e94560] border border-[#e94560]/20'
-                    : 'hover:bg-border/30 text-text-secondary border border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="text-base w-5 text-center flex-shrink-0">{m.icon}</span>
-                  <div className="min-w-0">
-                    <p className={`text-xs font-semibold truncate ${mode === m.id ? 'text-[#e94560]' : 'text-text-primary'}`}>{m.label}</p>
-                    <p className="text-[10px] text-text-muted truncate">{m.desc}</p>
+        <div className="flex gap-5">
+          {/* Left: mode nav */}
+          <div className="w-36 flex-shrink-0">
+            <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold px-1 mb-2">도구</p>
+            <nav className="space-y-0.5">
+              {MODES.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setMode(m.id)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl transition-all ${
+                    mode === m.id
+                      ? 'bg-[#e94560]/10 text-[#e94560] border border-[#e94560]/20'
+                      : 'hover:bg-border/30 text-text-secondary border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm w-4 text-center flex-shrink-0">{m.icon}</span>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-semibold truncate ${mode === m.id ? 'text-[#e94560]' : 'text-text-primary'}`}>{m.label}</p>
+                      <p className="text-[10px] text-text-muted truncate">{m.desc}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
-          </nav>
-        </div>
+                </button>
+              ))}
+            </nav>
+          </div>
 
-        {/* Right: calculator content */}
-        <div className="flex-1 min-w-0 bg-background-card rounded-2xl border border-border flex flex-col overflow-hidden">
-          {/* Content header */}
-          <div className="flex-shrink-0 px-6 py-4 border-b border-border flex items-center gap-3">
-            <span className="text-xl">{activeMode.icon}</span>
-            <div>
+          {/* Right: content card */}
+          <div className="flex-1 min-w-0 bg-background-card rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+              <span>{activeMode.icon}</span>
               <h3 className="text-sm font-bold text-text-primary">{activeMode.label}</h3>
-              <p className="text-[11px] text-text-muted">{activeMode.desc}</p>
+              <span className="text-[11px] text-text-muted ml-1">{activeMode.desc}</span>
+            </div>
+            <div className="p-5 flex gap-5">
+              {/* Calc content */}
+              <div className="flex-1 min-w-0">
+                {mode === 'general' && (
+                  <GeneralCalc
+                    onResult={handleResult}
+                    externalValue={generalValue}
+                    onExternalValueConsumed={() => setGeneralValue(null)}
+                  />
+                )}
+                {mode === 'ratio' && <RatioCalc onResult={handleResult} />}
+                {mode === 'unit' && <UnitConv onResult={handleResult} />}
+                {mode === 'color' && <ColorCalc onResult={handleResult} />}
+              </div>
+
+              {/* History */}
+              <HistoryPanel
+                items={modeHistory}
+                onUse={mode === 'general' ? (r) => setGeneralValue(r) : undefined}
+                onDelete={handleDelete}
+                onClearAll={handleClearAll}
+              />
             </div>
           </div>
-          {/* Content body */}
-          <div className="p-6">
-            {mode === 'general' && <GeneralCalc />}
-            {mode === 'ratio' && <RatioCalc />}
-            {mode === 'percent' && <PercentCalc />}
-            {mode === 'unit' && <UnitConv />}
-            {mode === 'color' && <ColorCalc />}
-          </div>
         </div>
-      </div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import {
   query,
   orderBy,
   where,
+  limit,
   serverTimestamp,
   Timestamp,
   writeBatch,
@@ -631,4 +632,45 @@ export async function saveTimebox(
 ): Promise<void> {
   const ref = doc(db, 'users', uid, 'timebox', date);
   await setDoc(ref, { date, ...data }, { merge: true });
+}
+
+// ============================================================================
+// Calc History
+// ============================================================================
+
+export interface CalcHistoryEntry {
+  id: string;
+  mode: string;
+  expr: string;
+  result: string;
+  createdAt: Timestamp;
+}
+
+export async function getCalcHistory(uid: string): Promise<CalcHistoryEntry[]> {
+  const ref = collection(db, 'users', uid, 'calcHistory');
+  const q = query(ref, orderBy('createdAt', 'desc'), limit(100));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CalcHistoryEntry));
+}
+
+export async function addCalcHistory(
+  uid: string,
+  data: { mode: string; expr: string; result: string }
+): Promise<string> {
+  const ref = collection(db, 'users', uid, 'calcHistory');
+  const d = await addDoc(ref, { ...data, createdAt: serverTimestamp() });
+  return d.id;
+}
+
+export async function deleteCalcHistory(uid: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', uid, 'calcHistory', id));
+}
+
+export async function clearCalcHistoryByMode(uid: string, mode: string): Promise<void> {
+  const ref = collection(db, 'users', uid, 'calcHistory');
+  const q = query(ref, where('mode', '==', mode));
+  const snap = await getDocs(q);
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
 }

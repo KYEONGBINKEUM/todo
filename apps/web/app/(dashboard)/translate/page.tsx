@@ -43,10 +43,10 @@ export default function TranslatePage() {
       if (data.responseStatus === 200) {
         setResult(data.responseData.translatedText);
       } else {
-        setError('번역에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        setError(t('translate.errorGeneric'));
       }
     } catch {
-      setError('네트워크 오류가 발생했습니다.');
+      setError(t('translate.errorNetwork'));
     } finally {
       setLoading(false);
     }
@@ -122,7 +122,7 @@ export default function TranslatePage() {
           <button
             onClick={handleSwap}
             className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-all text-base"
-            title="언어 바꾸기"
+            title={t('translate.swapLangs')}
           >
             ⇄
           </button>
@@ -144,12 +144,12 @@ export default function TranslatePage() {
               <span className="text-xs font-semibold text-text-secondary">
                 {LANGUAGES.find(l => l.code === srcLang)?.label}
               </span>
-              <span className="text-[11px] text-text-muted">{srcText.length} 자</span>
+              <span className="text-[11px] text-text-muted">{srcText.length} {t('translate.chars')}</span>
             </div>
             <textarea
               value={srcText}
               onChange={e => handleSrcChange(e.target.value)}
-              placeholder="번역할 텍스트를 입력하세요..."
+              placeholder={t('translate.inputPlaceholder')}
               className="flex-1 resize-none p-4 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none leading-relaxed min-h-[260px]"
             />
             <div className="px-4 py-2.5 border-t border-border flex items-center justify-between">
@@ -162,14 +162,14 @@ export default function TranslatePage() {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                   </svg>
-                  {srcCopied ? '✓ 복사됨' : '복사'}
+                  {srcCopied ? t('translate.copied') : t('translate.copy')}
                 </button>
                 {srcText && (
                   <button
                     onClick={handleClear}
                     className="px-3 py-1.5 rounded-lg text-xs text-text-muted hover:text-[#e94560] transition-colors"
                   >
-                    지우기
+                    {t('translate.clear')}
                   </button>
                 )}
               </div>
@@ -178,7 +178,7 @@ export default function TranslatePage() {
                 disabled={!srcText.trim() || loading}
                 className="px-4 py-1.5 bg-[#e94560] text-white rounded-xl text-xs font-bold hover:bg-[#d63b55] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
               >
-                {loading ? '번역 중...' : '번역'}
+                {loading ? t('translate.translating') : t('translate.translate')}
               </button>
             </div>
           </div>
@@ -189,20 +189,20 @@ export default function TranslatePage() {
               <span className="text-xs font-semibold text-text-secondary">
                 {LANGUAGES.find(l => l.code === tgtLang)?.label}
               </span>
-              <span className="text-[11px] text-text-muted">{result ? `${result.length} 자` : ''}</span>
+              <span className="text-[11px] text-text-muted">{result ? `${result.length} ${t('translate.chars')}` : ''}</span>
             </div>
             <div className="flex-1 p-4 min-h-[260px]">
               {loading ? (
                 <div className="flex items-center gap-2 text-text-muted text-sm">
                   <span className="inline-block w-3 h-3 rounded-full bg-[#e94560]/60 animate-pulse" />
-                  번역 중...
+                  {t('translate.translating')}
                 </div>
               ) : error ? (
                 <p className="text-sm text-red-400">{error}</p>
               ) : result ? (
                 <p className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">{result}</p>
               ) : (
-                <p className="text-sm text-text-muted">번역 결과가 여기에 표시됩니다</p>
+                <p className="text-sm text-text-muted">{t('translate.resultPlaceholder')}</p>
               )}
             </div>
             <div className="px-4 py-2.5 border-t border-border">
@@ -214,7 +214,7 @@ export default function TranslatePage() {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                 </svg>
-                {copied ? '✓ 복사됨' : '복사'}
+                {copied ? t('translate.copied') : t('translate.copy')}
               </button>
             </div>
           </div>
@@ -222,7 +222,7 @@ export default function TranslatePage() {
 
         {/* Quick lang shortcuts */}
         <div className="mt-4 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mr-1">빠른 선택</span>
+          <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mr-1">{t('translate.quickSelect')}</span>
           {[
             { src: 'ko', tgt: 'en', label: '한→영' },
             { src: 'en', tgt: 'ko', label: '영→한' },

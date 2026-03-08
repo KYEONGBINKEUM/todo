@@ -116,8 +116,7 @@ export default function MyDayPage() {
   const [showCleanup, setShowCleanup] = useState(false);
   const [cleanupFrom, setCleanupFrom] = useState('');
   const [cleanupTo, setCleanupTo] = useState('');
-  // 목록 관리
-  const [showListManager, setShowListManager] = useState(false);
+  // 목록 관리 (인라인)
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [editingColor, setEditingColor] = useState('');
@@ -696,7 +695,7 @@ export default function MyDayPage() {
           </div>
         </div>
 
-        {/* List Filter Chips */}
+        {/* List Filter Chips + Management */}
         <div className="mb-3 flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setFilterList(null)}
@@ -705,16 +704,72 @@ export default function MyDayPage() {
             {t('common.all')}
           </button>
           {lists.map((list) => (
-            <button
-              key={list.id}
-              onClick={() => setFilterList(filterList === list.id! ? null : list.id!)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${filterList === list.id ? 'bg-background-card border' : 'bg-background-card text-text-secondary border border-border hover:border-border-hover'}`}
-              style={filterList === list.id ? { borderColor: list.color, color: list.color } : undefined}
-            >
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-              {list.label}
-            </button>
+            <div key={list.id} className="relative group/chip flex items-center">
+              {editingListId === list.id ? (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-[#e94560]/40 bg-background-card">
+                  <input
+                    type="color"
+                    value={editingColor}
+                    onChange={e => setEditingColor(e.target.value)}
+                    className="w-5 h-5 rounded cursor-pointer border-none p-0 bg-transparent flex-shrink-0"
+                  />
+                  <input
+                    value={editingLabel}
+                    onChange={e => setEditingLabel(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
+                    autoFocus
+                    className="w-20 bg-transparent text-text-primary text-xs outline-none"
+                  />
+                  <button onClick={() => handleRenameList(list.id!)} className="text-[10px] text-[#e94560] font-bold">✓</button>
+                  <button onClick={() => setEditingListId(null)} className="text-[10px] text-text-muted">✕</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setFilterList(filterList === list.id! ? null : list.id!)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${filterList === list.id ? 'bg-background-card border' : 'bg-background-card text-text-secondary border border-border hover:border-border-hover'}`}
+                  style={filterList === list.id ? { borderColor: list.color, color: list.color } : undefined}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
+                  {list.label}
+                </button>
+              )}
+              {editingListId !== list.id && (
+                <div className="absolute -top-1 -right-1 hidden group-hover/chip:flex items-center gap-0.5 z-10">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingListId(list.id!); setEditingLabel(list.label); setEditingColor(list.color); }}
+                    className="w-4 h-4 flex items-center justify-center rounded-full bg-background-card border border-border text-[8px] text-text-muted hover:text-[#e94560] shadow-sm transition-colors"
+                    title={t('common.edit')}
+                  >✏️</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id!); }}
+                    className="w-4 h-4 flex items-center justify-center rounded-full bg-background-card border border-border text-[8px] text-text-muted hover:text-[#e94560] shadow-sm transition-colors"
+                    title={t('common.delete')}
+                  >×</button>
+                </div>
+              )}
+            </div>
           ))}
+          {showAddList ? (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-[#e94560]/40 bg-background-card">
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-[#e94560]" />
+              <input
+                value={newListLabel}
+                onChange={e => setNewListLabel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddList(); if (e.key === 'Escape') { setShowAddList(false); setNewListLabel(''); } }}
+                onBlur={handleAddList}
+                placeholder={t('sidebar.listPlaceholder')}
+                autoFocus
+                className="w-24 bg-transparent text-text-primary text-xs placeholder-text-muted outline-none"
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddList(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-[#e94560] border border-dashed border-border hover:border-[#e94560]/40 transition-all"
+            >
+              +
+            </button>
+          )}
         </div>
 
         {/* @Tag filter chips */}
@@ -933,81 +988,6 @@ export default function MyDayPage() {
         </>)}
       </div>
 
-      {/* 목록 관리 */}
-      <div className="mt-8 border-t border-border pt-6">
-        <button
-          onClick={() => setShowListManager(!showListManager)}
-          className="flex items-center gap-2 text-sm text-text-muted hover:text-text-primary transition-colors mb-3"
-        >
-          <span className={`transition-transform duration-200 text-xs ${showListManager ? 'rotate-90' : ''}`}>▶</span>
-          <span className="font-semibold">목록 관리</span>
-          <span className="text-[10px] bg-border px-2 py-0.5 rounded-full">{lists.length}</span>
-        </button>
-        {showListManager && (
-          <div className="bg-background-card border border-border rounded-xl p-4 space-y-2">
-            {lists.map(list => (
-              <div key={list.id} className="group flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-background-hover transition-colors">
-                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
-                {editingListId === list.id ? (
-                  <div className="flex-1 flex items-center gap-2 min-w-0">
-                    <input
-                      type="color"
-                      value={editingColor}
-                      onChange={e => setEditingColor(e.target.value)}
-                      className="w-6 h-6 rounded cursor-pointer border border-border flex-shrink-0 p-0 bg-transparent"
-                    />
-                    <input
-                      value={editingLabel}
-                      onChange={e => setEditingLabel(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleRenameList(list.id!); if (e.key === 'Escape') setEditingListId(null); }}
-                      autoFocus
-                      className="flex-1 min-w-0 bg-transparent text-text-primary text-sm outline-none border-b border-[#e94560]"
-                    />
-                    <button onClick={() => handleRenameList(list.id!)} className="text-[11px] text-[#e94560] font-semibold">✓</button>
-                    <button onClick={() => setEditingListId(null)} className="text-[11px] text-text-muted">✕</button>
-                  </div>
-                ) : (
-                  <>
-                    <span className="flex-1 text-sm text-text-secondary truncate">{list.label}</span>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => { setEditingListId(list.id!); setEditingLabel(list.label); setEditingColor(list.color); }}
-                        className="w-6 h-6 flex items-center justify-center text-text-muted hover:text-text-primary transition-colors text-xs"
-                      >✏️</button>
-                      <button
-                        onClick={() => handleDeleteList(list.id!)}
-                        className="w-6 h-6 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-colors"
-                      >×</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-            {showAddList ? (
-              <div className="flex items-center gap-2 px-3 py-2">
-                <span className="w-3 h-3 rounded-full flex-shrink-0 bg-[#e94560]" />
-                <input
-                  value={newListLabel}
-                  onChange={e => setNewListLabel(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleAddList(); if (e.key === 'Escape') { setShowAddList(false); setNewListLabel(''); } }}
-                  onBlur={handleAddList}
-                  placeholder="목록 이름 입력..."
-                  autoFocus
-                  className="flex-1 bg-transparent text-text-primary text-sm placeholder-text-muted outline-none border-b border-[#e94560]"
-                />
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowAddList(true)}
-                className="w-full text-left px-3 py-2 text-sm text-text-muted hover:text-[#e94560] transition-colors flex items-center gap-2"
-              >
-                <span className="text-base font-light">+</span>
-                <span>새 목록 추가</span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
 
       {selectedTask && (
         <TaskDetailPanel

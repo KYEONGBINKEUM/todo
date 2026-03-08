@@ -14,6 +14,7 @@ const DEFAULT_NAV = [
   { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
   { icon: '📋', labelKey: 'nav.allTasks', href: '/tasks' },
   { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
+  { icon: '🗓️', labelKey: 'nav.calendar', href: '/calendar' },
   { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
   { icon: '⏱️', labelKey: 'nav.timebox', href: '/timebox' },
   { icon: '🧮', labelKey: 'nav.calculator', href: '/calculator' },

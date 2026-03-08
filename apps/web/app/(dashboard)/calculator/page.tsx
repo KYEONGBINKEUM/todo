@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { useI18n } from '@/lib/i18n-context';
 import {
   getCalcHistory,
   addCalcHistory,
@@ -19,13 +20,16 @@ function HistoryPanel({
   onUse,
   onDelete,
   onClearAll,
+  currentMode,
 }: {
   items: HistItem[];
   onUse?: (result: string) => void;
   onDelete: (id: string) => void;
   onClearAll: () => void;
+  currentMode?: Mode;
 }) {
   const [copied, setCopied] = useState('');
+  const { t } = useI18n();
 
   const handleClick = (item: HistItem) => {
     if (onUse) {
@@ -41,32 +45,42 @@ function HistoryPanel({
   return (
     <div className="flex-1 min-w-0 flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider">기록</span>
+        <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider">{t('calc.history')}</span>
         {items.length > 0 && (
           <button
             onClick={onClearAll}
             className="text-[10px] px-2 py-0.5 rounded-md border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
           >
-            전체 삭제
+            {t('calc.clearAll')}
           </button>
         )}
       </div>
       {items.length === 0 ? (
         <div className="flex items-center justify-center h-20 text-text-muted text-[11px] text-center">
-          기록 없음
+          {t('calc.noHistory')}
         </div>
       ) : (
         <div className="space-y-1.5 max-h-96 overflow-y-auto">
-          {items.map((h) => (
+          {items.map((h) => {
+            // 색상 모드일 때 expr에서 HEX 값 추출
+            const colorHex = (currentMode === 'color' || h.mode === 'color') ? (h.expr.match(/#[0-9a-fA-F]{6}/)?.[0] ?? null) : null;
+            return (
             <div key={h.id} className="group flex items-center gap-1">
               <button
                 onClick={() => handleClick(h)}
                 className="flex-1 min-w-0 text-right p-2.5 bg-background rounded-xl border border-border hover:border-[#e94560]/30 transition-colors"
               >
-                <p className="text-[10px] text-text-muted font-mono truncate">{h.expr}</p>
-                <p className="text-sm font-semibold text-text-primary group-hover:text-[#e94560] transition-colors truncate">
-                  {copied === h.id ? '✓ 복사됨' : h.result}
-                </p>
+                <div className="flex items-center gap-2 justify-end">
+                  {colorHex && (
+                    <span className="w-5 h-5 rounded-md flex-shrink-0 border border-white/10 shadow-sm" style={{ backgroundColor: colorHex }} />
+                  )}
+                  <div className="min-w-0 flex-1 text-right">
+                    <p className="text-[10px] text-text-muted font-mono truncate">{h.expr}</p>
+                    <p className="text-sm font-semibold text-text-primary group-hover:text-[#e94560] transition-colors truncate">
+                      {copied === h.id ? t('calc.copied') : h.result}
+                    </p>
+                  </div>
+                </div>
               </button>
               <button
                 onClick={() => onDelete(h.id)}
@@ -75,7 +89,8 @@ function HistoryPanel({
                 ×
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -173,25 +188,53 @@ function GeneralCalc({
 }
 
 // ── Ratio Calculator ──────────────────────────────────────────────────────────
-function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => void }) {
+function RatioCalc({ onResult, t }: { onResult: (expr: string, result: string) => void; t: (key: string) => string }) {
   const [tab, setTab] = useState<'scale' | 'ratio'>('scale');
 
   // Scale mode
   const [ow, setOw] = useState(''); const [oh, setOh] = useState('');
   const [nw, setNw] = useState(''); const [nh, setNh] = useState('');
-  const [resH, setResH] = useState(''); const [resW, setResW] = useState('');
+  const [lockAspect, setLockAspect] = useState(true);
 
-  const scaleH = () => {
+  // 실시간 계산 결과
+  const resH = (() => {
     const [a, b, c] = [ow, oh, nw].map(parseFloat);
-    if ([a, b, c].some(isNaN) || a === 0) return;
-    const r = parseFloat(((c * b) / a).toFixed(2)).toString();
-    setResH(r); onResult(`${a}×${b} → W${c}`, `H = ${r}`);
-  };
-  const scaleW = () => {
+    if ([a, b, c].some(isNaN) || a === 0) return '';
+    return parseFloat(((c * b) / a).toFixed(2)).toString();
+  })();
+  const resW = (() => {
     const [a, b, c] = [ow, oh, nh].map(parseFloat);
-    if ([a, b, c].some(isNaN) || b === 0) return;
-    const r = parseFloat(((c * a) / b).toFixed(2)).toString();
-    setResW(r); onResult(`${a}×${b} → H${c}`, `W = ${r}`);
+    if ([a, b, c].some(isNaN) || b === 0) return '';
+    return parseFloat(((c * a) / b).toFixed(2)).toString();
+  })();
+
+  const saveScaleH = () => {
+    if (!resH) return;
+    onResult(`${ow}×${oh} → W${nw}`, `H = ${resH}`);
+  };
+  const saveScaleW = () => {
+    if (!resW) return;
+    onResult(`${ow}×${oh} → H${nh}`, `W = ${resW}`);
+  };
+
+  // 너비 입력 시 높이도 자동 연동 (잠금 모드)
+  const handleNwChange = (val: string) => {
+    setNw(val);
+    if (lockAspect) {
+      const [a, b, c] = [parseFloat(ow), parseFloat(oh), parseFloat(val)];
+      if (![a, b, c].some(isNaN) && a !== 0) {
+        setNh(parseFloat(((c * b) / a).toFixed(2)).toString());
+      }
+    }
+  };
+  const handleNhChange = (val: string) => {
+    setNh(val);
+    if (lockAspect) {
+      const [a, b, c] = [parseFloat(ow), parseFloat(oh), parseFloat(val)];
+      if (![a, b, c].some(isNaN) && b !== 0) {
+        setNw(parseFloat(((c * a) / b).toFixed(2)).toString());
+      }
+    }
   };
 
   // Ratio mode
@@ -219,7 +262,7 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
   return (
     <div className="space-y-5">
       <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
-        {([['scale', '크기 비례'], ['ratio', '비율 계산']] as const).map(([m, l]) => (
+        {([['scale', t('calc.scaleTab')], ['ratio', t('calc.ratioTab')]] as const).map(([m, l]) => (
           <button key={m} onClick={() => setTab(m)}
             className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === m ? 'bg-[#e94560] text-white' : 'text-text-muted hover:text-text-primary'}`}>
             {l}
@@ -230,29 +273,47 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
       {tab === 'scale' ? (
         <div className="space-y-4 max-w-sm">
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">원본 크기 (W × H)</p>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">{t('calc.originalSize')}</p>
             <div className="flex items-center gap-2">
-              <input value={ow} onChange={e => { setOw(e.target.value); setResH(''); setResW(''); }} placeholder="1920" className={ic} />
+              <input value={ow} onChange={e => setOw(e.target.value)} placeholder="1920" className={ic} />
               <span className="text-text-muted font-bold text-lg">×</span>
-              <input value={oh} onChange={e => { setOh(e.target.value); setResH(''); setResW(''); }} placeholder="1080" className={ic} />
+              <input value={oh} onChange={e => setOh(e.target.value)} placeholder="1080" className={ic} />
             </div>
           </div>
-          <div className="h-px bg-border" />
+          <div className="flex items-center gap-2">
+            <div className="h-px bg-border flex-1" />
+            <button
+              onClick={() => setLockAspect(!lockAspect)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${lockAspect ? 'bg-[#e94560]/10 text-[#e94560] border-[#e94560]/30' : 'text-text-muted border-border hover:text-text-primary'}`}
+              title={lockAspect ? t('calc.aspectUnlock') : t('calc.aspectLock')}
+            >
+              {lockAspect ? `🔗 ${t('calc.aspectLock')}` : `🔓 ${t('calc.aspectUnlock')}`}
+            </button>
+            <div className="h-px bg-border flex-1" />
+          </div>
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">너비로 높이 계산</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">{t('calc.widthToHeight')}</p>
+              {resH && <button onClick={saveScaleH} className="text-[10px] px-2 py-0.5 rounded-md border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">{t('calc.save')}</button>}
+            </div>
             <div className="flex items-center gap-2">
-              <input value={nw} onChange={e => { setNw(e.target.value); setResH(''); }} placeholder="새 너비"
-                className={ic} onKeyDown={e => e.key === 'Enter' && scaleH()} />
-              <button onClick={scaleH} className={calcBtn}>→</button>
+              <div className="flex-1 min-w-0">
+                <input value={nw} onChange={e => handleNwChange(e.target.value)} placeholder={t('calc.widthInput')} className={ic} />
+              </div>
+              <span className="text-text-muted text-sm">→</span>
               <div className={`${rc} flex-1 min-w-0`}>{resH || '—'}</div>
             </div>
           </div>
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">높이로 너비 계산</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">{t('calc.heightToWidth')}</p>
+              {resW && <button onClick={saveScaleW} className="text-[10px] px-2 py-0.5 rounded-md border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">{t('calc.save')}</button>}
+            </div>
             <div className="flex items-center gap-2">
-              <input value={nh} onChange={e => { setNh(e.target.value); setResW(''); }} placeholder="새 높이"
-                className={ic} onKeyDown={e => e.key === 'Enter' && scaleW()} />
-              <button onClick={scaleW} className={calcBtn}>→</button>
+              <div className="flex-1 min-w-0">
+                <input value={nh} onChange={e => handleNhChange(e.target.value)} placeholder={t('calc.heightInput')} className={ic} />
+              </div>
+              <span className="text-text-muted text-sm">→</span>
               <div className={`${rc} flex-1 min-w-0`}>{resW || '—'}</div>
             </div>
           </div>
@@ -260,7 +321,7 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
       ) : (
         <div className="space-y-4 max-w-xs">
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">비율 (예: 16 : 9)</p>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">{t('calc.ratioLabel')}</p>
             <div className="flex items-center gap-3">
               <input value={r1} onChange={e => { setR1(e.target.value); setROut(''); }}
                 className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
@@ -270,7 +331,7 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
             </div>
           </div>
           <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
-            {([['wh', '너비 → 높이'], ['hw', '높이 → 너비']] as const).map(([d, l]) => (
+            {([['wh', t('calc.wToH')], ['hw', t('calc.hToW')]] as const).map(([d, l]) => (
               <button key={d} onClick={() => { setRDir(d); setROut(''); }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${rDir === d ? 'bg-background-card text-text-primary shadow-sm' : 'text-text-muted'}`}>
                 {l}
@@ -279,16 +340,16 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
           </div>
           <div>
             <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">
-              {rDir === 'wh' ? '너비' : '높이'} 입력
+              {rDir === 'wh' ? t('calc.widthInput') : t('calc.heightInput')}
             </p>
             <div className="flex gap-2">
-              <input value={rIn} onChange={e => { setRIn(e.target.value); setROut(''); }} placeholder="값 입력"
+              <input value={rIn} onChange={e => { setRIn(e.target.value); setROut(''); }} placeholder={t('calc.inputValue')}
                 className={ic} onKeyDown={e => e.key === 'Enter' && calcRatio()} />
-              <button onClick={calcRatio} className={calcBtn}>계산</button>
+              <button onClick={calcRatio} className={calcBtn}>{t('calc.calculate')}</button>
             </div>
             {rOut && (
               <div className={`mt-3 ${rc} gap-2`}>
-                <span className="text-xs text-text-muted">{rDir === 'wh' ? '높이 =' : '너비 ='}</span>
+                <span className="text-xs text-text-muted">{rDir === 'wh' ? `${t('calc.height')} =` : `${t('calc.width')} =`}</span>
                 <span className="text-lg font-bold text-[#e94560]">{rOut}</span>
               </div>
             )}
@@ -302,9 +363,9 @@ function RatioCalc({ onResult }: { onResult: (expr: string, result: string) => v
 // ── Unit Converter ────────────────────────────────────────────────────────────
 type UnitCategory = 'length' | 'weight' | 'area' | 'temp';
 
-const UNIT_DEFS: Record<UnitCategory, { label: string; units: { id: string; label: string; toBase: (v: number) => number; fromBase: (v: number) => number }[] }> = {
+const UNIT_DEFS: Record<UnitCategory, { labelKey: string; units: { id: string; label: string; toBase: (v: number) => number; fromBase: (v: number) => number }[] }> = {
   length: {
-    label: '길이',
+    labelKey: 'calc.length',
     units: [
       { id: 'mm', label: 'mm', toBase: v => v, fromBase: v => v },
       { id: 'cm', label: 'cm', toBase: v => v * 10, fromBase: v => v / 10 },
@@ -315,7 +376,7 @@ const UNIT_DEFS: Record<UnitCategory, { label: string; units: { id: string; labe
     ],
   },
   weight: {
-    label: '무게',
+    labelKey: 'calc.weight',
     units: [
       { id: 'g', label: 'g', toBase: v => v, fromBase: v => v },
       { id: 'kg', label: 'kg', toBase: v => v * 1000, fromBase: v => v / 1000 },
@@ -324,7 +385,7 @@ const UNIT_DEFS: Record<UnitCategory, { label: string; units: { id: string; labe
     ],
   },
   area: {
-    label: '넓이',
+    labelKey: 'calc.area',
     units: [
       { id: 'cm2', label: 'cm²', toBase: v => v, fromBase: v => v },
       { id: 'm2', label: 'm²', toBase: v => v * 10000, fromBase: v => v / 10000 },
@@ -333,7 +394,7 @@ const UNIT_DEFS: Record<UnitCategory, { label: string; units: { id: string; labe
     ],
   },
   temp: {
-    label: '온도',
+    labelKey: 'calc.temperature',
     units: [
       { id: 'c', label: '°C', toBase: v => v, fromBase: v => v },
       { id: 'f', label: '°F', toBase: v => (v - 32) * 5 / 9, fromBase: v => v * 9 / 5 + 32 },
@@ -342,7 +403,7 @@ const UNIT_DEFS: Record<UnitCategory, { label: string; units: { id: string; labe
   },
 };
 
-function UnitConv({ onResult }: { onResult: (expr: string, result: string) => void }) {
+function UnitConv({ onResult, t }: { onResult: (expr: string, result: string) => void; t: (key: string) => string }) {
   const [cat, setCat] = useState<UnitCategory>('length');
   const [from, setFrom] = useState('');
   const [fromUnit, setFromUnit] = useState('mm');
@@ -374,10 +435,10 @@ function UnitConv({ onResult }: { onResult: (expr: string, result: string) => vo
   return (
     <div className="max-w-md space-y-5">
       <div className="flex flex-wrap gap-2">
-        {(Object.entries(UNIT_DEFS) as [UnitCategory, typeof UNIT_DEFS[UnitCategory]][]).map(([id, { label }]) => (
+        {(Object.entries(UNIT_DEFS) as [UnitCategory, typeof UNIT_DEFS[UnitCategory]][]).map(([id, { labelKey }]) => (
           <button key={id} onClick={() => setCat(id)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${cat === id ? 'bg-[#e94560] text-white' : 'bg-border/40 text-text-muted hover:text-text-primary'}`}>
-            {label}
+            {t(labelKey)}
           </button>
         ))}
       </div>
@@ -411,7 +472,7 @@ function UnitConv({ onResult }: { onResult: (expr: string, result: string) => vo
       {result && (
         <button onClick={handleSave}
           className="text-xs px-3 py-1.5 rounded-lg border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">
-          기록에 저장
+          {t('calc.saveToHistory')}
         </button>
       )}
     </div>
@@ -419,7 +480,7 @@ function UnitConv({ onResult }: { onResult: (expr: string, result: string) => vo
 }
 
 // ── Color Converter ───────────────────────────────────────────────────────────
-function ColorCalc({ onResult }: { onResult: (expr: string, result: string) => void }) {
+function ColorCalc({ onResult, t }: { onResult: (expr: string, result: string) => void; t: (key: string) => string }) {
   const [hex, setHex] = useState('#e94560');
   const [r, setR] = useState('233');
   const [g, setG] = useState('69');
@@ -493,7 +554,7 @@ function ColorCalc({ onResult }: { onResult: (expr: string, result: string) => v
   const CopyBtn = ({ text, label }: { text: string; label: string }) => (
     <button onClick={() => copy(text, label)}
       className="text-[10px] px-2.5 py-1 rounded-lg bg-border/40 hover:bg-[#e94560]/10 hover:text-[#e94560] text-text-muted transition-all font-medium">
-      {copied === label ? '✓ 복사됨' : '복사'}
+      {copied === label ? t('calc.copied') : t('calc.copy')}
     </button>
   );
 
@@ -513,7 +574,7 @@ function ColorCalc({ onResult }: { onResult: (expr: string, result: string) => v
           <button
             onClick={() => onResult(hex.toUpperCase(), `rgb(${r},${g},${b})`)}
             className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors whitespace-nowrap">
-            저장
+            {t('calc.save')}
           </button>
         </div>
       </div>
@@ -565,8 +626,8 @@ function ColorCalc({ onResult }: { onResult: (expr: string, result: string) => v
       {/* Color scale */}
       <div className="p-3.5 bg-background-card border border-border rounded-xl">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">색상 스케일</p>
-          <span className="text-[9px] text-text-muted">클릭하여 선택</span>
+          <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">{t('calc.colorScale')}</p>
+          <span className="text-[9px] text-text-muted">{t('calc.clickToSelect')}</span>
         </div>
         <div className="flex gap-1 mb-2">
           {[95, 85, 75, 65, 55, 45, 35, 25, 15, 5].map(lv => {
@@ -580,8 +641,8 @@ function ColorCalc({ onResult }: { onResult: (expr: string, result: string) => v
           })}
         </div>
         <div className="flex justify-between">
-          <span className="text-[9px] text-text-muted">밝음</span>
-          <span className="text-[9px] text-text-muted">어둠</span>
+          <span className="text-[9px] text-text-muted">{t('calc.bright')}</span>
+          <span className="text-[9px] text-text-muted">{t('calc.dark')}</span>
         </div>
       </div>
     </div>
@@ -589,20 +650,21 @@ function ColorCalc({ onResult }: { onResult: (expr: string, result: string) => v
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-const MODES: { id: Mode; icon: string; label: string; desc: string }[] = [
-  { id: 'general', icon: '🔢', label: '일반', desc: '사칙연산' },
-  { id: 'ratio', icon: '📐', label: '비율', desc: '크기 비례' },
-  { id: 'unit', icon: '📏', label: '단위', desc: '길이·무게·온도' },
-  { id: 'color', icon: '🎨', label: '색상', desc: 'HEX·RGB·HSL' },
+const MODE_DEFS: { id: Mode; icon: string; labelKey: string; descKey: string }[] = [
+  { id: 'general', icon: '🔢', labelKey: 'calc.general', descKey: 'calc.generalDesc' },
+  { id: 'ratio', icon: '📐', labelKey: 'calc.ratio', descKey: 'calc.ratioDesc' },
+  { id: 'unit', icon: '📏', labelKey: 'calc.unit', descKey: 'calc.unitDesc' },
+  { id: 'color', icon: '🎨', labelKey: 'calc.color', descKey: 'calc.colorDesc' },
 ];
 
 export default function CalculatorPage() {
   const [mode, setMode] = useState<Mode>('general');
   const { user } = useAuth();
+  const { t } = useI18n();
   const [history, setHistory] = useState<HistItem[]>([]);
   const [generalValue, setGeneralValue] = useState<string | null>(null);
 
-  const activeMode = MODES.find(m => m.id === mode)!;
+  const activeMode = MODE_DEFS.find(m => m.id === mode)!;
 
   useEffect(() => {
     if (!user) return;
@@ -644,15 +706,15 @@ export default function CalculatorPage() {
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">
           <span className="text-2xl">🧮</span>
-          <h2 className="text-2xl font-extrabold text-text-primary">계산기</h2>
+          <h2 className="text-2xl font-extrabold text-text-primary">{t('calc.title')}</h2>
         </div>
 
         <div className="flex gap-5">
           {/* Left: mode nav */}
           <div className="w-36 flex-shrink-0">
-            <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold px-1 mb-2">도구</p>
+            <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold px-1 mb-2">{t('calc.tools')}</p>
             <nav className="space-y-0.5">
-              {MODES.map(m => (
+              {MODE_DEFS.map(m => (
                 <button
                   key={m.id}
                   onClick={() => setMode(m.id)}
@@ -665,8 +727,8 @@ export default function CalculatorPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm w-4 text-center flex-shrink-0">{m.icon}</span>
                     <div className="min-w-0">
-                      <p className={`text-xs font-semibold truncate ${mode === m.id ? 'text-[#e94560]' : 'text-text-primary'}`}>{m.label}</p>
-                      <p className="text-[10px] text-text-muted truncate">{m.desc}</p>
+                      <p className={`text-xs font-semibold truncate ${mode === m.id ? 'text-[#e94560]' : 'text-text-primary'}`}>{t(m.labelKey)}</p>
+                      <p className="text-[10px] text-text-muted truncate">{t(m.descKey)}</p>
                     </div>
                   </div>
                 </button>
@@ -678,8 +740,8 @@ export default function CalculatorPage() {
           <div className="flex-1 min-w-0 bg-background-card rounded-2xl border border-border overflow-hidden">
             <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
               <span>{activeMode.icon}</span>
-              <h3 className="text-sm font-bold text-text-primary">{activeMode.label}</h3>
-              <span className="text-[11px] text-text-muted ml-1">{activeMode.desc}</span>
+              <h3 className="text-sm font-bold text-text-primary">{t(activeMode.labelKey)}</h3>
+              <span className="text-[11px] text-text-muted ml-1">{t(activeMode.descKey)}</span>
             </div>
             <div className="p-5 flex gap-5">
               {/* Calc content */}
@@ -691,9 +753,9 @@ export default function CalculatorPage() {
                     onExternalValueConsumed={() => setGeneralValue(null)}
                   />
                 )}
-                {mode === 'ratio' && <RatioCalc onResult={handleResult} />}
-                {mode === 'unit' && <UnitConv onResult={handleResult} />}
-                {mode === 'color' && <ColorCalc onResult={handleResult} />}
+                {mode === 'ratio' && <RatioCalc onResult={handleResult} t={t} />}
+                {mode === 'unit' && <UnitConv onResult={handleResult} t={t} />}
+                {mode === 'color' && <ColorCalc onResult={handleResult} t={t} />}
               </div>
 
               {/* History */}
@@ -702,6 +764,7 @@ export default function CalculatorPage() {
                 onUse={mode === 'general' ? (r) => setGeneralValue(r) : undefined}
                 onDelete={handleDelete}
                 onClearAll={handleClearAll}
+                currentMode={mode}
               />
             </div>
           </div>

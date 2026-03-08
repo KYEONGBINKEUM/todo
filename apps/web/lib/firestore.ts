@@ -674,3 +674,41 @@ export async function clearCalcHistoryByMode(uid: string, mode: string): Promise
   snap.docs.forEach((d) => batch.delete(d.ref));
   await batch.commit();
 }
+
+// ============================================================================
+// Calendar Events
+// ============================================================================
+
+export interface CalendarEvent {
+  id?: string;
+  title: string;
+  date: string;        // YYYY-MM-DD
+  endDate?: string;    // YYYY-MM-DD for multi-day
+  startTime?: string;  // HH:mm (없으면 종일)
+  endTime?: string;    // HH:mm
+  allDay: boolean;
+  color: string;
+  memo?: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export async function getCalendarEvents(uid: string): Promise<CalendarEvent[]> {
+  const ref = collection(db, 'users', uid, 'calendarEvents');
+  const snap = await getDocs(ref);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CalendarEvent));
+}
+
+export async function addCalendarEvent(uid: string, event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  const ref = collection(db, 'users', uid, 'calendarEvents');
+  const docRef = await addDoc(ref, { ...event, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return docRef.id;
+}
+
+export async function updateCalendarEvent(uid: string, id: string, updates: Partial<CalendarEvent>): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'calendarEvents', id), { ...updates, updatedAt: serverTimestamp() });
+}
+
+export async function deleteCalendarEvent(uid: string, id: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', uid, 'calendarEvents', id));
+}

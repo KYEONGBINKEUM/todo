@@ -1,9 +1,8 @@
 'use client';
 
 import { useI18n } from '@/lib/i18n-context';
-import { useAuth } from '@/lib/auth-context';
-
-const POLAR_PRODUCT_PRO = process.env.NEXT_PUBLIC_POLAR_PREMIUM_PRODUCT_ID ?? '';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 
 function isTauriEnv(): boolean {
   return typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
@@ -15,7 +14,6 @@ interface NoahAIUpgradePromptProps {
 
 export default function NoahAIUpgradePrompt({ onClose }: NoahAIUpgradePromptProps) {
   const { t } = useI18n();
-  const { user } = useAuth();
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -65,26 +63,28 @@ export default function NoahAIUpgradePrompt({ onClose }: NoahAIUpgradePromptProp
           </button>
           <button
             onClick={async () => {
-              if (!POLAR_PRODUCT_PRO) { onClose(); return; }
-              const params = new URLSearchParams();
-              params.set('products', POLAR_PRODUCT_PRO);
-              if (user?.email) params.set('customer_email', user.email);
-              if (user?.uid) params.set('metadata[uid]', user.uid);
-              const url = `https://polar.sh/checkout?${params.toString()}`;
-              if (isTauriEnv()) {
-                try {
-                  const { openUrl } = await import('@tauri-apps/plugin-opener');
-                  await openUrl(url);
-                } catch {
+              try {
+                const createCheckout = httpsCallable<unknown, { url: string }>(functions, 'createPolarCheckout');
+                const { data } = await createCheckout({});
+                const url = data.url;
+                if (!url) { onClose(); return; }
+                if (isTauriEnv()) {
                   try {
-                    const { open } = await import('@tauri-apps/plugin-shell');
-                    await open(url);
+                    const { openUrl } = await import('@tauri-apps/plugin-opener');
+                    await openUrl(url);
                   } catch {
-                    window.open(url, '_blank');
+                    try {
+                      const { open } = await import('@tauri-apps/plugin-shell');
+                      await open(url);
+                    } catch {
+                      window.open(url, '_blank');
+                    }
                   }
+                } else {
+                  window.open(url, '_blank');
                 }
-              } else {
-                window.open(url, '_blank');
+              } catch (err) {
+                console.error('Checkout error:', err);
               }
               onClose();
             }}

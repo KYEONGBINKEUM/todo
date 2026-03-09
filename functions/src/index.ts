@@ -10,6 +10,8 @@ admin.initializeApp();
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const polarWebhookSecret = defineSecret('POLAR_WEBHOOK_SECRET');
+const polarAccessToken = defineSecret('POLAR_ACCESS_TOKEN');
+const polarPremiumProductId = defineSecret('POLAR_PREMIUM_PRODUCT_ID');
 
 // ── Polar Webhook ─────────────────────────────────────────────────────────────
 
@@ -50,6 +52,48 @@ export const polarWebhook = onRequest(
     }
 
     res.json({ received: true });
+  }
+);
+
+// ── Polar Checkout ───────────────────────────────────────────────────────────
+
+export const createPolarCheckout = onCall(
+  { secrets: [polarAccessToken, polarPremiumProductId] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
+    }
+
+    const productId = polarPremiumProductId.value();
+    if (!productId) {
+      throw new HttpsError('failed-precondition', 'Product ID not configured');
+    }
+
+    const body: Record<string, unknown> = {
+      products: [productId],
+      metadata: { uid: request.auth.uid },
+    };
+    if (request.auth.token.email) {
+      body.customer_email = request.auth.token.email;
+    }
+
+    const res = await fetch('https://api.polar.sh/v1/checkouts/', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${polarAccessToken.value()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[polar] checkout creation failed:', err);
+      throw new HttpsError('internal', 'Failed to create checkout');
+    }
+
+    const data = await res.json();
+    return { url: data.url };
   }
 );
 

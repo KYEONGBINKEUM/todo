@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -37,7 +39,6 @@ const AI_FEATURES = [
 const PLANS = [
   {
     id: 'free' as const,
-    productId: '',
     name: 'Free',
     price: '무료',
     priceNote: '영원히',
@@ -56,7 +57,6 @@ const PLANS = [
   },
   {
     id: 'pro' as const,
-    productId: process.env.NEXT_PUBLIC_POLAR_PREMIUM_PRODUCT_ID ?? '',
     name: 'Pro',
     price: '$7.99',
     priceNote: '/ 월',
@@ -84,16 +84,17 @@ function PricingCard({ plan, user }: {
 }) {
   const router = useRouter();
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (plan.id === 'free') { router.push('/login'); return; }
     if (!user) { router.push('/login'); return; }
-    if (!plan.productId) return;
 
-    const params = new URLSearchParams();
-    params.set('products', plan.productId);
-    if (user.email) params.set('customer_email', user.email);
-    params.set('metadata[uid]', user.uid);
-    window.open(`https://polar.sh/checkout?${params.toString()}`, '_blank');
+    try {
+      const createCheckout = httpsCallable<unknown, { url: string }>(functions, 'createPolarCheckout');
+      const { data } = await createCheckout({});
+      if (data.url) window.open(data.url, '_blank');
+    } catch (err) {
+      console.error('Checkout error:', err);
+    }
   };
 
   return (

@@ -7,6 +7,8 @@ import { FONT_SIZE_KEY } from '@/app/providers';
 import { useI18n } from '@/lib/i18n-context';
 import { updateUserSettings, getUserSettings, getStorageLimit, type Plan, type Language } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 
 type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'error';
 
@@ -37,8 +39,6 @@ const PLANS: { value: Plan; label: string; desc: string; color: string }[] = [
   { value: 'free', label: 'Free', desc: 'settings.freeDesc', color: '#64748b' },
   { value: 'pro', label: 'Pro', desc: 'settings.planFeatures.ai', color: '#e94560' },
 ];
-
-const POLAR_PRODUCT_PRO = process.env.NEXT_PUBLIC_POLAR_PREMIUM_PRODUCT_ID ?? '';
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { user } = useAuth();
@@ -358,28 +358,31 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         </div>
                       )}
 
-                      {!isAdmin && userPlan === 'free' && POLAR_PRODUCT_PRO && (
+                      {!isAdmin && userPlan === 'free' && (
                         <button
                           onClick={async () => {
-                            const params = new URLSearchParams();
-                            params.set('products', POLAR_PRODUCT_PRO);
-                            if (user?.email) params.set('customer_email', user.email);
-                            if (user?.uid) params.set('metadata[uid]', user.uid);
-                            const url = `https://polar.sh/checkout?${params.toString()}`;
-                            if (isTauriEnv()) {
-                              try {
-                                const { openUrl } = await import('@tauri-apps/plugin-opener');
-                                await openUrl(url);
-                              } catch {
+                            try {
+                              const createCheckout = httpsCallable<unknown, { url: string }>(functions, 'createPolarCheckout');
+                              const { data } = await createCheckout({});
+                              const url = data.url;
+                              if (!url) return;
+                              if (isTauriEnv()) {
                                 try {
-                                  const { open } = await import('@tauri-apps/plugin-shell');
-                                  await open(url);
+                                  const { openUrl } = await import('@tauri-apps/plugin-opener');
+                                  await openUrl(url);
                                 } catch {
-                                  window.open(url, '_blank');
+                                  try {
+                                    const { open } = await import('@tauri-apps/plugin-shell');
+                                    await open(url);
+                                  } catch {
+                                    window.open(url, '_blank');
+                                  }
                                 }
+                              } else {
+                                window.open(url, '_blank');
                               }
-                            } else {
-                              window.open(url, '_blank');
+                            } catch (err) {
+                              console.error('Checkout error:', err);
                             }
                           }}
                           className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#e94560] to-[#c94580] hover:opacity-90 transition-opacity"

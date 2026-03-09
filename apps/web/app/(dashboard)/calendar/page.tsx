@@ -357,13 +357,14 @@ export default function CalendarPage() {
     });
   };
 
-  // Task due dates → virtual calendar entries (all incomplete tasks with a due date)
+  // Task due dates → virtual calendar entries (all incomplete tasks with a due date or myDay)
+  const _todayStr = todayStr();
   const taskDueEvents: { date: string; title: string; color: string; isTask: true; taskId: string }[] =
     showTasksInCalendar
       ? tasks
-          .filter(t => t.dueDate && t.status !== 'completed')
+          .filter(t => t.status !== 'completed' && (t.dueDate || t.myDay))
           .map(t => ({
-            date: t.dueDate!,
+            date: t.dueDate || _todayStr,
             title: `📋 ${t.title}`,
             color: '#f59e0b',
             isTask: true as const,

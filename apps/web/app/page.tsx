@@ -56,7 +56,7 @@ const PLANS = [
   },
   {
     id: 'pro' as const,
-    productId: process.env.NEXT_PUBLIC_POLAR_PRODUCT_PRO ?? '',
+    productId: process.env.NEXT_PUBLIC_POLAR_PREMIUM_PRODUCT_ID ?? '',
     name: 'Pro',
     price: '$7.99',
     priceNote: '/ 월',

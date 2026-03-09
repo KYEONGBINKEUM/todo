@@ -3,7 +3,7 @@
 import { useI18n } from '@/lib/i18n-context';
 import { useAuth } from '@/lib/auth-context';
 
-const POLAR_PRODUCT_PRO = process.env.NEXT_PUBLIC_POLAR_PRODUCT_PRO ?? '';
+const POLAR_PRODUCT_PRO = process.env.NEXT_PUBLIC_POLAR_PREMIUM_PRODUCT_ID ?? '';
 
 function isTauriEnv(): boolean {
   return typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);

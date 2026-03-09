@@ -38,7 +38,7 @@ const PLANS: { value: Plan; label: string; desc: string; color: string }[] = [
   { value: 'pro', label: 'Pro', desc: 'settings.planFeatures.ai', color: '#e94560' },
 ];
 
-const POLAR_PRODUCT_PRO = process.env.NEXT_PUBLIC_POLAR_PRODUCT_PRO ?? '';
+const POLAR_PRODUCT_PRO = process.env.NEXT_PUBLIC_POLAR_PREMIUM_PRODUCT_ID ?? '';
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { user } = useAuth();

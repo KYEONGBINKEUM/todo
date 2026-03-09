@@ -34,12 +34,7 @@ export async function POST(req: NextRequest) {
   const { type, data } = event;
 
   // Determine plan from product/price info
-  const getPlan = (d: Record<string, unknown>): Plan => {
-    const productId = (d.productId ?? (d.product as Record<string,unknown>)?.id ?? '') as string;
-    if (productId === process.env.POLAR_PRODUCT_TEAM) return 'team';
-    if (productId === process.env.POLAR_PRODUCT_PRO) return 'pro';
-    return 'pro'; // default
-  };
+  const getPlan = (_d: Record<string, unknown>): Plan => 'pro';
 
   const getUid = (d: Record<string, unknown>): string | null => {
     const meta = d.metadata as Record<string, string> | undefined;

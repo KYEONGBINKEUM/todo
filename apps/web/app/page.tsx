@@ -74,25 +74,6 @@ const PLANS = [
     highlight: true,
     accent: '#e94560',
   },
-  {
-    id: 'team' as const,
-    productId: process.env.NEXT_PUBLIC_POLAR_PRODUCT_TEAM ?? '',
-    name: 'Team',
-    price: '$15.99',
-    priceNote: '/ 월',
-    badge: undefined as string | undefined,
-    features: [
-      'Pro 모든 기능 포함',
-      '팀 공유 목록',
-      '50GB 스토리지',
-      '팀원 권한 관리',
-      '전용 고객 지원',
-      '향후 팀 협업 기능',
-    ],
-    cta: 'Team 시작하기',
-    highlight: false,
-    accent: '#8b5cf6',
-  },
 ];
 
 // ── Pricing Card ─────────────────────────────────────────────────────────────
@@ -150,8 +131,6 @@ function PricingCard({ plan, user }: {
         className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
           plan.highlight
             ? 'bg-[#e94560] text-white hover:bg-[#d63b55]'
-            : plan.id === 'team'
-            ? 'bg-[#8b5cf6] text-white hover:bg-[#7c3aed]'
             : 'border border-white/20 text-white hover:bg-white/10'
         }`}
       >
@@ -371,7 +350,7 @@ function LandingPage() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 md:items-center">
+          <div className="grid md:grid-cols-2 gap-6 md:items-center max-w-2xl mx-auto w-full">
             {PLANS.map(plan => (
               <PricingCard key={plan.id} plan={plan} user={user ? { uid: user.uid, email: user.email } : null} />
             ))}

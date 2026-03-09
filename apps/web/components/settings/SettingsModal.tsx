@@ -358,20 +358,25 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         </div>
                       )}
 
-                      {!isAdmin && userPlan === 'free' && (
+                      {!isAdmin && userPlan === 'free' && POLAR_PRODUCT_PRO && (
                         <button
                           onClick={async () => {
                             const params = new URLSearchParams();
                             params.set('products', POLAR_PRODUCT_PRO);
-                            if (user?.email) params.set('customerEmail', user.email);
-                            if (user?.uid) params.set('metadata', JSON.stringify({ uid: user.uid }));
+                            if (user?.email) params.set('customer_email', user.email);
+                            if (user?.uid) params.set('metadata[uid]', user.uid);
                             const url = `https://polar.sh/checkout?${params.toString()}`;
                             if (isTauriEnv()) {
                               try {
                                 const { openUrl } = await import('@tauri-apps/plugin-opener');
                                 await openUrl(url);
                               } catch {
-                                window.open(url, '_blank');
+                                try {
+                                  const { open } = await import('@tauri-apps/plugin-shell');
+                                  await open(url);
+                                } catch {
+                                  window.open(url, '_blank');
+                                }
                               }
                             } else {
                               window.open(url, '_blank');
@@ -379,7 +384,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           }}
                           className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#e94560] to-[#c94580] hover:opacity-90 transition-opacity"
                         >
-                          Pro로 업그레이드
+                          {t('settings.upgrade')}
                         </button>
                       )}
                     </div>

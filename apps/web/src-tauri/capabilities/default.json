@@ -11,6 +11,7 @@
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
+    "opener:default",
     "os:default",
     "notification:default"
   ]

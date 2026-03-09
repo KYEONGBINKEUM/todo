@@ -87,11 +87,12 @@ function PricingCard({ plan, user }: {
   const handleCheckout = () => {
     if (plan.id === 'free') { router.push('/login'); return; }
     if (!user) { router.push('/login'); return; }
+    if (!plan.productId) return;
 
     const params = new URLSearchParams();
     params.set('products', plan.productId);
-    if (user.email) params.set('customerEmail', user.email);
-    params.set('metadata', JSON.stringify({ uid: user.uid }));
+    if (user.email) params.set('customer_email', user.email);
+    params.set('metadata[uid]', user.uid);
     window.open(`https://polar.sh/checkout?${params.toString()}`, '_blank');
   };
 

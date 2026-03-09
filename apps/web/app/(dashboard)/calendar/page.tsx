@@ -273,10 +273,10 @@ function CalendarSettingsModal({
                   <p className="text-sm text-text-primary font-medium">캘린더 알림 활성화</p>
                   <p className="text-xs text-text-muted">오늘·내일 일정을 앱 시작 시 알림</p>
                 </div>
-                <button onClick={() => setLocal(p => ({ ...p, notifications: !p.notifications }))}
-                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${local.notifications ? 'bg-[#e94560]' : 'bg-border'}`}>
-                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${local.notifications ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
+                <div onClick={() => setLocal(p => ({ ...p, notifications: !p.notifications }))}
+                  className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors flex-shrink-0 ${local.notifications ? 'bg-[#e94560]' : 'bg-border'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${local.notifications ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
               </label>
             ) : (
               <p className="text-xs text-text-muted">이 환경에서는 알림이 지원되지 않습니다.</p>
@@ -292,20 +292,20 @@ function CalendarSettingsModal({
                   <p className="text-sm text-text-primary font-medium">모든 작업 페이지</p>
                   <p className="text-xs text-text-muted">오늘 일정을 할일 페이지에 표시</p>
                 </div>
-                <button onClick={() => setLocal(p => ({ ...p, showInTasks: !p.showInTasks }))}
-                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${local.showInTasks ? 'bg-[#e94560]' : 'bg-border'}`}>
-                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${local.showInTasks ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
+                <div onClick={() => setLocal(p => ({ ...p, showInTasks: !p.showInTasks }))}
+                  className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors flex-shrink-0 ${local.showInTasks ? 'bg-[#e94560]' : 'bg-border'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${local.showInTasks ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
               </label>
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <div>
                   <p className="text-sm text-text-primary font-medium">예정된 작업 페이지</p>
                   <p className="text-xs text-text-muted">날짜별 일정을 예정된 작업에 표시</p>
                 </div>
-                <button onClick={() => setLocal(p => ({ ...p, showInUpcoming: !p.showInUpcoming }))}
-                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${local.showInUpcoming ? 'bg-[#e94560]' : 'bg-border'}`}>
-                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${local.showInUpcoming ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
+                <div onClick={() => setLocal(p => ({ ...p, showInUpcoming: !p.showInUpcoming }))}
+                  className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors flex-shrink-0 ${local.showInUpcoming ? 'bg-[#e94560]' : 'bg-border'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${local.showInUpcoming ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
               </label>
             </div>
           </div>
@@ -367,16 +367,20 @@ export default function CalendarPage() {
     fetchAllHolidays(years, settings.holidayCountries).then(setHolidays);
   }, [settings.holidayCountries, viewYear]);
 
-  // Notifications on mount
+  // Notifications — 페이지 첫 로드 시 1회만 실행 (이벤트 추가/변경 시 재실행 방지)
+  const notifFiredRef = useRef(false);
   useEffect(() => {
     if (!settings.notifications) return;
-    if (!shouldShowNotification()) return;
+    if (notifFiredRef.current) return;
+    if (!shouldShowNotification()) { notifFiredRef.current = true; return; }
+    if (storeEvents.length === 0) return; // 아직 로드 전이면 대기
+    notifFiredRef.current = true;
     const todayDate = todayStr();
     const tomorrowDate = toDateStr(new Date(Date.now() + 86400000));
     const upcoming = storeEvents.filter(e => e.date === todayDate || e.date === tomorrowDate);
     if (upcoming.length === 0) return;
     markNotificationShown();
-    const label = storeEvents.filter(e => e.date === todayDate).length > 0 ? '오늘 일정' : '내일 일정';
+    const label = upcoming.some(e => e.date === todayDate) ? '오늘 일정' : '내일 일정';
     try {
       new Notification(label, {
         body: upcoming.slice(0, 3).map(e => e.title).join(', '),
@@ -627,7 +631,7 @@ export default function CalendarPage() {
                   className={`min-h-[100px] border-b border-r border-border p-1.5 cursor-pointer transition-colors ${!cell.isCurrentMonth ? 'opacity-30' : isSelected ? 'bg-[#e94560]/5' : 'hover:bg-background-hover'}`}
                 >
                   <div className="flex items-center justify-between mb-0.5">
-                    <span className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold transition-all ${isToday ? 'bg-[#e94560] text-white' : isSun ? 'text-red-400' : isSat ? 'text-blue-400' : 'text-text-primary'}`}>
+                    <span className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold transition-all ${isToday ? 'bg-[#e94560] text-white' : (isSun || dayHolidays.length > 0) ? 'text-red-400' : isSat ? 'text-blue-400' : 'text-text-primary'}`}>
                       {cell.day}
                     </span>
                     {dayHolidays.length > 0 && (

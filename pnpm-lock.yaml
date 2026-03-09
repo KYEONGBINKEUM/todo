@@ -26,6 +26,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^3.3.4
         version: 3.10.0(react-hook-form@7.71.1)
+      '@polar-sh/nextjs':
+        specifier: ^0.9.4
+        version: 0.9.4(next@14.2.35)
       '@polar-sh/sdk':
         specifier: ^0.46.3
         version: 0.46.3
@@ -1191,6 +1194,23 @@ packages:
     requiresBuild: true
     dev: true
     optional: true
+
+  /@polar-sh/adapter-utils@0.4.4:
+    resolution: {integrity: sha512-0fvscT82EMoo+otgnw7YsbzxmatxTpc457DytZY9Lr+6B9XNBI/wP7THK0nV3Qdaipd66Pp9hyZI9Dzusj1KzQ==}
+    dependencies:
+      '@polar-sh/sdk': 0.46.3
+    dev: false
+
+  /@polar-sh/nextjs@0.9.4(next@14.2.35):
+    resolution: {integrity: sha512-CN6qjaVXVR5OojcpjtlXF7FcVnCEXAKB4vyOECP3n3YjD7DdJ4/PPtKvc2/TVXC9bM8m6pcUOI7Y9f7K5T0jNA==}
+    engines: {node: '>=16'}
+    peerDependencies:
+      next: ^15.0.0 || ^16.0.0
+    dependencies:
+      '@polar-sh/adapter-utils': 0.4.4
+      '@polar-sh/sdk': 0.46.3
+      next: 14.2.35(react-dom@18.3.1)(react@18.3.1)
+    dev: false
 
   /@polar-sh/sdk@0.46.3:
     resolution: {integrity: sha512-o7e1TOJ6xMIS/cFflmAKzuczmaZDGddUP1uQNGDYb9d3ktigDXj88CP6ITTy3AEenhACRp65Ks/hVZ/rsQyI4Q==}

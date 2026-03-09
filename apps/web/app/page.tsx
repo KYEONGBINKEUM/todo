@@ -36,7 +36,8 @@ const AI_FEATURES = [
 
 const PLANS = [
   {
-    id: 'free',
+    id: 'free' as const,
+    productId: '',
     name: 'Free',
     price: '무료',
     priceNote: '영원히',
@@ -54,7 +55,8 @@ const PLANS = [
     accent: '#6b7280',
   },
   {
-    id: 'pro',
+    id: 'pro' as const,
+    productId: process.env.NEXT_PUBLIC_POLAR_PRODUCT_PRO ?? '',
     name: 'Pro',
     price: '$7.99',
     priceNote: '/ 월',
@@ -73,7 +75,8 @@ const PLANS = [
     accent: '#e94560',
   },
   {
-    id: 'team',
+    id: 'team' as const,
+    productId: process.env.NEXT_PUBLIC_POLAR_PRODUCT_TEAM ?? '',
     name: 'Team',
     price: '$15.99',
     priceNote: '/ 월',
@@ -98,27 +101,17 @@ function PricingCard({ plan, user }: {
   plan: typeof PLANS[0];
   user: { uid: string; email: string | null } | null;
 }) {
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (plan.id === 'free') { router.push('/login'); return; }
     if (!user) { router.push('/login'); return; }
-    setLoading(true);
-    try {
-      const res = await fetch('/api/polar/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: plan.id, uid: user.uid, email: user.email }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else alert('결제 페이지를 불러오지 못했습니다.');
-    } catch {
-      alert('결제 페이지 연결에 실패했습니다. 잠시 후 다시 시도해주세요.');
-    } finally {
-      setLoading(false);
-    }
+
+    const params = new URLSearchParams();
+    params.set('products', plan.productId);
+    if (user.email) params.set('customerEmail', user.email);
+    params.set('metadata', JSON.stringify({ uid: user.uid }));
+    window.location.href = `/api/polar/checkout?${params.toString()}`;
   };
 
   return (
@@ -154,17 +147,15 @@ function PricingCard({ plan, user }: {
 
       <button
         onClick={handleCheckout}
-        disabled={loading}
-        className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+        className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
           plan.highlight
             ? 'bg-[#e94560] text-white hover:bg-[#d63b55]'
             : plan.id === 'team'
             ? 'bg-[#8b5cf6] text-white hover:bg-[#7c3aed]'
             : 'border border-white/20 text-white hover:bg-white/10'
-        } disabled:opacity-50`}
+        }`}
       >
-        {loading && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-        {loading ? '처리 중...' : plan.cta}
+        {plan.cta}
       </button>
     </div>
   );

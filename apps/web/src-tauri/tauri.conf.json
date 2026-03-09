@@ -1,7 +1,7 @@
 {
   "productName": "NOAH",
-  "version": "1.6.0",
-  "identifier": "aitodo.firstb.aitodo",
+  "version": "1.6.2",
+  "identifier": "noah.firstb.noah",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -57,7 +57,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["aitodo"]
+        "schemes": ["noah"]
       }
     },
     "updater": {

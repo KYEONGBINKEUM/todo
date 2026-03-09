@@ -83,7 +83,7 @@ export default function LoginPage() {
           if (cancelled) return;
           for (const url of urls) {
             try {
-              // aitodo://auth-callback#data=base64encodedJSON
+              // noah://auth-callback#data=base64encodedJSON
               const hashPart = url.split('#')[1];
               if (!hashPart) continue;
               const params = new URLSearchParams(hashPart);
@@ -186,7 +186,7 @@ export default function LoginPage() {
   }, []);
 
   // Tauri Mobile: Firebase Hosting의 mobile-auth.html 열기
-  // signInWithRedirect → Google 인증 → aitodo:// 딥링크로 앱 복귀
+  // signInWithRedirect → Google 인증 → noah:// 딥링크로 앱 복귀
   // 딥링크 콜백은 위의 onOpenUrl 핸들러(useEffect)가 처리
   const handleTauriMobileLogin = useCallback(async () => {
     setLoading(true);

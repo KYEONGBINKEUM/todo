@@ -251,8 +251,8 @@ function TasksContent() {
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">📋</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">{t('tasks.title')}</h2>
+            <span className="text-2xl">📋</span>
+            <h2 className="text-2xl font-bold text-text-primary">{t('tasks.title')}</h2>
             <span className="text-sm text-text-muted ml-2">{filtered.length}</span>
             <div className="ml-auto">
               <NoahAIPageActions
@@ -476,7 +476,7 @@ function TasksContent() {
                 {(task.subTasks?.length ?? 0) > 0 && (
                   <span className="text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
                 )}
-                {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
+                {task.dueDate && <span className="text-xs text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
                 <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
                 <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
@@ -534,7 +534,7 @@ function TasksContent() {
                           </div>
                         )}
                       </div>
-                      {task.dueDate && <span className="text-[10px] text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5)}</span>}
+                      {task.dueDate && <span className="text-xs text-text-muted flex-shrink-0">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
                       <span className="text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
                       <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0" title={t('common.delete')}>×</button>

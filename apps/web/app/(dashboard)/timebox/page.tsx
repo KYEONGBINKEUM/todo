@@ -78,7 +78,7 @@ export default function TimeboxPage() {
         <div className="mb-5">
           <div className="flex items-center gap-3 mb-1">
             <span className="text-2xl">⏱️</span>
-            <h2 className="text-2xl font-extrabold text-text-primary">{t('nav.timebox')}</h2>
+            <h2 className="text-2xl font-bold text-text-primary">{t('nav.timebox')}</h2>
             <div className="ml-auto flex items-center gap-2">
               {!isViewingToday && (
                 <button

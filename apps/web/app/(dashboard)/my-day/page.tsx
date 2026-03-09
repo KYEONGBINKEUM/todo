@@ -467,8 +467,8 @@ export default function MyDayPage() {
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">☀️</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">{t('myDay.title')}</h2>
+            <span className="text-2xl">☀️</span>
+            <h2 className="text-2xl font-bold text-text-primary">{t('myDay.title')}</h2>
             <div className="ml-auto flex items-center gap-2 relative">
               <NoahAIPageActions
                 actions={[

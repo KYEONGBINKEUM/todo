@@ -106,7 +106,7 @@ export default function TranslatePage() {
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">
           <span className="text-2xl">🌐</span>
-          <h2 className="text-2xl font-extrabold text-text-primary">{t('nav.translate')}</h2>
+          <h2 className="text-2xl font-bold text-text-primary">{t('nav.translate')}</h2>
         </div>
 
         {/* Lang selectors + swap */}

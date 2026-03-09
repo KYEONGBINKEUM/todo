@@ -14,8 +14,8 @@ export default function SharedPage() {
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">👥</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">{t('shared.title')}</h2>
+            <span className="text-2xl">👥</span>
+            <h2 className="text-2xl font-bold text-text-primary">{t('shared.title')}</h2>
           </div>
           <p className="text-text-secondary text-sm">{t('shared.desc')}</p>
         </div>

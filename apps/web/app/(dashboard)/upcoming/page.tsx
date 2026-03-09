@@ -109,8 +109,8 @@ export default function UpcomingPage() {
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">📅</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">{t('upcoming.title')}</h2>
+            <span className="text-2xl">📅</span>
+            <h2 className="text-2xl font-bold text-text-primary">{t('upcoming.title')}</h2>
           </div>
           <p className="text-text-secondary text-sm">{t('upcoming.desc')}</p>
         </div>
@@ -169,7 +169,7 @@ export default function UpcomingPage() {
                       />
                       <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
                       <span className="flex-1 text-sm text-text-primary">{task.title}</span>
-                      <span className={`text-[10px] ${isOverdue ? 'text-red-400' : 'text-text-muted'}`}>{task.dueDate!.slice(5).replace('-', '/')}</span>
+                      <span className={`text-xs ${isOverdue ? 'text-red-400' : 'text-text-muted'}`}>{task.dueDate!.slice(5).replace('-', '/')}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priorityStyle(task.priority).bg} ${priorityStyle(task.priority).text} ${priorityStyle(task.priority).border}`}>{t(`priority.${task.priority}`)}</span>
                       <button onClick={() => handleToggleStar(task)} className={`text-lg transition-all flex-shrink-0 ${task.starred ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : 'text-text-inactive hover:text-amber-400/60'}`}>{task.starred ? '★' : '☆'}</button>
                     </div>
@@ -213,7 +213,7 @@ export default function UpcomingPage() {
                       </button>
                       <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
                       <span className="flex-1 text-sm line-through text-text-inactive">{task.title}</span>
-                      {task.dueDate && <span className="text-[10px] text-text-muted">{task.dueDate.slice(5).replace('-', '/')}</span>}
+                      {task.dueDate && <span className="text-xs text-text-muted">{task.dueDate.slice(5).replace('-', '/')}</span>}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${priorityStyle(task.priority).bg} ${priorityStyle(task.priority).text} ${priorityStyle(task.priority).border}`}>{t(`priority.${task.priority}`)}</span>
                     </div>
                   );

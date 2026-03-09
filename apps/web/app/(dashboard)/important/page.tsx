@@ -115,8 +115,8 @@ export default function ImportantPage() {
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">⭐</span>
-            <h2 className="text-3xl font-extrabold text-text-primary">{t('important.title')}</h2>
+            <span className="text-2xl">⭐</span>
+            <h2 className="text-2xl font-bold text-text-primary">{t('important.title')}</h2>
             <span className="text-sm text-text-muted ml-2">{totalCount}</span>
           </div>
           <p className="text-text-secondary text-sm">{t('important.desc')}</p>
@@ -195,7 +195,7 @@ export default function ImportantPage() {
                     />
                     <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
                     <span className="flex-1 text-sm text-text-primary">{task.title}</span>
-                    {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
+                    {task.dueDate && <span className="text-xs text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
                     <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
                     <button onClick={() => handleUnstar(task)} className="text-lg text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] hover:text-amber-300 transition-all flex-shrink-0" title={t('important.unstar')}>★</button>
@@ -230,7 +230,7 @@ export default function ImportantPage() {
                           </button>
                           <span className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: list.color }} />
                           <span className="flex-1 text-sm line-through text-text-inactive">{task.title}</span>
-                          {task.dueDate && <span className="text-[10px] text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
+                          {task.dueDate && <span className="text-xs text-text-muted">📅 {task.dueDate.slice(5).replace('-', '/')}</span>}
                           <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ color: list.color, borderColor: `${list.color}40`, backgroundColor: `${list.color}10` }}>{list.label}</span>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${ps.bg} ${ps.text} ${ps.border}`}>{t(`priority.${task.priority}`)}</span>
                         </div>

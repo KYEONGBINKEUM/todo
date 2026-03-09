@@ -15,6 +15,9 @@ import {
 import {
   getStoredGCalToken,
   connectGoogleCalendar,
+  connectGoogleCalendarDesktop,
+  connectGoogleCalendarRedirect,
+  checkGCalRedirectResult,
   disconnectGoogleCalendar,
   fetchGCalEvents,
   gcalColor,
@@ -60,8 +63,8 @@ function EventModal({
 }: {
   event?: CalendarEvent | null;
   defaultDate: string;
-  onSave: (data: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  onDelete?: () => void;
+  onSave: (data: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  onDelete?: () => Promise<void>;
   onClose: () => void;
   t: (key: string) => string;
 }) {
@@ -73,19 +76,28 @@ function EventModal({
   const [endTime, setEndTime] = useState(event?.endTime || '10:00');
   const [color, setColor] = useState(event?.color || '#e94560');
   const [memo, setMemo] = useState(event?.memo || '');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim()) return;
-    onSave({
-      title: title.trim(),
-      date,
-      endDate: endDate > date ? endDate : undefined,
-      allDay,
-      startTime: allDay ? undefined : startTime,
-      endTime: allDay ? undefined : endTime,
-      color,
-      memo: memo.trim() || undefined,
-    });
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave({
+        title: title.trim(),
+        date,
+        endDate: endDate > date ? endDate : undefined,
+        allDay,
+        startTime: allDay ? undefined : startTime,
+        endTime: allDay ? undefined : endTime,
+        color,
+        memo: memo.trim() || undefined,
+      });
+    } catch {
+      setSaveError('저장 중 오류가 발생했습니다. 다시 시도해주세요.');
+      setSaving(false);
+    }
   };
 
   return (
@@ -101,7 +113,7 @@ function EventModal({
           placeholder={t('calendar.eventTitle')}
           autoFocus
           className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors"
-          onKeyDown={e => e.key === 'Enter' && handleSave()}
+          onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
         />
 
         <div className="grid grid-cols-2 gap-3">
@@ -157,18 +169,22 @@ function EventModal({
           className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] resize-none"
         />
 
+        {saveError && (
+          <p className="text-xs text-red-400 text-center">{saveError}</p>
+        )}
         <div className="flex items-center justify-between pt-2">
           {event && onDelete ? (
-            <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-300 transition-colors">
+            <button onClick={() => onDelete()} className="text-xs text-red-400 hover:text-red-300 transition-colors">
               {t('calendar.deleteEvent')}
             </button>
           ) : <span />}
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors">
+            <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors disabled:opacity-40">
               {t('common.cancel')}
             </button>
-            <button onClick={handleSave} disabled={!title.trim()}
-              className="px-5 py-2 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] disabled:opacity-40 transition-all">
+            <button onClick={handleSave} disabled={!title.trim() || saving}
+              className="px-5 py-2 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] disabled:opacity-40 transition-all flex items-center gap-1.5">
+              {saving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />}
               {t('common.save')}
             </button>
           </div>
@@ -251,10 +267,14 @@ export default function CalendarPage() {
     }
   }, [normalizeGCalEvents]);
 
-  // Check for stored GCal token on mount
+  // Check for stored GCal token or pending redirect result on mount
   useEffect(() => {
-    const token = getStoredGCalToken();
-    if (token) setGcalToken(token);
+    const stored = getStoredGCalToken();
+    if (stored) { setGcalToken(stored); return; }
+    // Check if returning from mobile signInWithRedirect
+    checkGCalRedirectResult().then(token => {
+      if (token) setGcalToken(token);
+    });
   }, []);
 
   // Reload GCal events when month changes or token set
@@ -267,17 +287,40 @@ export default function CalendarPage() {
     setGcalLoading(true);
     setGcalError(null);
     try {
-      const token = await connectGoogleCalendar();
+      const isTauri = typeof window !== 'undefined' &&
+        ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+
+      let token: string;
+      if (isTauri) {
+        // Detect desktop vs mobile
+        let isMobile = false;
+        try {
+          const { type } = await import('@tauri-apps/plugin-os');
+          const os = type();
+          isMobile = os === 'android' || os === 'ios';
+        } catch { /* plugin not available, assume desktop */ }
+
+        if (isMobile) {
+          // Mobile: signInWithRedirect — page will reload after auth
+          await connectGoogleCalendarRedirect();
+          setGcalLoading(false);
+          return;
+        } else {
+          // Desktop: system browser + local OAuth server
+          token = await connectGoogleCalendarDesktop({
+            apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
+            authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '',
+            projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '',
+          });
+        }
+      } else {
+        // Web: popup
+        token = await connectGoogleCalendar();
+      }
       setGcalToken(token);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
-      if (msg.includes('popup') || msg.includes('closed')) {
-        setGcalError('popup_blocked');
-      } else if (msg.includes('no_token')) {
-        setGcalError('no_token');
-      } else {
-        setGcalError('connect_failed');
-      }
+      setGcalError(msg === 'timeout' ? 'timeout' : 'connect_failed');
       setGcalLoading(false);
     }
   };
@@ -586,9 +629,7 @@ export default function CalendarPage() {
         {/* Google Calendar Connect */}
         <div className="mt-6 p-4 bg-background-card border border-border rounded-xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#4285F4] to-[#34A853] flex items-center justify-center text-white text-lg font-bold flex-shrink-0 flex-shrink-0">
-              G
-            </div>
+            <img src="/googlecalendar.png" alt="Google Calendar" className="w-10 h-10 rounded-xl flex-shrink-0 object-contain" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-text-primary">{t('calendar.googleConnect')}</p>
               {gcalToken ? (
@@ -600,10 +641,10 @@ export default function CalendarPage() {
               )}
               {gcalError && gcalError !== 'token_expired' && (
                 <p className="text-[10px] text-red-400 mt-0.5">
-                  {gcalError === 'popup_blocked'
-                    ? '팝업이 차단됐습니다. 브라우저 팝업 허용 후 다시 시도해주세요.'
-                    : gcalError === 'fetch_failed'
+                  {gcalError === 'fetch_failed'
                     ? '일정을 불러오지 못했습니다.'
+                    : gcalError === 'timeout'
+                    ? '연결 시간이 초과됐습니다. 다시 시도해주세요.'
                     : '연결에 실패했습니다. 다시 시도해주세요.'}
                 </p>
               )}

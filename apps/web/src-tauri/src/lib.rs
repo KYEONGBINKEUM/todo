@@ -133,6 +133,71 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
 
 const SUCCESS_HTML: &str = r#"{"ok":true}"#;
 
+const GCAL_HTML: &str = r##"<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google Calendar 연동</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #08081a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: #111128; border: 1px solid #1e1e3a; border-radius: 16px; padding: 48px; text-align: center; max-width: 400px; width: 90%; }
+  h1 { font-size: 24px; margin-bottom: 8px; color: #4285F4; }
+  p { color: #94a3b8; margin-bottom: 24px; font-size: 14px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #1e1e3a; border-top-color: #4285F4; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 24px auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { color: #ef4444; margin-top: 16px; font-size: 13px; }
+  .success { color: #34d399; }
+  #status { margin-top: 16px; font-size: 13px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Google Calendar</h1>
+  <p>캘린더 읽기 권한을 허용해주세요</p>
+  <div class="spinner" id="spinner"></div>
+  <div id="status">팝업 창에서 Google 계정을 선택해주세요</div>
+  <div class="error" id="error"></div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script>
+(async function() {
+  var params = new URLSearchParams(location.search);
+  var config = {
+    apiKey: params.get('apiKey'),
+    authDomain: params.get('authDomain'),
+    projectId: params.get('projectId'),
+  };
+  var statusEl = document.getElementById('status');
+  var errorEl = document.getElementById('error');
+  var spinnerEl = document.getElementById('spinner');
+  try {
+    firebase.initializeApp(config);
+    var auth = firebase.auth();
+    var provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/calendar.events.readonly');
+    provider.setCustomParameters({ prompt: 'consent' });
+    var result = await auth.signInWithPopup(provider);
+    var googleAccessToken = result.credential.accessToken;
+    await fetch('/gcal-callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken: googleAccessToken })
+    });
+    spinnerEl.style.display = 'none';
+    statusEl.innerHTML = '<span class="success">&#10003; 연결 완료!</span><br><br>이 창을 닫고 앱으로 돌아가세요.';
+    setTimeout(function() { window.close(); }, 2000);
+  } catch (err) {
+    spinnerEl.style.display = 'none';
+    errorEl.textContent = '연결 실패: ' + (err.message || String(err));
+  }
+})();
+</script>
+</body>
+</html>"##;
+
 fn send_response(stream: &mut std::net::TcpStream, status: &str, content_type: &str, body: &str) {
     let response = format!(
         "HTTP/1.1 {}\r\nContent-Type: {}; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n{}",
@@ -218,6 +283,46 @@ fn start_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
     Ok(port)
 }
 
+#[tauri::command]
+fn start_gcal_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let request = read_request(&mut stream);
+
+                let first_line = request.lines().next().unwrap_or("");
+                let method = first_line.split_whitespace().next().unwrap_or("");
+                let path = first_line.split_whitespace().nth(1).unwrap_or("/");
+
+                if method == "OPTIONS" {
+                    send_response(&mut stream, "204 No Content", "text/plain", "");
+                    continue;
+                }
+
+                if method == "POST" && path.starts_with("/gcal-callback") {
+                    let body = if let Some(pos) = request.find("\r\n\r\n") {
+                        request[pos + 4..].to_string()
+                    } else {
+                        String::new()
+                    };
+                    send_response(&mut stream, "200 OK", "application/json", SUCCESS_HTML);
+                    let _ = app_handle.emit("gcal-oauth-callback", body);
+                    break;
+                } else if path == "/favicon.ico" {
+                    send_response(&mut stream, "204 No Content", "text/plain", "");
+                } else {
+                    send_response(&mut stream, "200 OK", "text/html", GCAL_HTML);
+                }
+            }
+        }
+    });
+
+    Ok(port)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -226,7 +331,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![start_oauth_server]);
+        .invoke_handler(tauri::generate_handler![start_oauth_server, start_gcal_oauth_server]);
 
     #[cfg(not(target_os = "android"))]
     let builder = builder

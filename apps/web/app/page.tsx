@@ -92,7 +92,7 @@ function PricingCard({ plan, user }: {
     params.set('products', plan.productId);
     if (user.email) params.set('customerEmail', user.email);
     params.set('metadata', JSON.stringify({ uid: user.uid }));
-    window.location.href = `/api/polar/checkout?${params.toString()}`;
+    window.open(`https://polar.sh/checkout?${params.toString()}`, '_blank');
   };
 
   return (

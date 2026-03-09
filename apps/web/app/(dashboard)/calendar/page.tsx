@@ -211,6 +211,11 @@ export default function CalendarPage() {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const initialLoad = useRef(true);
+  const [showTasksInCalendar, setShowTasksInCalendar] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = localStorage.getItem('cal_show_tasks');
+    return saved === null ? true : saved === 'true';
+  });
 
   // Google Calendar state
   const [gcalToken, setGcalToken] = useState<string | null>(null);
@@ -345,16 +350,26 @@ export default function CalendarPage() {
     }
   }, [user]);
 
-  // Task due dates → virtual calendar entries
-  const taskDueEvents: { date: string; title: string; color: string; isTask: true; taskId: string }[] = tasks
-    .filter(t => t.dueDate && t.myDay && t.status !== 'completed')
-    .map(t => ({
-      date: t.dueDate!,
-      title: `📋 ${t.title}`,
-      color: '#f59e0b',
-      isTask: true as const,
-      taskId: t.id!,
-    }));
+  const toggleShowTasks = () => {
+    setShowTasksInCalendar(v => {
+      localStorage.setItem('cal_show_tasks', String(!v));
+      return !v;
+    });
+  };
+
+  // Task due dates → virtual calendar entries (all incomplete tasks with a due date)
+  const taskDueEvents: { date: string; title: string; color: string; isTask: true; taskId: string }[] =
+    showTasksInCalendar
+      ? tasks
+          .filter(t => t.dueDate && t.status !== 'completed')
+          .map(t => ({
+            date: t.dueDate!,
+            title: `📋 ${t.title}`,
+            color: '#f59e0b',
+            isTask: true as const,
+            taskId: t.id!,
+          }))
+      : [];
 
   // Navigation
   const goToday = () => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); };
@@ -459,6 +474,18 @@ export default function CalendarPage() {
             <h2 className="text-2xl font-extrabold text-text-primary">{t('calendar.title')}</h2>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={toggleShowTasks}
+              title={showTasksInCalendar ? '할일 숨기기' : '할일 표시'}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                showTasksInCalendar
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                  : 'text-text-muted border-border hover:text-text-primary'
+              }`}
+            >
+              <span>📋</span>
+              {showTasksInCalendar ? '할일 표시 중' : '할일 숨김'}
+            </button>
             <button
               onClick={() => { setSelectedDate(todayDateStr); setEditingEvent(null); setShowModal(true); }}
               className="px-4 py-2 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] transition-colors flex items-center gap-1.5"

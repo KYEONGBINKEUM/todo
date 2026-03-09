@@ -701,12 +701,15 @@ export async function getCalendarEvents(uid: string): Promise<CalendarEvent[]> {
 
 export async function addCalendarEvent(uid: string, event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
   const ref = collection(db, 'users', uid, 'calendarEvents');
-  const docRef = await addDoc(ref, { ...event, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  // Strip undefined fields — Firestore v9 throws on undefined values
+  const clean = Object.fromEntries(Object.entries(event).filter(([, v]) => v !== undefined));
+  const docRef = await addDoc(ref, { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   return docRef.id;
 }
 
 export async function updateCalendarEvent(uid: string, id: string, updates: Partial<CalendarEvent>): Promise<void> {
-  await updateDoc(doc(db, 'users', uid, 'calendarEvents', id), { ...updates, updatedAt: serverTimestamp() });
+  const clean = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+  await updateDoc(doc(db, 'users', uid, 'calendarEvents', id), { ...clean, updatedAt: serverTimestamp() });
 }
 
 export async function deleteCalendarEvent(uid: string, id: string): Promise<void> {

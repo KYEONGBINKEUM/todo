@@ -8,6 +8,7 @@ import { addTask as addTaskDB, updateTask, deleteTask as deleteTaskDB, type Task
 import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
+import { getCalSettings } from '@/lib/cal-settings';
 import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
@@ -34,7 +35,8 @@ function TasksContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { t } = useI18n();
-  const { tasks: storeTasks, lists: storeLists, notes: storeNotes, loading } = useDataStore();
+  const { tasks: storeTasks, lists: storeLists, notes: storeNotes, calendarEvents, loading } = useDataStore();
+  const calSettings = getCalSettings();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
   const [filterList, setFilterList] = useState<string | null>(null);
@@ -415,6 +417,29 @@ function TasksContent() {
             <span>{t('tasks.dragHint')}</span>
           </p>
         )}
+
+        {/* Today's Calendar Events */}
+        {calSettings.showInTasks && (() => {
+          const todayDate = new Date().toISOString().slice(0, 10);
+          const todayEvents = calendarEvents.filter(e =>
+            e.date === todayDate || (e.endDate && e.date <= todayDate && e.endDate >= todayDate)
+          );
+          if (todayEvents.length === 0) return null;
+          return (
+            <div className="mb-4 p-3 bg-background-card border border-border rounded-xl">
+              <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">📅 오늘의 일정</p>
+              <div className="space-y-1">
+                {todayEvents.map(ev => (
+                  <div key={ev.id} className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                    <span className="text-xs text-text-primary truncate">{ev.title}</span>
+                    {!ev.allDay && ev.startTime && <span className="text-xs text-text-muted flex-shrink-0">{ev.startTime}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Active Task List */}
         <div

@@ -5,6 +5,8 @@ import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import { addTask as addTaskDB, updateTask, type TaskData, type ListData } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
+import { getCalSettings } from '@/lib/cal-settings';
+import type { CalendarEvent } from '@/lib/firestore';
 
 type DateGroup = 'overdue' | 'today' | 'tomorrow' | 'thisWeek' | 'thisMonth' | 'later';
 
@@ -45,7 +47,8 @@ const sectionOrder: { key: DateGroup; icon: string; i18nKey: string }[] = [
 export default function UpcomingPage() {
   const { user } = useAuth();
   const { t } = useI18n();
-  const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
+  const { tasks: storeTasks, lists: storeLists, calendarEvents, loading } = useDataStore();
+  const calSettings = getCalSettings();
   const [lists, setLists] = useState<ListData[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskData['priority']>('medium');
@@ -54,6 +57,22 @@ export default function UpcomingPage() {
   const [showCompleted, setShowCompleted] = useState(true);
 
   const tasks = storeTasks.filter((t) => t.dueDate);
+
+  // Calendar events grouped by upcoming section
+  function getCalEventsForSection(key: DateGroup): CalendarEvent[] {
+    if (!calSettings.showInUpcoming) return [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return calendarEvents.filter(ev => {
+      const d = new Date(ev.date + 'T00:00:00'); d.setHours(0, 0, 0, 0);
+      const diff = Math.ceil((d.getTime() - today.getTime()) / 86400000);
+      if (key === 'overdue') return diff < 0;
+      if (key === 'today') return diff === 0;
+      if (key === 'tomorrow') return diff === 1;
+      if (key === 'thisWeek') return diff >= 2 && diff <= 7;
+      if (key === 'thisMonth') return diff > 7 && diff <= 30;
+      return diff > 30;
+    });
+  }
 
   useEffect(() => {
     if (storeLists.length > 0) {
@@ -144,12 +163,12 @@ export default function UpcomingPage() {
         </div>
 
         {sectionOrder.map((section) => {
-          const sectionTasks = grouped[section.key];
-          if (!sectionTasks || sectionTasks.length === 0) return null;
+          const sectionTasks = grouped[section.key] ?? [];
+          const calEventsForSection = getCalEventsForSection(section.key);
           const isOverdue = section.key === 'overdue';
           const activeSectionTasks = sectionTasks.filter((t) => t.status !== 'completed');
           const completedSectionTasks = sectionTasks.filter((t) => t.status === 'completed');
-          if (activeSectionTasks.length === 0 && completedSectionTasks.length === 0) return null;
+          if (activeSectionTasks.length === 0 && completedSectionTasks.length === 0 && calEventsForSection.length === 0) return null;
 
           return (
             <div key={section.key} className="mb-6">
@@ -175,6 +194,16 @@ export default function UpcomingPage() {
                     </div>
                   );
                 })}
+                {/* Calendar events for this section */}
+                {calEventsForSection.map(ev => (
+                  <div key={ev.id} className="flex items-center gap-3 p-3 bg-background-card border border-border rounded-xl">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                    <span className="flex-1 text-sm text-text-primary truncate">{ev.title}</span>
+                    {ev.date && <span className="text-xs text-text-muted flex-shrink-0">{ev.date.slice(5).replace('-', '/')}</span>}
+                    {!ev.allDay && ev.startTime && <span className="text-xs text-text-muted flex-shrink-0">{ev.startTime}</span>}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#e94560]/10 text-[#e94560] font-semibold">일정</span>
+                  </div>
+                ))}
               </div>
             </div>
           );

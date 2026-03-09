@@ -14,7 +14,7 @@ import {
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAuth } from './auth-context';
-import type { TaskData, ListData, NoteData, FolderData, MindMapData } from './firestore';
+import type { TaskData, ListData, NoteData, FolderData, MindMapData, CalendarEvent } from './firestore';
 
 interface DataStore {
   tasks: TaskData[];
@@ -22,6 +22,7 @@ interface DataStore {
   notes: NoteData[];
   folders: FolderData[];
   mindmaps: MindMapData[];
+  calendarEvents: CalendarEvent[];
   loading: boolean;
   storageUsed: number; // bytes — 텍스트 + 파일 총 사용량
 }
@@ -32,6 +33,7 @@ const DataStoreContext = createContext<DataStore>({
   notes: [],
   folders: [],
   mindmaps: [],
+  calendarEvents: [],
   loading: true,
   storageUsed: 0,
 });
@@ -74,6 +76,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<NoteData[]>([]);
   const [folders, setFolders] = useState<FolderData[]>([]);
   const [mindmaps, setMindmaps] = useState<MindMapData[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const unsubsRef = useRef<Array<() => void>>([]);
 
@@ -87,7 +90,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     unsubsRef.current = [];
 
     if (!user) {
-      setTasks([]); setLists([]); setNotes([]); setFolders([]); setMindmaps([]);
+      setTasks([]); setLists([]); setNotes([]); setFolders([]); setMindmaps([]); setCalendarEvents([]);
       setLoading(false);
       return;
     }
@@ -95,7 +98,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     const uid = user.uid;
     let loadedCount = 0;
-    const total = 5;
+    const total = 6;
     const markLoaded = () => { if (++loadedCount >= total) setLoading(false); };
 
     // Tasks — 생성순 desc
@@ -148,7 +151,17 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
       () => markLoaded()
     );
 
-    unsubsRef.current = [unsubTasks, unsubLists, unsubNotes, unsubFolders, unsubMindmaps];
+    // Calendar Events — 날짜순 asc
+    const unsubCalEvents = onSnapshot(
+      query(collection(db, 'users', uid, 'calendarEvents'), orderBy('date', 'asc')),
+      (snap) => {
+        setCalendarEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CalendarEvent)));
+        markLoaded();
+      },
+      () => markLoaded()
+    );
+
+    unsubsRef.current = [unsubTasks, unsubLists, unsubNotes, unsubFolders, unsubMindmaps, unsubCalEvents];
 
     return () => {
       unsubsRef.current.forEach((u) => u());
@@ -159,7 +172,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   const storageUsed = calcStorageUsed(tasks, notes, mindmaps);
 
   return (
-    <DataStoreContext.Provider value={{ tasks, lists, notes, folders, mindmaps, loading, storageUsed }}>
+    <DataStoreContext.Provider value={{ tasks, lists, notes, folders, mindmaps, calendarEvents, loading, storageUsed }}>
       {children}
     </DataStoreContext.Provider>
   );

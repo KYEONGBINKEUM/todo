@@ -33,7 +33,7 @@ function generateCalendarDays(centerDateStr: string, locale: string = 'ko-KR') {
 export default function TimeboxPage() {
   const { t, language } = useI18n();
   const { user } = useAuth();
-  const { tasks: storeTasks } = useDataStore();
+  const { tasks: storeTasks, calendarEvents } = useDataStore();
   const todayStr = getTodayStr();
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [hideFutureTasks, setHideFutureTasks] = useState(true);
@@ -156,6 +156,31 @@ export default function TimeboxPage() {
             </button>
           </div>
         </div>
+
+        {/* Calendar events for selected date */}
+        {(() => {
+          const dayEvents = calendarEvents.filter(ev =>
+            ev.date === selectedDate || (ev.endDate && ev.date <= selectedDate && ev.endDate >= selectedDate)
+          );
+          if (dayEvents.length === 0) return null;
+          return (
+            <div className="mb-4 p-3 bg-background-card border border-border rounded-xl">
+              <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">📅 이날의 일정</p>
+              <div className="space-y-1.5">
+                {dayEvents.map(ev => (
+                  <div key={ev.id} className="flex items-center gap-2.5">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                    <span className="flex-1 text-xs text-text-primary truncate">{ev.title}</span>
+                    {!ev.allDay && ev.startTime && (
+                      <span className="text-xs text-text-muted flex-shrink-0">{ev.startTime}{ev.endTime ? ` ~ ${ev.endTime}` : ''}</span>
+                    )}
+                    {ev.allDay && <span className="text-[10px] text-text-muted">종일</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         <TimeboxPlanner date={selectedDate} tasks={myDayTasks} />
       </div>

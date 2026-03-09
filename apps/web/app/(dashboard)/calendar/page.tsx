@@ -12,6 +12,24 @@ import {
   type CalendarEvent,
   type TaskData,
 } from '@/lib/firestore';
+import {
+  getStoredGCalToken,
+  connectGoogleCalendar,
+  disconnectGoogleCalendar,
+  fetchGCalEvents,
+  gcalColor,
+  type GCalEvent,
+} from '@/lib/google-calendar';
+
+interface GCalDisplayEvent {
+  id: string;
+  title: string;
+  color: string;
+  dateStr: string;
+  endDateStr: string;
+  startTime?: string;
+  isGcal: true;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -178,6 +196,99 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const initialLoad = useRef(true);
 
+  // Google Calendar state
+  const [gcalToken, setGcalToken] = useState<string | null>(null);
+  const [gcalDisplayEvents, setGcalDisplayEvents] = useState<GCalDisplayEvent[]>([]);
+  const [gcalLoading, setGcalLoading] = useState(false);
+  const [gcalError, setGcalError] = useState<string | null>(null);
+
+  // Normalize a GCalEvent into GCalDisplayEvent array entries (handles multi-day)
+  const normalizeGCalEvents = useCallback((raw: GCalEvent[]): GCalDisplayEvent[] => {
+    return raw.map(ev => {
+      const startDate = ev.start.date ?? ev.start.dateTime?.slice(0, 10) ?? '';
+      let endDate = ev.end.date ?? ev.end.dateTime?.slice(0, 10) ?? startDate;
+      // Google all-day end.date is exclusive — subtract 1 day
+      if (ev.end.date) {
+        const d = new Date(ev.end.date + 'T00:00:00');
+        d.setDate(d.getDate() - 1);
+        endDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+      const startTime = ev.start.dateTime
+        ? ev.start.dateTime.slice(11, 16)
+        : undefined;
+      return {
+        id: ev.id,
+        title: ev.summary || '(제목 없음)',
+        color: gcalColor(ev.colorId),
+        dateStr: startDate,
+        endDateStr: endDate,
+        startTime,
+        isGcal: true as const,
+      };
+    });
+  }, []);
+
+  // Fetch GCal events for current view month
+  const loadGCalEvents = useCallback(async (token: string, year: number, month: number) => {
+    setGcalLoading(true);
+    setGcalError(null);
+    try {
+      const timeMin = new Date(year, month, 1);
+      const timeMax = new Date(year, month + 1, 0, 23, 59, 59);
+      const raw = await fetchGCalEvents(token, timeMin, timeMax);
+      setGcalDisplayEvents(normalizeGCalEvents(raw));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'token_expired') {
+        disconnectGoogleCalendar();
+        setGcalToken(null);
+        setGcalDisplayEvents([]);
+        setGcalError('token_expired');
+      } else {
+        setGcalError('fetch_failed');
+      }
+    } finally {
+      setGcalLoading(false);
+    }
+  }, [normalizeGCalEvents]);
+
+  // Check for stored GCal token on mount
+  useEffect(() => {
+    const token = getStoredGCalToken();
+    if (token) setGcalToken(token);
+  }, []);
+
+  // Reload GCal events when month changes or token set
+  useEffect(() => {
+    if (!gcalToken) return;
+    loadGCalEvents(gcalToken, viewYear, viewMonth);
+  }, [gcalToken, viewYear, viewMonth, loadGCalEvents]);
+
+  const handleConnectGCal = async () => {
+    setGcalLoading(true);
+    setGcalError(null);
+    try {
+      const token = await connectGoogleCalendar();
+      setGcalToken(token);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('popup') || msg.includes('closed')) {
+        setGcalError('popup_blocked');
+      } else if (msg.includes('no_token')) {
+        setGcalError('no_token');
+      } else {
+        setGcalError('connect_failed');
+      }
+      setGcalLoading(false);
+    }
+  };
+
+  const handleDisconnectGCal = () => {
+    disconnectGoogleCalendar();
+    setGcalToken(null);
+    setGcalDisplayEvents([]);
+    setGcalError(null);
+  };
+
   // Load events
   useEffect(() => {
     if (!user) return;
@@ -228,7 +339,14 @@ export default function CalendarPage() {
       return false;
     });
     const taskEvents = taskDueEvents.filter(e => e.date === dateStr);
-    return [...calEvents.map(e => ({ ...e, isTask: false as const })), ...taskEvents];
+    const gcalEvents = gcalDisplayEvents.filter(e =>
+      e.dateStr <= dateStr && e.endDateStr >= dateStr
+    );
+    return [
+      ...calEvents.map(e => ({ ...e, isTask: false as const, isGcal: false as const })),
+      ...taskEvents.map(e => ({ ...e, isGcal: false as const })),
+      ...gcalEvents,
+    ];
   };
 
   // Weekday headers
@@ -370,14 +488,28 @@ export default function CalendarPage() {
                     {dayEvents.slice(0, 3).map((ev, j) => (
                       <button
                         key={j}
-                        onClick={e => { e.stopPropagation(); if (!ev.isTask && 'id' in ev) handleEventClick(ev as CalendarEvent); }}
+                        onClick={e => {
+                          e.stopPropagation();
+                          if ('isGcal' in ev && ev.isGcal) return;
+                          if (!ev.isTask && 'id' in ev) handleEventClick(ev as CalendarEvent);
+                        }}
                         className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-colors hover:brightness-110"
                         style={{ backgroundColor: `${ev.color}20`, color: ev.color }}
                       >
-                        {!ev.isTask && !(ev as CalendarEvent).allDay && (ev as CalendarEvent).startTime && (
-                          <span className="opacity-70 mr-1">{(ev as CalendarEvent).startTime}</span>
+                        {'isGcal' in ev && ev.isGcal ? (
+                          <>
+                            <span className="opacity-50 mr-0.5 font-bold">G</span>
+                            {ev.startTime && <span className="opacity-70 mr-1">{ev.startTime}</span>}
+                            {ev.title}
+                          </>
+                        ) : (
+                          <>
+                            {!ev.isTask && !(ev as CalendarEvent).allDay && (ev as CalendarEvent).startTime && (
+                              <span className="opacity-70 mr-1">{(ev as CalendarEvent).startTime}</span>
+                            )}
+                            {ev.title}
+                          </>
                         )}
-                        {ev.title}
                       </button>
                     ))}
                     {dayEvents.length > 3 && (
@@ -408,52 +540,101 @@ export default function CalendarPage() {
               <p className="text-sm text-text-muted py-4 text-center">{t('calendar.noEvents')}</p>
             ) : (
               <div className="space-y-2">
-                {selectedDateEvents.map((ev, i) => (
+                {selectedDateEvents.map((ev, i) => {
+                  const isGcal = 'isGcal' in ev && ev.isGcal;
+                  const isTask = !isGcal && ev.isTask;
+                  return (
                   <div
                     key={i}
-                    onClick={() => { if (!ev.isTask && 'id' in ev) handleEventClick(ev as CalendarEvent); }}
-                    className={`flex items-center gap-3 p-3 rounded-xl border border-border transition-all ${ev.isTask ? '' : 'cursor-pointer hover:border-border-hover'}`}
+                    onClick={() => {
+                      if (isGcal || isTask) return;
+                      if ('id' in ev) handleEventClick(ev as CalendarEvent);
+                    }}
+                    className={`flex items-center gap-3 p-3 rounded-xl border border-border transition-all ${(!isGcal && !isTask) ? 'cursor-pointer hover:border-border-hover' : ''}`}
                   >
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-text-primary truncate">{ev.title}</p>
-                      {!ev.isTask && !(ev as CalendarEvent).allDay && (
+                      {isGcal && (ev as GCalDisplayEvent).startTime && (
+                        <p className="text-[11px] text-text-muted">{(ev as GCalDisplayEvent).startTime}</p>
+                      )}
+                      {!isGcal && !isTask && !(ev as CalendarEvent).allDay && (
                         <p className="text-[11px] text-text-muted">
                           {(ev as CalendarEvent).startTime} - {(ev as CalendarEvent).endTime}
                         </p>
                       )}
-                      {ev.isTask && (
+                      {isTask && (
                         <p className="text-[10px] text-amber-400 font-semibold">{t('calendar.taskDue')}</p>
                       )}
                     </div>
-                    {!ev.isTask && (
+                    {isGcal && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#4285F4]/10 text-[#4285F4] font-semibold">Google</span>
+                    )}
+                    {!isGcal && !isTask && (
                       <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: `${ev.color}15`, color: ev.color }}>
                         {(ev as CalendarEvent).allDay ? t('calendar.allDay') : (ev as CalendarEvent).startTime}
                       </span>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
-        {/* Google Calendar — info placeholder */}
+        {/* Google Calendar Connect */}
         <div className="mt-6 p-4 bg-background-card border border-border rounded-xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-green-500 flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#4285F4] to-[#34A853] flex items-center justify-center text-white text-lg font-bold flex-shrink-0 flex-shrink-0">
               G
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-text-primary">{t('calendar.googleConnect')}</p>
-              <p className="text-[11px] text-text-muted">Google Calendar API integration — Coming soon</p>
+              {gcalToken ? (
+                <p className="text-[11px] text-green-400 font-semibold">
+                  {gcalLoading ? '불러오는 중...' : `${gcalDisplayEvents.length}개 일정 동기화됨`}
+                </p>
+              ) : (
+                <p className="text-[11px] text-text-muted">Google 캘린더 일정을 이 화면에서 함께 봅니다</p>
+              )}
+              {gcalError && gcalError !== 'token_expired' && (
+                <p className="text-[10px] text-red-400 mt-0.5">
+                  {gcalError === 'popup_blocked'
+                    ? '팝업이 차단됐습니다. 브라우저 팝업 허용 후 다시 시도해주세요.'
+                    : gcalError === 'fetch_failed'
+                    ? '일정을 불러오지 못했습니다.'
+                    : '연결에 실패했습니다. 다시 시도해주세요.'}
+                </p>
+              )}
+              {gcalError === 'token_expired' && (
+                <p className="text-[10px] text-amber-400 mt-0.5">세션이 만료됐습니다. 다시 연결해주세요.</p>
+              )}
             </div>
-            <button
-              disabled
-              className="px-4 py-2 bg-border/60 text-text-muted rounded-xl text-xs font-semibold cursor-not-allowed"
-            >
-              {t('calendar.googleConnect')}
-            </button>
+            {gcalToken ? (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {gcalLoading && (
+                  <div className="w-4 h-4 border-2 border-[#4285F4] border-t-transparent rounded-full animate-spin" />
+                )}
+                <button
+                  onClick={handleDisconnectGCal}
+                  className="px-3 py-1.5 text-xs text-text-muted hover:text-red-400 border border-border hover:border-red-400/50 rounded-xl transition-colors"
+                >
+                  연결 해제
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleConnectGCal}
+                disabled={gcalLoading}
+                className="px-4 py-2 bg-[#4285F4] text-white rounded-xl text-xs font-bold hover:bg-[#3367d6] disabled:opacity-50 transition-colors flex-shrink-0 flex items-center gap-1.5"
+              >
+                {gcalLoading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : null}
+                {t('calendar.googleConnect')}
+              </button>
+            )}
           </div>
         </div>
       </div>

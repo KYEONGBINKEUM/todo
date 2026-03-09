@@ -360,16 +360,26 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
                       {!isAdmin && userPlan === 'free' && (
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             const params = new URLSearchParams();
                             params.set('products', POLAR_PRODUCT_PRO);
                             if (user?.email) params.set('customerEmail', user.email);
                             if (user?.uid) params.set('metadata', JSON.stringify({ uid: user.uid }));
-                            window.open(`https://polar.sh/checkout?${params.toString()}`, '_blank');
+                            const url = `https://polar.sh/checkout?${params.toString()}`;
+                            if (isTauriEnv()) {
+                              try {
+                                const { openUrl } = await import('@tauri-apps/plugin-opener');
+                                await openUrl(url);
+                              } catch {
+                                window.open(url, '_blank');
+                              }
+                            } else {
+                              window.open(url, '_blank');
+                            }
                           }}
                           className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#e94560] to-[#c94580] hover:opacity-90 transition-opacity"
                         >
-                          {t('settings.upgrade')} → Pro
+                          Pro로 업그레이드
                         </button>
                       )}
                     </div>

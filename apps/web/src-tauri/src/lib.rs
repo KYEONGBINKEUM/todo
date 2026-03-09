@@ -7,7 +7,7 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Todo - Google Login</title>
+<title>NOAH - Google Login</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, sans-serif; background: #08081a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -23,7 +23,7 @@ const LOGIN_HTML: &str = r##"<!DOCTYPE html>
 </head>
 <body>
 <div class="card">
-  <h1>AI Todo</h1>
+  <h1>NOAH</h1>
   <p>Google 계정으로 로그인 중...</p>
   <div class="spinner" id="spinner"></div>
   <div id="status">잠시만 기다려주세요</div>

@@ -36,8 +36,9 @@ const LANGUAGES: { code: Language; name: string; flag: string }[] = [
 const PLANS: { value: Plan; label: string; desc: string; color: string }[] = [
   { value: 'free', label: 'Free', desc: 'settings.freeDesc', color: '#64748b' },
   { value: 'pro', label: 'Pro', desc: 'settings.planFeatures.ai', color: '#e94560' },
-  { value: 'team', label: 'Team', desc: 'settings.planFeatures.collaboration', color: '#8b5cf6' },
 ];
+
+const POLAR_PRODUCT_PRO = process.env.NEXT_PUBLIC_POLAR_PRODUCT_PRO ?? '';
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { user } = useAuth();
@@ -302,7 +303,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <span className="text-xs font-bold text-text-primary">
-                            {userPlan === 'free' ? 'Free' : userPlan === 'pro' ? 'Pro' : 'Team'} {t('settings.plan.label')}
+                            {userPlan === 'free' ? 'Free' : 'Pro'} {t('settings.plan.label')}
                           </span>
                           <p className="text-[11px] text-text-muted mt-0.5">
                             {t(PLANS.find(p => p.value === userPlan)?.desc || '')}
@@ -318,7 +319,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                           { key: 'settings.planFeatures.notes', included: true },
                           { key: 'settings.planFeatures.sync', included: true },
                           { key: 'settings.planFeatures.ai', included: userPlan !== 'free' },
-                          { key: 'settings.planFeatures.collaboration', included: userPlan === 'team' },
                           { key: 'settings.planFeatures.storage', included: userPlan !== 'free' },
                         ].map((item) => (
                           <div key={item.key} className="flex items-center gap-2 text-[11px]">
@@ -339,7 +339,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                             <span className="text-xs">🔧</span>
                             <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">{t('settings.adminOnly')}</span>
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-2 gap-2">
                             {PLANS.map((plan) => (
                               <button
                                 key={plan.value}
@@ -358,12 +358,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         </div>
                       )}
 
-                      {!isAdmin && (
+                      {!isAdmin && userPlan === 'free' && (
                         <button
-                          className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-red-500 opacity-70 cursor-not-allowed"
-                          disabled
+                          onClick={() => {
+                            const params = new URLSearchParams();
+                            params.set('products', POLAR_PRODUCT_PRO);
+                            if (user?.email) params.set('customerEmail', user.email);
+                            if (user?.uid) params.set('metadata', JSON.stringify({ uid: user.uid }));
+                            window.open(`https://polar.sh/checkout?${params.toString()}`, '_blank');
+                          }}
+                          className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#e94560] to-[#c94580] hover:opacity-90 transition-opacity"
                         >
-                          {t('settings.upgrade')} ({t('settings.preparing')})
+                          {t('settings.upgrade')} → Pro
                         </button>
                       )}
                     </div>
@@ -388,7 +394,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         />
                       </div>
                       <p className="text-[10px] text-text-muted">
-                        {userPlan === 'free' ? `Free ${t('settings.plan.label')}: 100 MB` : userPlan === 'pro' ? `Pro ${t('settings.plan.label')}: 10 GB` : `Team ${t('settings.plan.label')}: 50 GB`}
+                        {userPlan === 'free' ? `Free ${t('settings.plan.label')}: 100 MB` : `Pro ${t('settings.plan.label')}: 10 GB`}
                         {storagePercent > 90 && <span className="text-[#e94560] ml-1 font-semibold">— {t('settings.storageFull')}</span>}
                       </p>
                     </div>

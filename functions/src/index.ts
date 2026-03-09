@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { callGemini } from './gemini';
 import { buildPrompt, NoahAIAction } from './prompts';
@@ -9,6 +9,49 @@ import { getYouTubeVideoInfo } from './youtube';
 admin.initializeApp();
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const polarWebhookSecret = defineSecret('POLAR_WEBHOOK_SECRET');
+
+// ── Polar Webhook ─────────────────────────────────────────────────────────────
+
+export const polarWebhook = onRequest(
+  { secrets: [polarWebhookSecret], cors: false },
+  async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+
+    const rawBody = JSON.stringify(req.body);
+    const secret = polarWebhookSecret.value();
+
+    if (secret) {
+      const signature = (req.headers['webhook-signature'] ?? req.headers['x-polar-signature']) as string | undefined;
+      if (!signature) { res.status(401).send('No signature'); return; }
+
+      const encoder = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+      );
+      const sigBytes = Buffer.from(signature.replace('sha256=', ''), 'hex');
+      const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(rawBody));
+      if (!valid) { res.status(401).send('Invalid signature'); return; }
+    }
+
+    const { type, data } = req.body as { type: string; data: Record<string, unknown> };
+    const uid = (data?.metadata as Record<string, string>)?.uid;
+
+    if (uid) {
+      const db = admin.firestore();
+      const ref = db.doc(`users/${uid}/settings/app`);
+      if (type === 'order.created' || type === 'subscription.created' || type === 'subscription.active') {
+        await ref.set({ plan: 'pro' }, { merge: true });
+        console.log(`[polar] plan→pro uid=${uid}`);
+      } else if (type === 'subscription.canceled' || type === 'subscription.revoked') {
+        await ref.set({ plan: 'free' }, { merge: true });
+        console.log(`[polar] plan→free uid=${uid}`);
+      }
+    }
+
+    res.json({ received: true });
+  }
+);
 
 // Token limits per plan
 const TOKEN_LIMITS: Record<string, number> = {

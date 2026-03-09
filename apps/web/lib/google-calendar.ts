@@ -4,11 +4,13 @@ import { auth } from './firebase';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
 const TOKEN_KEY = 'gcal_access_token';
 const EXPIRY_KEY = 'gcal_token_expiry';
+const CONNECTED_KEY = 'gcal_connected';
 const PENDING_REDIRECT_KEY = 'gcal_pending_redirect';
 
 function storeToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(EXPIRY_KEY, String(Date.now() + 55 * 60 * 1000));
+  localStorage.setItem(CONNECTED_KEY, '1');
 }
 
 export function getStoredGCalToken(): string | null {
@@ -17,6 +19,7 @@ export function getStoredGCalToken(): string | null {
   const expiry = localStorage.getItem(EXPIRY_KEY);
   if (!token || !expiry) return null;
   if (Date.now() > parseInt(expiry, 10)) {
+    // 토큰 만료 — 토큰만 제거, connected 플래그는 유지
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(EXPIRY_KEY);
     return null;
@@ -24,10 +27,52 @@ export function getStoredGCalToken(): string | null {
   return token;
 }
 
+/** 사용자가 이전에 Google Calendar을 연동한 적이 있는지 확인 */
+export function isGCalConnected(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(CONNECTED_KEY) === '1';
+}
+
 export function disconnectGoogleCalendar() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(EXPIRY_KEY);
+  localStorage.removeItem(CONNECTED_KEY);
   localStorage.removeItem(PENDING_REDIRECT_KEY);
+}
+
+/**
+ * 토큰 만료 시 자동 재인증 — prompt 없이 signInWithPopup 시도.
+ * 이미 Google 세션이 있으면 팝업이 즉시 닫히며 새 토큰 발급.
+ * 실패 시 null 반환 (수동 재연결 필요).
+ */
+export async function silentReconnectGCal(): Promise<string | null> {
+  try {
+    const provider = new GoogleAuthProvider();
+    provider.addScope(SCOPE);
+    // prompt: 'none'으로 사일런트 재인증 시도
+    provider.setCustomParameters({ prompt: 'none' });
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token = credential?.accessToken;
+    if (!token) return null;
+    storeToken(token);
+    return token;
+  } catch {
+    // 사일런트 실패 — select_account로 한 번 더 시도 (빠른 팝업)
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.addScope(SCOPE);
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential?.accessToken;
+      if (!token) return null;
+      storeToken(token);
+      return token;
+    } catch {
+      return null;
+    }
+  }
 }
 
 // ── Web (popup) ───────────────────────────────────────────────────────────────

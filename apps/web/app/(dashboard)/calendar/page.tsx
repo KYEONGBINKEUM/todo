@@ -12,11 +12,13 @@ import {
 } from '@/lib/firestore';
 import {
   getStoredGCalToken,
+  isGCalConnected,
   connectGoogleCalendar,
   connectGoogleCalendarDesktop,
   connectGoogleCalendarRedirect,
   checkGCalRedirectResult,
   disconnectGoogleCalendar,
+  silentReconnectGCal,
   fetchGCalEvents,
   gcalColor,
   type GCalEvent,
@@ -91,7 +93,7 @@ function EventModal({
         memo: memo.trim() || undefined,
       });
     } catch {
-      setSaveError('저장 중 오류가 발생했습니다. 다시 시도해주세요.');
+      setSaveError(t('calendar.saveError'));
       setSaving(false);
     }
   };
@@ -182,6 +184,7 @@ function CalendarSettingsModal({
   onSave: (s: CalSettings) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [local, setLocal] = useState<CalSettings>({ ...settings });
   const [notifSupported, setNotifSupported] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
@@ -215,7 +218,7 @@ function CalendarSettingsModal({
       <div className="bg-background-card border border-border rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="text-base font-bold text-text-primary">캘린더 설정</h3>
+          <h3 className="text-base font-bold text-text-primary">{t('calendar.settingsTitle')}</h3>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-border/50 transition-colors text-lg">×</button>
         </div>
 
@@ -223,12 +226,12 @@ function CalendarSettingsModal({
 
           {/* 1. Week start */}
           <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">주 시작 요일</p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">{t('calendar.weekStart')}</p>
             <div className="flex gap-2">
               {(['sun', 'mon'] as const).map(v => (
                 <button key={v} onClick={() => setLocal(p => ({ ...p, weekStart: v }))}
                   className={`flex-1 py-2 rounded-xl text-sm font-semibold border transition-all ${local.weekStart === v ? 'bg-[#e94560]/15 text-[#e94560] border-[#e94560]/40' : 'text-text-muted border-border hover:border-border-hover'}`}>
-                  {v === 'sun' ? '일요일' : '월요일'}
+                  {v === 'sun' ? t('calendar.sunday') : t('calendar.monday')}
                 </button>
               ))}
             </div>
@@ -236,11 +239,11 @@ function CalendarSettingsModal({
 
           {/* 2. Holidays */}
           <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">공휴일 표시 국가</p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">{t('calendar.holidayCountries')}</p>
             <input
               value={countrySearch}
               onChange={e => setCountrySearch(e.target.value)}
-              placeholder="국가 검색..."
+              placeholder={t('calendar.searchCountry')}
               className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm text-text-primary placeholder-text-muted outline-none focus:border-[#e94560] mb-2 transition-colors"
             />
             <div className="grid grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
@@ -259,19 +262,19 @@ function CalendarSettingsModal({
             {local.holidayCountries.length > 0 && (
               <button onClick={() => setLocal(p => ({ ...p, holidayCountries: [] }))}
                 className="mt-2 text-xs text-text-muted hover:text-red-400 transition-colors">
-                모두 해제
+                {t('calendar.clearAll')}
               </button>
             )}
           </div>
 
           {/* 3. Notifications */}
           <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">알림</p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">{t('calendar.notifications')}</p>
             {notifSupported ? (
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <div>
-                  <p className="text-sm text-text-primary font-medium">캘린더 알림 활성화</p>
-                  <p className="text-xs text-text-muted">오늘·내일 일정을 앱 시작 시 알림</p>
+                  <p className="text-sm text-text-primary font-medium">{t('calendar.notifEnable')}</p>
+                  <p className="text-xs text-text-muted">{t('calendar.notifDesc')}</p>
                 </div>
                 <div onClick={() => setLocal(p => ({ ...p, notifications: !p.notifications }))}
                   className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors flex-shrink-0 ${local.notifications ? 'bg-[#e94560]' : 'bg-border'}`}>
@@ -279,18 +282,18 @@ function CalendarSettingsModal({
                 </div>
               </label>
             ) : (
-              <p className="text-xs text-text-muted">이 환경에서는 알림이 지원되지 않습니다.</p>
+              <p className="text-xs text-text-muted">{t('calendar.notifUnsupported')}</p>
             )}
           </div>
 
           {/* 4. Show in other pages */}
           <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">다른 페이지에 표시</p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">{t('calendar.showInOther')}</p>
             <div className="space-y-3">
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <div>
-                  <p className="text-sm text-text-primary font-medium">모든 작업 페이지</p>
-                  <p className="text-xs text-text-muted">오늘 일정을 할일 페이지에 표시</p>
+                  <p className="text-sm text-text-primary font-medium">{t('calendar.showInTasks')}</p>
+                  <p className="text-xs text-text-muted">{t('calendar.showInTasksDesc')}</p>
                 </div>
                 <div onClick={() => setLocal(p => ({ ...p, showInTasks: !p.showInTasks }))}
                   className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors flex-shrink-0 ${local.showInTasks ? 'bg-[#e94560]' : 'bg-border'}`}>
@@ -299,8 +302,8 @@ function CalendarSettingsModal({
               </label>
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <div>
-                  <p className="text-sm text-text-primary font-medium">예정된 작업 페이지</p>
-                  <p className="text-xs text-text-muted">날짜별 일정을 예정된 작업에 표시</p>
+                  <p className="text-sm text-text-primary font-medium">{t('calendar.showInUpcoming')}</p>
+                  <p className="text-xs text-text-muted">{t('calendar.showInUpcomingDesc')}</p>
                 </div>
                 <div onClick={() => setLocal(p => ({ ...p, showInUpcoming: !p.showInUpcoming }))}
                   className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors flex-shrink-0 ${local.showInUpcoming ? 'bg-[#e94560]' : 'bg-border'}`}>
@@ -314,10 +317,10 @@ function CalendarSettingsModal({
         {/* Footer */}
         <div className="px-5 py-4 border-t border-border flex gap-2">
           <button onClick={onClose} className="flex-1 py-2 text-sm text-text-muted hover:text-text-primary border border-border rounded-xl transition-colors">
-            취소
+            {t('common.cancel')}
           </button>
           <button onClick={handleSave} className="flex-1 py-2 bg-[#e94560] text-white text-sm font-bold rounded-xl hover:bg-[#d63b55] transition-colors">
-            저장
+            {t('common.save')}
           </button>
         </div>
       </div>
@@ -380,7 +383,7 @@ export default function CalendarPage() {
     const upcoming = storeEvents.filter(e => e.date === todayDate || e.date === tomorrowDate);
     if (upcoming.length === 0) return;
     markNotificationShown();
-    const label = upcoming.some(e => e.date === todayDate) ? '오늘 일정' : '내일 일정';
+    const label = upcoming.some(e => e.date === todayDate) ? t('calendar.todaySchedule') : t('calendar.tomorrowSchedule');
     try {
       new Notification(label, {
         body: upcoming.slice(0, 3).map(e => e.title).join(', '),
@@ -401,7 +404,7 @@ export default function CalendarPage() {
       }
       return {
         id: ev.id,
-        title: ev.summary || '(제목 없음)',
+        title: ev.summary || t('calendar.untitled'),
         color: gcalColor(ev.colorId),
         dateStr: startDate,
         endDateStr: endDate,
@@ -411,6 +414,8 @@ export default function CalendarPage() {
     });
   }, []);
 
+  const reconnectingRef = useRef(false);
+
   const loadGCalEvents = useCallback(async (token: string, year: number, month: number) => {
     setGcalLoading(true); setGcalError(null);
     try {
@@ -418,16 +423,43 @@ export default function CalendarPage() {
       setGcalDisplayEvents(normalizeGCalEvents(raw));
     } catch (err) {
       if (err instanceof Error && err.message === 'token_expired') {
-        disconnectGoogleCalendar(); setGcalToken(null); setGcalDisplayEvents([]); setGcalError('token_expired');
+        // 토큰 만료 — 자동 재연결 시도
+        if (!reconnectingRef.current) {
+          reconnectingRef.current = true;
+          const newToken = await silentReconnectGCal();
+          reconnectingRef.current = false;
+          if (newToken) {
+            setGcalToken(newToken);
+            return; // useEffect가 새 토큰으로 다시 호출됨
+          }
+        }
+        setGcalToken(null); setGcalDisplayEvents([]); setGcalError('token_expired');
       } else { setGcalError('fetch_failed'); }
     } finally { setGcalLoading(false); }
   }, [normalizeGCalEvents]);
 
+  // 초기 로드: 토큰 확인 → 만료 시 자동 재연결
   useEffect(() => {
     const stored = getStoredGCalToken();
     if (stored) { setGcalToken(stored); return; }
-    checkGCalRedirectResult().then(token => { if (token) setGcalToken(token); });
-  }, []);
+
+    // 리다이렉트 결과 확인
+    checkGCalRedirectResult().then(token => {
+      if (token) { setGcalToken(token); return; }
+
+      // 이전에 연동했었으나 토큰이 만료된 경우 → 자동 재연결
+      if (isGCalConnected() && !reconnectingRef.current) {
+        reconnectingRef.current = true;
+        setGcalLoading(true);
+        silentReconnectGCal().then(newToken => {
+          reconnectingRef.current = false;
+          if (newToken) { setGcalToken(newToken); }
+          else { setGcalError('token_expired'); }
+          setGcalLoading(false);
+        });
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!gcalToken) return;
@@ -566,13 +598,13 @@ export default function CalendarPage() {
             <h2 className="text-2xl font-bold text-text-primary">{t('calendar.title')}</h2>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={toggleShowTasks} title={showTasksInCalendar ? '할일 숨기기' : '할일 표시'}
+            <button onClick={toggleShowTasks} title={showTasksInCalendar ? t('calendar.hideTasks') : t('calendar.showTasks')}
               className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 ${showTasksInCalendar ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20' : 'text-text-muted border-border hover:text-text-primary'}`}>
               <span>📋</span>
-              {showTasksInCalendar ? '할일 표시 중' : '할일 숨김'}
+              {showTasksInCalendar ? t('calendar.showTasks') : t('calendar.hideTasks')}
             </button>
             {/* Settings button */}
-            <button onClick={() => setShowSettingsModal(true)} title="캘린더 설정"
+            <button onClick={() => setShowSettingsModal(true)} title={t('calendar.settings')}
               className="w-9 h-9 flex items-center justify-center rounded-xl text-text-muted hover:text-text-primary border border-border hover:border-border-hover transition-all">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -730,25 +762,35 @@ export default function CalendarPage() {
               <p className="text-sm font-bold text-text-primary">{t('calendar.googleConnect')}</p>
               {gcalToken ? (
                 <p className="text-[11px] text-green-400 font-semibold">
-                  {gcalLoading ? '불러오는 중...' : `${gcalDisplayEvents.length}개 일정 동기화됨`}
+                  {gcalLoading ? t('calendar.loadingEvents') : `${gcalDisplayEvents.length} ${t('calendar.synced')}`}
                 </p>
               ) : (
-                <p className="text-[11px] text-text-muted">Google 캘린더 일정을 이 화면에서 함께 봅니다</p>
+                <p className="text-[11px] text-text-muted">{t('calendar.gcalDesc')}</p>
               )}
               {gcalError && gcalError !== 'token_expired' && (
                 <p className="text-[10px] text-red-400 mt-0.5">
-                  {gcalError === 'fetch_failed' ? '일정을 불러오지 못했습니다.' : gcalError === 'timeout' ? '연결 시간이 초과됐습니다. 다시 시도해주세요.' : '연결에 실패했습니다. 다시 시도해주세요.'}
+                  {gcalError === 'fetch_failed' ? t('calendar.fetchFailed') : gcalError === 'timeout' ? t('calendar.connectTimeout') : t('calendar.connectFailed')}
                 </p>
               )}
-              {gcalError === 'token_expired' && <p className="text-[10px] text-amber-400 mt-0.5">세션이 만료됐습니다. 다시 연결해주세요.</p>}
+              {gcalError === 'token_expired' && (
+                <p className="text-[10px] text-amber-400 mt-0.5">
+                  {t('calendar.sessionExpired')}
+                </p>
+              )}
             </div>
             {gcalToken ? (
               <div className="flex items-center gap-2 flex-shrink-0">
                 {gcalLoading && <div className="w-4 h-4 border-2 border-[#4285F4] border-t-transparent rounded-full animate-spin" />}
                 <button onClick={handleDisconnectGCal} className="px-3 py-1.5 text-xs text-text-muted hover:text-red-400 border border-border hover:border-red-400/50 rounded-xl transition-colors">
-                  연결 해제
+                  {t('calendar.googleDisconnect')}
                 </button>
               </div>
+            ) : gcalError === 'token_expired' && isGCalConnected() ? (
+              <button onClick={handleConnectGCal} disabled={gcalLoading}
+                className="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 disabled:opacity-50 transition-colors flex-shrink-0 flex items-center gap-1.5">
+                {gcalLoading && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {t('calendar.reconnect')}
+              </button>
             ) : (
               <button onClick={handleConnectGCal} disabled={gcalLoading}
                 className="px-4 py-2 bg-[#4285F4] text-white rounded-xl text-xs font-bold hover:bg-[#3367d6] disabled:opacity-50 transition-colors flex-shrink-0 flex items-center gap-1.5">

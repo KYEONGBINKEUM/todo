@@ -65,12 +65,13 @@ jobs:
           NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_POLAR_PRODUCT_PRO: ${{ secrets.NEXT_PUBLIC_POLAR_PRODUCT_PRO }}
         with:
           tauriScript: pnpm tauri
           projectPath: apps/web
           args: ${{ matrix.args }}
           tagName: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', github.event.inputs.version) }}
-          releaseName: 'AI Todo v__VERSION__'
+          releaseName: 'NOAH v__VERSION__'
           releaseBody: |
             AI Todo 데스크톱 앱 업데이트
 
@@ -140,6 +141,7 @@ jobs:
           NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_POLAR_PRODUCT_PRO: ${{ secrets.NEXT_PUBLIC_POLAR_PRODUCT_PRO }}
 
       - name: Init Tauri Android
         working-directory: apps/web
@@ -158,6 +160,7 @@ jobs:
           NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_POLAR_PRODUCT_PRO: ${{ secrets.NEXT_PUBLIC_POLAR_PRODUCT_PRO }}
 
       - name: Sign APK
         run: |

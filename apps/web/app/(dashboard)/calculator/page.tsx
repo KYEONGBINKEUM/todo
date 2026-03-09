@@ -189,80 +189,69 @@ function GeneralCalc({
 
 // ── Ratio Calculator ──────────────────────────────────────────────────────────
 function RatioCalc({ onResult, t }: { onResult: (expr: string, result: string) => void; t: (key: string) => string }) {
-  const [tab, setTab] = useState<'scale' | 'ratio'>('scale');
+  const [tab, setTab] = useState<'ab' | 'abc'>('ab');
 
-  // Scale mode
-  const [ow, setOw] = useState(''); const [oh, setOh] = useState('');
-  const [nw, setNw] = useState(''); const [nh, setNh] = useState('');
-  const [lockAspect, setLockAspect] = useState(true);
+  // A:B mode
+  const [ra, setRa] = useState('1');
+  const [rb, setRb] = useState('1');
+  const [abKnown, setAbKnown] = useState<'total' | 'a' | 'b'>('total');
+  const [abInput, setAbInput] = useState('');
 
-  // 실시간 계산 결과
-  const resH = (() => {
-    const [a, b, c] = [ow, oh, nw].map(parseFloat);
-    if ([a, b, c].some(isNaN) || a === 0) return '';
-    return parseFloat(((c * b) / a).toFixed(2)).toString();
-  })();
-  const resW = (() => {
-    const [a, b, c] = [ow, oh, nh].map(parseFloat);
-    if ([a, b, c].some(isNaN) || b === 0) return '';
-    return parseFloat(((c * a) / b).toFixed(2)).toString();
-  })();
+  // A:B:C mode
+  const [ra3, setRa3] = useState('1');
+  const [rb3, setRb3] = useState('1');
+  const [rc3, setRc3] = useState('1');
+  const [abcKnown, setAbcKnown] = useState<'total' | 'a' | 'b' | 'c'>('total');
+  const [abcInput, setAbcInput] = useState('');
 
-  const saveScaleH = () => {
-    if (!resH) return;
-    onResult(`${ow}×${oh} → W${nw}`, `H = ${resH}`);
-  };
-  const saveScaleW = () => {
-    if (!resW) return;
-    onResult(`${ow}×${oh} → H${nh}`, `W = ${resW}`);
-  };
+  const fmt = (n: number) => parseFloat(n.toFixed(6)).toString();
 
-  // 너비 입력 시 높이도 자동 연동 (잠금 모드)
-  const handleNwChange = (val: string) => {
-    setNw(val);
-    if (lockAspect) {
-      const [a, b, c] = [parseFloat(ow), parseFloat(oh), parseFloat(val)];
-      if (![a, b, c].some(isNaN) && a !== 0) {
-        setNh(parseFloat(((c * b) / a).toFixed(2)).toString());
-      }
+  const abResult = (() => {
+    const [a, b, inp] = [ra, rb, abInput].map(parseFloat);
+    if ([a, b, inp].some(isNaN) || a <= 0 || b <= 0) return null;
+    const sum = a + b;
+    if (abKnown === 'total') {
+      return { valA: fmt(inp * a / sum), valB: fmt(inp * b / sum), total: fmt(inp) };
+    } else if (abKnown === 'a') {
+      const valB = fmt(inp * b / a);
+      return { valA: fmt(inp), valB, total: fmt(inp + parseFloat(valB)) };
+    } else {
+      const valA = fmt(inp * a / b);
+      return { valA, valB: fmt(inp), total: fmt(parseFloat(valA) + inp) };
     }
-  };
-  const handleNhChange = (val: string) => {
-    setNh(val);
-    if (lockAspect) {
-      const [a, b, c] = [parseFloat(ow), parseFloat(oh), parseFloat(val)];
-      if (![a, b, c].some(isNaN) && b !== 0) {
-        setNw(parseFloat(((c * a) / b).toFixed(2)).toString());
-      }
-    }
-  };
+  })();
 
-  // Ratio mode
-  const [r1, setR1] = useState('16'); const [r2, setR2] = useState('9');
-  const [rIn, setRIn] = useState(''); const [rOut, setROut] = useState('');
-  const [rDir, setRDir] = useState<'wh' | 'hw'>('wh');
-
-  const calcRatio = () => {
-    const [v, a, b] = [rIn, r1, r2].map(parseFloat);
-    if ([v, a, b].some(isNaN) || a === 0 || b === 0) return;
-    const r = rDir === 'wh'
-      ? parseFloat(((v * b) / a).toFixed(2)).toString()
-      : parseFloat(((v * a) / b).toFixed(2)).toString();
-    setROut(r);
-    onResult(
-      rDir === 'wh' ? `${r1}:${r2}, W=${rIn}` : `${r1}:${r2}, H=${rIn}`,
-      rDir === 'wh' ? `H = ${r}` : `W = ${r}`
-    );
-  };
+  const abcResult = (() => {
+    const [a, b, c, inp] = [ra3, rb3, rc3, abcInput].map(parseFloat);
+    if ([a, b, c, inp].some(isNaN) || a <= 0 || b <= 0 || c <= 0) return null;
+    const sum = a + b + c;
+    const unit = abcKnown === 'total' ? inp / sum
+      : abcKnown === 'a' ? inp / a
+      : abcKnown === 'b' ? inp / b
+      : inp / c;
+    return {
+      valA: fmt(unit * a),
+      valB: fmt(unit * b),
+      valC: fmt(unit * c),
+      total: fmt(unit * sum),
+    };
+  })();
 
   const ic = "w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors";
-  const rc = "px-3 py-2.5 bg-[#e94560]/5 border border-[#e94560]/20 rounded-xl text-sm font-bold text-[#e94560] min-h-[42px] flex items-center";
-  const calcBtn = "px-3 py-2.5 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] transition-colors flex-shrink-0";
+  const icSm = "w-16 px-2 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors";
+
+  const ResultBox = ({ label, value }: { label: string; value: string }) => (
+    <div className="flex flex-col items-center px-3 py-2.5 bg-background rounded-xl border border-border">
+      <span className="text-[10px] text-text-muted mb-0.5">{label}</span>
+      <span className="text-sm font-bold text-[#e94560]">{value}</span>
+    </div>
+  );
 
   return (
     <div className="space-y-5">
+      {/* Mode toggle */}
       <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
-        {([['scale', t('calc.scaleTab')], ['ratio', t('calc.ratioTab')]] as const).map(([m, l]) => (
+        {([['ab', 'A : B'], ['abc', 'A : B : C']] as const).map(([m, l]) => (
           <button key={m} onClick={() => setTab(m)}
             className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === m ? 'bg-[#e94560] text-white' : 'text-text-muted hover:text-text-primary'}`}>
             {l}
@@ -270,90 +259,80 @@ function RatioCalc({ onResult, t }: { onResult: (expr: string, result: string) =
         ))}
       </div>
 
-      {tab === 'scale' ? (
+      {tab === 'ab' ? (
         <div className="space-y-4 max-w-sm">
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">{t('calc.originalSize')}</p>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">비율</p>
             <div className="flex items-center gap-2">
-              <input value={ow} onChange={e => setOw(e.target.value)} placeholder="1920" className={ic} />
-              <span className="text-text-muted font-bold text-lg">×</span>
-              <input value={oh} onChange={e => setOh(e.target.value)} placeholder="1080" className={ic} />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-px bg-border flex-1" />
-            <button
-              onClick={() => setLockAspect(!lockAspect)}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${lockAspect ? 'bg-[#e94560]/10 text-[#e94560] border-[#e94560]/30' : 'text-text-muted border-border hover:text-text-primary'}`}
-              title={lockAspect ? t('calc.aspectUnlock') : t('calc.aspectLock')}
-            >
-              {lockAspect ? `🔗 ${t('calc.aspectLock')}` : `🔓 ${t('calc.aspectUnlock')}`}
-            </button>
-            <div className="h-px bg-border flex-1" />
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">{t('calc.widthToHeight')}</p>
-              {resH && <button onClick={saveScaleH} className="text-[10px] px-2 py-0.5 rounded-md border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">{t('calc.save')}</button>}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 min-w-0">
-                <input value={nw} onChange={e => handleNwChange(e.target.value)} placeholder={t('calc.widthInput')} className={ic} />
-              </div>
-              <span className="text-text-muted text-sm">→</span>
-              <div className={`${rc} flex-1 min-w-0`}>{resH || '—'}</div>
+              <input value={ra} onChange={e => setRa(e.target.value)} placeholder="A" className={icSm} />
+              <span className="text-text-muted font-bold text-xl">:</span>
+              <input value={rb} onChange={e => setRb(e.target.value)} placeholder="B" className={icSm} />
             </div>
           </div>
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">{t('calc.heightToWidth')}</p>
-              {resW && <button onClick={saveScaleW} className="text-[10px] px-2 py-0.5 rounded-md border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">{t('calc.save')}</button>}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 min-w-0">
-                <input value={nh} onChange={e => handleNhChange(e.target.value)} placeholder={t('calc.heightInput')} className={ic} />
-              </div>
-              <span className="text-text-muted text-sm">→</span>
-              <div className={`${rc} flex-1 min-w-0`}>{resW || '—'}</div>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">알고 있는 값</p>
+            <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
+              {([['total', '합계(T)'], ['a', 'A'], ['b', 'B']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => { setAbKnown(k); setAbInput(''); }}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${abKnown === k ? 'bg-background-card text-text-primary shadow-sm' : 'text-text-muted'}`}>
+                  {l}
+                </button>
+              ))}
             </div>
           </div>
+          <input value={abInput} onChange={e => setAbInput(e.target.value)} placeholder="값 입력" className={ic} />
+          {abResult && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                <ResultBox label="A" value={abResult.valA} />
+                <ResultBox label="B" value={abResult.valB} />
+                <ResultBox label="합계" value={abResult.total} />
+              </div>
+              <button onClick={() => onResult(`${ra}:${rb} (${abKnown}=${abInput})`, `A=${abResult.valA} B=${abResult.valB}`)}
+                className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">
+                {t('calc.save')}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="space-y-4 max-w-xs">
+        <div className="space-y-4 max-w-sm">
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">{t('calc.ratioLabel')}</p>
-            <div className="flex items-center gap-3">
-              <input value={r1} onChange={e => { setR1(e.target.value); setROut(''); }}
-                className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
-              <span className="text-text-muted font-bold text-xl">:</span>
-              <input value={r2} onChange={e => { setR2(e.target.value); setROut(''); }}
-                className="w-20 px-3 py-2.5 bg-background border border-border rounded-xl text-sm text-center text-text-primary outline-none focus:border-[#e94560] transition-colors" />
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">비율</p>
+            <div className="flex items-center gap-2">
+              <input value={ra3} onChange={e => setRa3(e.target.value)} placeholder="A" className={icSm} />
+              <span className="text-text-muted font-bold text-lg">:</span>
+              <input value={rb3} onChange={e => setRb3(e.target.value)} placeholder="B" className={icSm} />
+              <span className="text-text-muted font-bold text-lg">:</span>
+              <input value={rc3} onChange={e => setRc3(e.target.value)} placeholder="C" className={icSm} />
             </div>
           </div>
-          <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
-            {([['wh', t('calc.wToH')], ['hw', t('calc.hToW')]] as const).map(([d, l]) => (
-              <button key={d} onClick={() => { setRDir(d); setROut(''); }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${rDir === d ? 'bg-background-card text-text-primary shadow-sm' : 'text-text-muted'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">
-              {rDir === 'wh' ? t('calc.widthInput') : t('calc.heightInput')}
-            </p>
-            <div className="flex gap-2">
-              <input value={rIn} onChange={e => { setRIn(e.target.value); setROut(''); }} placeholder={t('calc.inputValue')}
-                className={ic} onKeyDown={e => e.key === 'Enter' && calcRatio()} />
-              <button onClick={calcRatio} className={calcBtn}>{t('calc.calculate')}</button>
+            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-2">알고 있는 값</p>
+            <div className="flex gap-1.5 p-1 bg-border/30 rounded-xl w-fit">
+              {([['total', '합계(T)'], ['a', 'A'], ['b', 'B'], ['c', 'C']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => { setAbcKnown(k); setAbcInput(''); }}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${abcKnown === k ? 'bg-background-card text-text-primary shadow-sm' : 'text-text-muted'}`}>
+                  {l}
+                </button>
+              ))}
             </div>
-            {rOut && (
-              <div className={`mt-3 ${rc} gap-2`}>
-                <span className="text-xs text-text-muted">{rDir === 'wh' ? `${t('calc.height')} =` : `${t('calc.width')} =`}</span>
-                <span className="text-lg font-bold text-[#e94560]">{rOut}</span>
+          </div>
+          <input value={abcInput} onChange={e => setAbcInput(e.target.value)} placeholder="값 입력" className={ic} />
+          {abcResult && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-4 gap-2">
+                <ResultBox label="A" value={abcResult.valA} />
+                <ResultBox label="B" value={abcResult.valB} />
+                <ResultBox label="C" value={abcResult.valC} />
+                <ResultBox label="합계" value={abcResult.total} />
               </div>
-            )}
-          </div>
+              <button onClick={() => onResult(`${ra3}:${rb3}:${rc3} (${abcKnown}=${abcInput})`, `A=${abcResult.valA} B=${abcResult.valB} C=${abcResult.valC}`)}
+                className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors">
+                {t('calc.save')}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

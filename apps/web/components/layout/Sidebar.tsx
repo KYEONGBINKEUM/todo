@@ -8,6 +8,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
 import { getUserSettings, getStorageLimit, type Plan } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
+import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import SettingsModal from '@/components/settings/SettingsModal';
 
 const DEFAULT_NAV = [
@@ -37,6 +38,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [userPlan, setUserPlan] = useState<Plan>('free');
   const [hasUpdate, setHasUpdate] = useState(false);
+  const [aiTokensUsed, setAiTokensUsed] = useState(0);
+  const [aiTokenLimit, setAiTokenLimit] = useState(0);
 
   // Nav drag state
   const [navItems, setNavItems] = useState(() => {
@@ -129,9 +132,23 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   // 요금제 정보 — 세션당 1회만 조회
   useEffect(() => {
     if (!user) return;
-    getUserSettings(user.uid)
-      .then((s) => { setUserPlan(s.plan || 'free'); })
-      .catch(() => {});
+    getUserSettings(user.uid).then((s) => {
+      const plan = s.plan || 'free';
+      setUserPlan(plan);
+      const limits: Record<string, number> = { free: 0, pro: 500000, premium: 500000, team: 2000000 };
+      setAiTokenLimit(limits[plan] || 0);
+    }).catch(() => {});
+
+    // AI 토큰 사용량 조회
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const db = getFirestore();
+    getDoc(doc(db, `users/${user.uid}/ai_usage/${monthKey}`)).then((snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setAiTokensUsed((d.totalInputTokens || 0) + (d.totalOutputTokens || 0));
+      }
+    }).catch(() => {});
   }, [user]);
 
   const handleSignOut = async () => {
@@ -306,6 +323,33 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               />
             </div>
           </div>
+
+          {/* AI token usage bar (Pro+ only) */}
+          {aiTokenLimit > 0 && (
+            <div className="mt-2 px-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] text-text-muted">
+                  AI {(aiTokensUsed / 1000).toFixed(0)}K / {(aiTokenLimit / 1000).toFixed(0)}K
+                </span>
+                <span className="text-[9px] text-text-inactive">
+                  {Math.min(100, Math.round(aiTokensUsed / aiTokenLimit * 100))}%
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                {(() => {
+                  const pct = Math.min(100, (aiTokensUsed / aiTokenLimit) * 100);
+                  return (
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        pct > 90 ? 'bg-[#e94560]' : pct > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#533483] to-[#e94560]'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  );
+                })()}
+              </div>
+            </div>
+          )}
         </div>
       </aside>
 

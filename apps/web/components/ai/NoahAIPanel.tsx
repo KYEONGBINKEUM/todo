@@ -494,11 +494,6 @@ export default function NoahAIPanel() {
             <img src="/symbol.svg" alt="NOAH" className="w-8 h-8 rounded-full" />
             <div>
               <h2 className="text-sm font-bold text-text-primary">{t('ai.name')}</h2>
-              <div className="w-32 mt-0.5">
-                {monthlyUsage && (
-                  <NoahAIUsageBar used={monthlyUsage.used} limit={monthlyUsage.limit} />
-                )}
-              </div>
             </div>
           </div>
           <div className="flex items-center gap-1">

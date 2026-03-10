@@ -68,28 +68,44 @@ export const verifyPolarPayment = onCall(
       throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const { customerSessionToken } = request.data as { customerSessionToken: string };
-    if (!customerSessionToken) {
-      throw new HttpsError('invalid-argument', 'customerSessionToken required');
+    const email = request.auth.token.email;
+    if (!email) {
+      throw new HttpsError('failed-precondition', 'No email associated with account');
     }
 
-    // Customer session token is used as Bearer to access /v1/customers/me
-    const res = await fetch('https://api.polar.sh/v1/customers/me', {
-      headers: { Authorization: `Bearer ${customerSessionToken}` },
-    });
+    const token = polarAccessToken.value();
 
-    if (!res.ok) {
-      const err = await res.text();
-      console.error('[polar-verify] customers/me failed:', res.status, err);
-      throw new HttpsError('internal', `Verification failed: ${res.status}`);
+    // Check active subscriptions by email using admin token
+    const subRes = await fetch(
+      `https://api.polar.sh/v1/subscriptions?customer_email=${encodeURIComponent(email)}&active=true`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!subRes.ok) {
+      const err = await subRes.text();
+      console.error('[polar-verify] subscriptions failed:', subRes.status, err);
+      throw new HttpsError('internal', `Verification failed: ${subRes.status}`);
     }
 
-    const customer = await res.json();
-    console.log('[polar-verify] active_subscriptions:', customer.active_subscriptions?.length, 'email:', customer.email);
+    const subData = await subRes.json();
+    console.log('[polar-verify] subscriptions:', subData.items?.length, 'email:', email);
 
-    const hasActive = Array.isArray(customer.active_subscriptions) && customer.active_subscriptions.length > 0;
-    if (!hasActive) {
-      throw new HttpsError('failed-precondition', 'No active subscription found');
+    // Also check orders if no active subscription yet
+    let hasPayment = subData.items?.length > 0;
+    if (!hasPayment) {
+      const ordRes = await fetch(
+        `https://api.polar.sh/v1/orders?customer_email=${encodeURIComponent(email)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (ordRes.ok) {
+        const ordData = await ordRes.json();
+        console.log('[polar-verify] orders:', ordData.items?.length);
+        hasPayment = ordData.items?.length > 0;
+      }
+    }
+
+    if (!hasPayment) {
+      throw new HttpsError('failed-precondition', 'No subscription or order found for this account');
     }
 
     const db = admin.firestore();

@@ -47,8 +47,12 @@ export const polarWebhook = onRequest(
       const db = admin.firestore();
       const ref = db.doc(`users/${uid}/settings/app`);
       if (type === 'order.created' || type === 'subscription.created' || type === 'subscription.active') {
-        await ref.set({ plan: 'pro' }, { merge: true });
-        console.log(`[polar] plan→pro uid=${uid}`);
+        const startedAt = (data as any)?.started_at ?? (data as any)?.created_at ?? null;
+        const existing = await ref.get();
+        const update: Record<string, any> = { plan: 'pro' };
+        if (startedAt && !existing.data()?.planStartedAt) update.planStartedAt = startedAt;
+        await ref.set(update, { merge: true });
+        console.log(`[polar] plan→pro uid=${uid} startedAt=${startedAt}`);
       } else if (type === 'subscription.canceled' || type === 'subscription.revoked') {
         await ref.set({ plan: 'free' }, { merge: true });
         console.log(`[polar] plan→free uid=${uid}`);
@@ -88,28 +92,21 @@ export const verifyPolarPayment = onCall(
 
     let hasPayment = (ordData.items?.length ?? 0) > 0;
 
-    // Fallback: check subscriptions by metadata[uid]
+    // Always fetch subscriptions to get period info and start date
     let periodEnd: string | null = null;
-    if (!hasPayment) {
-      const subRes = await fetch(
-        `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (subRes.ok) {
-        const subData = await subRes.json();
-        console.log('[polar-verify] subscriptions by uid:', subData.items?.length);
-        hasPayment = (subData.items?.length ?? 0) > 0;
-        periodEnd = subData.items?.[0]?.current_period_end ?? null;
-      }
-    } else {
-      // Get period end from subscription linked to the order
-      const subRes = await fetch(
-        `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (subRes.ok) {
-        const subData = await subRes.json();
-        periodEnd = subData.items?.[0]?.current_period_end ?? null;
+    let planStartedAt: string | null = null;
+    const subRes = await fetch(
+      `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (subRes.ok) {
+      const subData = await subRes.json();
+      console.log('[polar-verify] subscriptions by uid:', subData.items?.length);
+      if ((subData.items?.length ?? 0) > 0) {
+        hasPayment = true;
+        const sub = subData.items[0];
+        periodEnd = sub.current_period_end ?? null;
+        planStartedAt = sub.started_at ?? sub.created_at ?? null;
       }
     }
 
@@ -117,12 +114,17 @@ export const verifyPolarPayment = onCall(
       throw new HttpsError('failed-precondition', 'No subscription or order found for this account');
     }
 
+    // Only set planStartedAt if not already stored (preserve original subscription date)
     const db = admin.firestore();
+    const existingDoc = await db.doc(`users/${uid}/settings/app`).get();
+    const existingStartedAt = existingDoc.data()?.planStartedAt;
+
     await db.doc(`users/${request.auth.uid}/settings/app`).set({
       plan: 'pro',
       ...(periodEnd ? { planCurrentPeriodEnd: periodEnd } : {}),
+      ...(!existingStartedAt && planStartedAt ? { planStartedAt } : {}),
     }, { merge: true });
-    console.log(`[polar-verify] plan→pro uid=${request.auth.uid} periodEnd=${periodEnd}`);
+    console.log(`[polar-verify] plan→pro uid=${request.auth.uid} periodEnd=${periodEnd} startedAt=${planStartedAt}`);
 
     return { success: true };
   }
@@ -364,6 +366,7 @@ export const callNoahAI = onCall(
     const settings = settingsDoc.data() || {};
     const plan = settings.plan || 'free';
     const isAdmin = settings.isAdmin === true;
+    const planStartedAt: string | undefined = settings.planStartedAt;
 
     // 3. Plan check (free users cannot use AI)
     if (plan === 'free' && !isAdmin) {
@@ -372,7 +375,7 @@ export const callNoahAI = onCall(
 
     // 4. Token limit check
     if (!isAdmin) {
-      const totalUsed = await getTotalTokensUsed(uid);
+      const totalUsed = await getTotalTokensUsed(uid, planStartedAt);
       const limit = TOKEN_LIMITS[plan] || 0;
 
       if (limit > 0 && totalUsed >= limit) {
@@ -405,10 +408,10 @@ export const callNoahAI = onCall(
       const geminiResult = await callGemini(system, user, true);
 
       // 7. Track token usage
-      await incrementUsage(uid, geminiResult.inputTokens, geminiResult.outputTokens);
+      await incrementUsage(uid, geminiResult.inputTokens, geminiResult.outputTokens, planStartedAt);
 
       // 8. Get updated usage for response
-      const usage = await getMonthlyUsage(uid);
+      const usage = await getMonthlyUsage(uid, planStartedAt);
       const totalUsed = usage.totalInputTokens + usage.totalOutputTokens;
       const limit = isAdmin ? -1 : (TOKEN_LIMITS[plan] || 0);
 

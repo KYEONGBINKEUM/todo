@@ -8,7 +8,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useI18n } from '@/lib/i18n-context';
 import { getUserSettings, getStorageLimit, type Plan } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 import SettingsModal from '@/components/settings/SettingsModal';
 
 const DEFAULT_NAV = [
@@ -129,6 +129,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { value: 'dark' as const, icon: '🌙', labelKey: 'nav.themeDark' },
   ];
 
+  const [planStartedAt, setPlanStartedAt] = useState<string | null>(null);
+
   // 요금제 정보 — 세션당 1회만 조회
   useEffect(() => {
     if (!user) return;
@@ -137,19 +139,37 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       setUserPlan(plan);
       const limits: Record<string, number> = { free: 0, pro: 500000, premium: 500000, team: 2000000 };
       setAiTokenLimit(limits[plan] || 0);
+      setPlanStartedAt(s.planStartedAt || null);
     }).catch(() => {});
+  }, [user]);
 
-    // AI 토큰 사용량 조회
-    const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // AI 토큰 사용량 실시간 — 구독 시작일 기준 billing cycle key
+  useEffect(() => {
+    if (!user) return;
+    const getBillingCycleKey = (startedAt: string | null): string => {
+      const now = new Date();
+      if (!startedAt) return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const anchorDay = new Date(startedAt).getDate();
+      let year = now.getFullYear();
+      let month = now.getMonth();
+      if (now.getDate() < anchorDay) {
+        month -= 1;
+        if (month < 0) { month = 11; year -= 1; }
+      }
+      return `${year}-${String(month + 1).padStart(2, '0')}-${String(anchorDay).padStart(2, '0')}`;
+    };
+    const cycleKey = getBillingCycleKey(planStartedAt);
     const db = getFirestore();
-    getDoc(doc(db, `users/${user.uid}/ai_usage/${monthKey}`)).then((snap) => {
+    const unsub = onSnapshot(doc(db, `users/${user.uid}/ai_usage/${cycleKey}`), (snap) => {
       if (snap.exists()) {
         const d = snap.data();
         setAiTokensUsed((d.totalInputTokens || 0) + (d.totalOutputTokens || 0));
+      } else {
+        setAiTokensUsed(0);
       }
-    }).catch(() => {});
-  }, [user]);
+    });
+    return () => unsub();
+  }, [user, planStartedAt]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -341,7 +361,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   return (
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        pct > 90 ? 'bg-[#e94560]' : pct > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#533483] to-[#e94560]'
+                        pct > 90 ? 'bg-[#e94560]' : pct > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6]'
                       }`}
                       style={{ width: `${pct}%` }}
                     />

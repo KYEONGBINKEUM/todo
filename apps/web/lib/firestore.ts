@@ -557,6 +557,7 @@ export interface UserSettings {
   timeboxAlarmDefault?: boolean;
   planCancelAtPeriodEnd?: boolean;
   planCurrentPeriodEnd?: string;
+  planStartedAt?: string;
 }
 
 /** 플랜별 스토리지 한도 (bytes) */

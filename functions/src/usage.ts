@@ -11,19 +11,43 @@ interface AIUsage {
   lastRequestAt: admin.firestore.Timestamp;
 }
 
-function getCurrentMonthKey(): string {
+/**
+ * Compute the current billing cycle key based on subscription start date.
+ * Key format: YYYY-MM-DD (the start of the current billing period).
+ * If no planStartedAt, falls back to calendar month (YYYY-MM).
+ */
+export function getBillingCycleKey(planStartedAt?: string): string {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
+
+  if (!planStartedAt) {
+    // Fallback: calendar month
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  const anchorDay = new Date(planStartedAt).getDate();
+  let cycleYear = now.getFullYear();
+  let cycleMonth = now.getMonth(); // 0-indexed
+
+  // If today is before the anchor day, the billing cycle started last month
+  if (now.getDate() < anchorDay) {
+    cycleMonth -= 1;
+    if (cycleMonth < 0) {
+      cycleMonth = 11;
+      cycleYear -= 1;
+    }
+  }
+
+  const day = String(anchorDay).padStart(2, '0');
+  const month = String(cycleMonth + 1).padStart(2, '0');
+  return `${cycleYear}-${month}-${day}`;
 }
 
 /**
- * Get current month's AI usage for a user
+ * Get current billing cycle's AI usage for a user
  */
-export async function getMonthlyUsage(uid: string): Promise<AIUsage> {
-  const monthKey = getCurrentMonthKey();
-  const docRef = getDb().collection('users').doc(uid).collection('ai_usage').doc(monthKey);
+export async function getMonthlyUsage(uid: string, planStartedAt?: string): Promise<AIUsage> {
+  const cycleKey = getBillingCycleKey(planStartedAt);
+  const docRef = getDb().collection('users').doc(uid).collection('ai_usage').doc(cycleKey);
   const snapshot = await docRef.get();
 
   if (!snapshot.exists) {
@@ -36,9 +60,9 @@ export async function getMonthlyUsage(uid: string): Promise<AIUsage> {
 /**
  * Increment token usage atomically
  */
-export async function incrementUsage(uid: string, inputTokens: number, outputTokens: number): Promise<void> {
-  const monthKey = getCurrentMonthKey();
-  const docRef = getDb().collection('users').doc(uid).collection('ai_usage').doc(monthKey);
+export async function incrementUsage(uid: string, inputTokens: number, outputTokens: number, planStartedAt?: string): Promise<void> {
+  const cycleKey = getBillingCycleKey(planStartedAt);
+  const docRef = getDb().collection('users').doc(uid).collection('ai_usage').doc(cycleKey);
 
   await docRef.set(
     {
@@ -52,9 +76,9 @@ export async function incrementUsage(uid: string, inputTokens: number, outputTok
 }
 
 /**
- * Get total tokens used this month
+ * Get total tokens used in the current billing cycle
  */
-export async function getTotalTokensUsed(uid: string): Promise<number> {
-  const usage = await getMonthlyUsage(uid);
+export async function getTotalTokensUsed(uid: string, planStartedAt?: string): Promise<number> {
+  const usage = await getMonthlyUsage(uid, planStartedAt);
   return usage.totalInputTokens + usage.totalOutputTokens;
 }

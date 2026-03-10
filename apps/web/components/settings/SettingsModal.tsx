@@ -6,6 +6,7 @@ import { useTheme } from '@/lib/theme-context';
 import { FONT_SIZE_KEY } from '@/app/providers';
 import { useI18n } from '@/lib/i18n-context';
 import { updateUserSettings, getUserSettings, getStorageLimit, type Plan, type Language } from '@/lib/firestore';
+import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 import { useDataStore } from '@/lib/data-store';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
@@ -61,8 +62,10 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [timeboxAlarmDefault, setTimeboxAlarmDefaultState] = useState(true);
   const [planCancelAtPeriodEnd, setPlanCancelAtPeriodEnd] = useState(false);
   const [planCurrentPeriodEnd, setPlanCurrentPeriodEnd] = useState<string | null>(null);
+  const [planStartedAt, setPlanStartedAt] = useState<string | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [aiTokensUsed, setAiTokensUsed] = useState(0);
 
   useEffect(() => {
     const isTauriApp = isTauriEnv();
@@ -187,8 +190,37 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       setTimeboxAlarmDefaultState(s.timeboxAlarmDefault ?? true);
       setPlanCancelAtPeriodEnd(s.planCancelAtPeriodEnd || false);
       setPlanCurrentPeriodEnd(s.planCurrentPeriodEnd || null);
+      setPlanStartedAt(s.planStartedAt || null);
     });
   }, [user]);
+
+  // AI token usage — real-time listener, billing cycle key based on planStartedAt
+  useEffect(() => {
+    if (!user) return;
+    const getBillingCycleKey = (startedAt: string | null): string => {
+      const now = new Date();
+      if (!startedAt) return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const anchorDay = new Date(startedAt).getDate();
+      let year = now.getFullYear();
+      let month = now.getMonth();
+      if (now.getDate() < anchorDay) {
+        month -= 1;
+        if (month < 0) { month = 11; year -= 1; }
+      }
+      return `${year}-${String(month + 1).padStart(2, '0')}-${String(anchorDay).padStart(2, '0')}`;
+    };
+    const cycleKey = getBillingCycleKey(planStartedAt);
+    const db = getFirestore();
+    const unsubToken = onSnapshot(doc(db, `users/${user.uid}/ai_usage/${cycleKey}`), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setAiTokensUsed((d.totalInputTokens || 0) + (d.totalOutputTokens || 0));
+      } else {
+        setAiTokensUsed(0);
+      }
+    });
+    return () => unsubToken();
+  }, [user, planStartedAt]);
 
   const storageLimit = getStorageLimit(userPlan);
   const storagePercent = Math.min(100, (storageUsed / storageLimit) * 100);
@@ -526,6 +558,37 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       </p>
                     </div>
                   </div>
+
+                  {/* AI Token Usage */}
+                  {userPlan !== 'free' && (() => {
+                    const tokenLimit = userPlan === 'team' ? 2000000 : 500000;
+                    const tokenPct = Math.min(100, (aiTokensUsed / tokenLimit) * 100);
+                    const resetLabel = planStartedAt
+                      ? `매월 ${new Date(planStartedAt).getDate()}일 초기화`
+                      : '매월 1일 초기화';
+                    return (
+                      <div>
+                        <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">AI 사용량</p>
+                        <div className="p-4 bg-background rounded-xl border border-border">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-text-secondary">이번 구독주기 토큰</span>
+                            <span className={`text-xs font-bold ${tokenPct > 90 ? 'text-[#e94560]' : tokenPct > 70 ? 'text-amber-500' : 'text-text-primary'}`}>
+                              {tokenPct.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 bg-border rounded-full overflow-hidden mb-2">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                tokenPct > 90 ? 'bg-[#e94560]' : tokenPct > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6]'
+                              }`}
+                              style={{ width: `${tokenPct}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-text-muted">{resetLabel}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

@@ -571,7 +571,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">AI 사용량</p>
                         <div className="p-4 bg-background rounded-xl border border-border">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs text-text-secondary">이번 구독주기 토큰</span>
+                            <span className="text-xs text-text-secondary">토큰 사용량</span>
                             <span className={`text-xs font-bold ${tokenPct > 90 ? 'text-[#e94560]' : tokenPct > 70 ? 'text-amber-500' : 'text-text-primary'}`}>
                               {tokenPct.toFixed(1)}%
                             </span>

@@ -64,32 +64,40 @@ export const createPolarCheckout = onCall(
       throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
+    const token = polarAccessToken.value();
     const productId = polarPremiumProductId.value();
+
+    console.log('[polar] token set:', !!token, 'productId set:', !!productId);
+
     if (!productId) {
-      throw new HttpsError('failed-precondition', 'Product ID not configured');
+      throw new HttpsError('failed-precondition', 'POLAR_PREMIUM_PRODUCT_ID secret not configured');
+    }
+    if (!token) {
+      throw new HttpsError('failed-precondition', 'POLAR_ACCESS_TOKEN secret not configured');
     }
 
     const body: Record<string, unknown> = {
       products: [productId],
+      success_url: 'https://ai-todo-e213a.web.app/payment/success',
       metadata: { uid: request.auth.uid },
     };
     if (request.auth.token.email) {
       body.customer_email = request.auth.token.email;
     }
 
-    const res = await fetch('https://api.polar.sh/v1/checkouts/', {
+    const res = await fetch('https://api.polar.sh/v1/checkouts', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${polarAccessToken.value()}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
     });
 
     if (!res.ok) {
-      const err = await res.text();
-      console.error('[polar] checkout creation failed:', err);
-      throw new HttpsError('internal', 'Failed to create checkout');
+      const errText = await res.text();
+      console.error('[polar] checkout failed:', res.status, errText);
+      throw new HttpsError('internal', `Polar API error ${res.status}: ${errText}`);
     }
 
     const data = await res.json();

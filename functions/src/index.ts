@@ -89,6 +89,7 @@ export const verifyPolarPayment = onCall(
     let hasPayment = (ordData.items?.length ?? 0) > 0;
 
     // Fallback: check subscriptions by metadata[uid]
+    let periodEnd: string | null = null;
     if (!hasPayment) {
       const subRes = await fetch(
         `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
@@ -98,6 +99,17 @@ export const verifyPolarPayment = onCall(
         const subData = await subRes.json();
         console.log('[polar-verify] subscriptions by uid:', subData.items?.length);
         hasPayment = (subData.items?.length ?? 0) > 0;
+        periodEnd = subData.items?.[0]?.current_period_end ?? null;
+      }
+    } else {
+      // Get period end from subscription linked to the order
+      const subRes = await fetch(
+        `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        periodEnd = subData.items?.[0]?.current_period_end ?? null;
       }
     }
 
@@ -106,8 +118,11 @@ export const verifyPolarPayment = onCall(
     }
 
     const db = admin.firestore();
-    await db.doc(`users/${request.auth.uid}/settings/app`).set({ plan: 'pro' }, { merge: true });
-    console.log(`[polar-verify] plan→pro uid=${request.auth.uid}`);
+    await db.doc(`users/${request.auth.uid}/settings/app`).set({
+      plan: 'pro',
+      ...(periodEnd ? { planCurrentPeriodEnd: periodEnd } : {}),
+    }, { merge: true });
+    console.log(`[polar-verify] plan→pro uid=${request.auth.uid} periodEnd=${periodEnd}`);
 
     return { success: true };
   }
@@ -172,6 +187,60 @@ export const cancelPolarSubscription = onCall(
 
     console.log(`[polar-cancel] scheduled cancel uid=${uid} periodEnd=${periodEnd}`);
     return { success: true, periodEnd };
+  }
+);
+
+// ── Polar Reactivate Subscription ────────────────────────────────────────────
+
+export const reactivatePolarSubscription = onCall(
+  { secrets: [polarAccessToken] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
+    }
+
+    const uid = request.auth.uid;
+    const token = polarAccessToken.value();
+
+    const subRes = await fetch(
+      `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!subRes.ok) {
+      throw new HttpsError('internal', `Failed to fetch subscriptions: ${subRes.status}`);
+    }
+
+    const subData = await subRes.json();
+    const subscription = subData.items?.find((s: any) => s.cancel_at_period_end === true);
+
+    if (!subscription) {
+      throw new HttpsError('not-found', 'No canceling subscription found');
+    }
+
+    const reactRes = await fetch(`https://api.polar.sh/v1/subscriptions/${subscription.id}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cancel_at_period_end: false }),
+    });
+
+    if (!reactRes.ok) {
+      const err = await reactRes.text();
+      console.error('[polar-reactivate] failed:', reactRes.status, err);
+      throw new HttpsError('internal', `Failed to reactivate: ${reactRes.status}`);
+    }
+
+    const db = admin.firestore();
+    await db.doc(`users/${uid}/settings/app`).set({
+      planCancelAtPeriodEnd: false,
+      planCurrentPeriodEnd: subscription.current_period_end,
+    }, { merge: true });
+
+    console.log(`[polar-reactivate] reactivated uid=${uid}`);
+    return { success: true };
   }
 );
 

@@ -444,22 +444,53 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       )}
 
                       {!isAdmin && userPlan !== 'free' && (
-                        <div className="mt-1">
-                          {planCancelAtPeriodEnd && planCurrentPeriodEnd ? (
-                            <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                              <span className="text-amber-400 text-xs">⚠</span>
-                              <p className="text-[11px] text-amber-400">
-                                {new Date(planCurrentPeriodEnd).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}까지 사용 후 Free로 전환됩니다.
-                              </p>
+                        <div className="mt-2 space-y-2">
+                          {/* Period end info */}
+                          {planCurrentPeriodEnd && (
+                            <div className={`flex items-center justify-between px-3 py-2 rounded-xl ${planCancelAtPeriodEnd ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-background-secondary'}`}>
+                              <span className="text-[11px] text-text-muted">
+                                {planCancelAtPeriodEnd ? '취소 예약 · 만료일' : '다음 결제일'}
+                              </span>
+                              <span className={`text-[11px] font-semibold ${planCancelAtPeriodEnd ? 'text-amber-400' : 'text-text-primary'}`}>
+                                {new Date(planCurrentPeriodEnd).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+                              </span>
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => setShowCancelModal(true)}
-                              className="w-full py-2 rounded-xl text-xs text-text-muted border border-border hover:border-red-500/50 hover:text-red-400 transition-all"
-                            >
-                              구독 취소
-                            </button>
                           )}
+
+                          {/* Manage / Cancel / Reactivate buttons */}
+                          <div className="flex gap-2">
+                            <a
+                              href="https://polar.sh/purchases"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 py-2 rounded-xl text-[11px] text-center text-text-muted border border-border hover:border-border-hover transition-all"
+                            >
+                              구독 관리
+                            </a>
+                            {planCancelAtPeriodEnd ? (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const fn = httpsCallable(functions, 'reactivatePolarSubscription');
+                                    await fn({});
+                                    setPlanCancelAtPeriodEnd(false);
+                                  } catch (err) {
+                                    console.error('Reactivate error:', err);
+                                  }
+                                }}
+                                className="flex-1 py-2 rounded-xl text-[11px] font-semibold text-[#e94560] border border-[#e94560]/40 hover:bg-[#e94560]/10 transition-all"
+                              >
+                                취소 철회
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setShowCancelModal(true)}
+                                className="flex-1 py-2 rounded-xl text-[11px] text-text-muted border border-border hover:border-red-500/50 hover:text-red-400 transition-all"
+                              >
+                                구독 취소
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

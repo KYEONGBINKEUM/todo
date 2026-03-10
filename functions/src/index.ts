@@ -20,19 +20,23 @@ export const polarWebhook = onRequest(
   async (req, res) => {
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
 
-    const rawBody = JSON.stringify(req.body);
+    const rawBody = (req as any).rawBody?.toString() ?? JSON.stringify(req.body);
     const secret = polarWebhookSecret.value();
 
     if (secret) {
       const signature = (req.headers['webhook-signature'] ?? req.headers['x-polar-signature']) as string | undefined;
+      console.log('[polar-webhook] sig header:', signature, 'headers:', JSON.stringify(Object.keys(req.headers)));
       if (!signature) { res.status(401).send('No signature'); return; }
 
+      // Polar signature is raw hex (no prefix)
+      const hexSig = signature.replace(/^(sha256=|v1,)/, '');
       const encoder = new TextEncoder();
       const key = await crypto.subtle.importKey(
         'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
       );
-      const sigBytes = Buffer.from(signature.replace('sha256=', ''), 'hex');
+      const sigBytes = Buffer.from(hexSig, 'hex');
       const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(rawBody));
+      console.log('[polar-webhook] valid:', valid, 'rawBody length:', rawBody.length);
       if (!valid) { res.status(401).send('Invalid signature'); return; }
     }
 
@@ -52,6 +56,44 @@ export const polarWebhook = onRequest(
     }
 
     res.json({ received: true });
+  }
+);
+
+// ── Polar Verify Payment ──────────────────────────────────────────────────────
+
+export const verifyPolarPayment = onCall(
+  { secrets: [polarAccessToken] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
+    }
+
+    const { customerSessionToken } = request.data as { customerSessionToken: string };
+    if (!customerSessionToken) {
+      throw new HttpsError('invalid-argument', 'customerSessionToken required');
+    }
+
+    // Polar client checkout endpoint (no auth needed — uses client secret token)
+    const res = await fetch(`https://api.polar.sh/v1/checkouts/client/${customerSessionToken}`);
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[polar-verify] failed:', res.status, err);
+      throw new HttpsError('internal', `Verification failed: ${res.status}`);
+    }
+
+    const checkout = await res.json();
+    console.log('[polar-verify] checkout status:', checkout.status, 'uid in metadata:', checkout.metadata?.uid);
+
+    if (checkout.status !== 'confirmed') {
+      throw new HttpsError('failed-precondition', `Payment not confirmed: ${checkout.status}`);
+    }
+
+    const db = admin.firestore();
+    await db.doc(`users/${request.auth.uid}/settings/app`).set({ plan: 'pro' }, { merge: true });
+    console.log(`[polar-verify] plan→pro uid=${request.auth.uid}`);
+
+    return { success: true };
   }
 );
 

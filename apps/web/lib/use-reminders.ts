@@ -21,11 +21,17 @@ function showInAppAlert(title: string, body: string) {
     padding: 16px 20px; max-width: 360px; box-shadow: 0 8px 32px rgba(233,69,96,0.3);
     animation: slideIn 0.3s ease-out; color: #e2e8f0; font-family: system-ui, sans-serif;
   `;
-  container.innerHTML = `
-    <style>@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}</style>
-    <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${title}</div>
-    <div style="font-size:12px;color:#94a3b8;">${body}</div>
-  `;
+  const style = document.createElement('style');
+  style.textContent = '@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}';
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = 'font-weight:600;font-size:14px;margin-bottom:4px;';
+  titleEl.textContent = title;
+  const bodyEl = document.createElement('div');
+  bodyEl.style.cssText = 'font-size:12px;color:#94a3b8;';
+  bodyEl.textContent = body;
+  container.appendChild(style);
+  container.appendChild(titleEl);
+  container.appendChild(bodyEl);
   document.body.appendChild(container);
   setTimeout(() => {
     container.style.transition = 'opacity 0.3s, transform 0.3s';

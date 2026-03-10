@@ -58,3 +58,6 @@ apps/web/src-tauri/gen/android/local.properties
 .temp
 supabase/.branches
 supabase/.temp
+keystore.txt
+*.jks
+*.keystore

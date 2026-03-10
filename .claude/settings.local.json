@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(git restore:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

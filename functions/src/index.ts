@@ -40,10 +40,23 @@ export const polarWebhook = onRequest(
       if (!valid) { res.status(401).send('Invalid signature'); return; }
     }
 
+    const ALLOWED_TYPES = new Set([
+      'order.created', 'subscription.created', 'subscription.active',
+      'subscription.canceled', 'subscription.revoked',
+    ]);
     const { type, data } = req.body as { type: string; data: Record<string, unknown> };
+
+    // Validate event type against whitelist
+    if (!ALLOWED_TYPES.has(type)) {
+      console.log(`[polar-webhook] ignored unknown type: ${type}`);
+      res.json({ received: true });
+      return;
+    }
+
     const uid = (data?.metadata as Record<string, string>)?.uid;
 
-    if (uid) {
+    // Validate UID is a valid Firebase UID (28 alphanumeric chars)
+    if (uid && /^[a-zA-Z0-9]{20,128}$/.test(uid)) {
       const db = admin.firestore();
       const ref = db.doc(`users/${uid}/settings/app`);
       if (type === 'order.created' || type === 'subscription.created' || type === 'subscription.active') {
@@ -52,11 +65,13 @@ export const polarWebhook = onRequest(
         const update: Record<string, any> = { plan: 'pro' };
         if (startedAt && !existing.data()?.planStartedAt) update.planStartedAt = startedAt;
         await ref.set(update, { merge: true });
-        console.log(`[polar] plan→pro uid=${uid} startedAt=${startedAt}`);
+        console.log(`[polar] plan→pro uid=${uid}`);
       } else if (type === 'subscription.canceled' || type === 'subscription.revoked') {
         await ref.set({ plan: 'free' }, { merge: true });
         console.log(`[polar] plan→free uid=${uid}`);
       }
+    } else if (uid) {
+      console.warn(`[polar-webhook] invalid uid format, skipping: ${uid}`);
     }
 
     res.json({ received: true });
@@ -84,7 +99,7 @@ export const verifyPolarPayment = onCall(
     if (!ordRes.ok) {
       const err = await ordRes.text();
       console.error('[polar-verify] orders failed:', ordRes.status, err);
-      throw new HttpsError('internal', `Verification failed: ${ordRes.status}`);
+      throw new HttpsError('internal', 'Payment verification failed');
     }
 
     const ordData = await ordRes.json();
@@ -151,7 +166,7 @@ export const cancelPolarSubscription = onCall(
     if (!subRes.ok) {
       const err = await subRes.text();
       console.error('[polar-cancel] fetch subscriptions failed:', subRes.status, err);
-      throw new HttpsError('internal', `Failed to fetch subscriptions: ${subRes.status}`);
+      throw new HttpsError('internal', 'Subscription lookup failed');
     }
 
     const subData = await subRes.json();
@@ -174,7 +189,7 @@ export const cancelPolarSubscription = onCall(
     if (!cancelRes.ok) {
       const err = await cancelRes.text();
       console.error('[polar-cancel] cancel failed:', cancelRes.status, err);
-      throw new HttpsError('internal', `Failed to cancel subscription: ${cancelRes.status}`);
+      throw new HttpsError('internal', 'Cancellation failed');
     }
 
     const cancelData = await cancelRes.json();
@@ -210,7 +225,7 @@ export const reactivatePolarSubscription = onCall(
     );
 
     if (!subRes.ok) {
-      throw new HttpsError('internal', `Failed to fetch subscriptions: ${subRes.status}`);
+      throw new HttpsError('internal', 'Subscription lookup failed');
     }
 
     const subData = await subRes.json();
@@ -232,7 +247,7 @@ export const reactivatePolarSubscription = onCall(
     if (!reactRes.ok) {
       const err = await reactRes.text();
       console.error('[polar-reactivate] failed:', reactRes.status, err);
-      throw new HttpsError('internal', `Failed to reactivate: ${reactRes.status}`);
+      throw new HttpsError('internal', 'Reactivation failed');
     }
 
     const db = admin.firestore();
@@ -263,7 +278,7 @@ export const getPolarPortalUrl = onCall(
     });
 
     if (!res.ok) {
-      throw new HttpsError('internal', `Failed to get org info: ${res.status}`);
+      throw new HttpsError('internal', 'Portal URL lookup failed');
     }
 
     const data = await res.json();
@@ -318,7 +333,7 @@ export const createPolarCheckout = onCall(
     if (!res.ok) {
       const errText = await res.text();
       console.error('[polar] checkout failed:', res.status, errText);
-      throw new HttpsError('internal', `Polar API error ${res.status}: ${errText}`);
+      throw new HttpsError('internal', 'Checkout creation failed');
     }
 
     const data = await res.json();

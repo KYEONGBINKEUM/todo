@@ -327,6 +327,7 @@ export const createPolarCheckout = onCall(
 // Token limits per plan
 const TOKEN_LIMITS: Record<string, number> = {
   free: 0,
+  pro: 500000,
   premium: 500000,
   team: 2000000,
 };

@@ -59,6 +59,10 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [updateError, setUpdateError] = useState('');
   const [hideFutureTasks, setHideFutureTasksState] = useState(true);
   const [timeboxAlarmDefault, setTimeboxAlarmDefaultState] = useState(true);
+  const [planCancelAtPeriodEnd, setPlanCancelAtPeriodEnd] = useState(false);
+  const [planCurrentPeriodEnd, setPlanCurrentPeriodEnd] = useState<string | null>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   useEffect(() => {
     const isTauriApp = isTauriEnv();
@@ -181,6 +185,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       setIsAdmin(s.isAdmin || false);
       setHideFutureTasksState(s.hideFutureTasks ?? true);
       setTimeboxAlarmDefaultState(s.timeboxAlarmDefault ?? true);
+      setPlanCancelAtPeriodEnd(s.planCancelAtPeriodEnd || false);
+      setPlanCurrentPeriodEnd(s.planCurrentPeriodEnd || null);
     });
   }, [user]);
 
@@ -227,8 +233,54 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     { id: 'info', label: t('settings.info'), icon: 'ℹ️' },
   ];
 
+  const handleCancelSubscription = async () => {
+    setCancelLoading(true);
+    try {
+      const cancel = httpsCallable<unknown, { success: boolean; periodEnd: string }>(functions, 'cancelPolarSubscription');
+      const { data } = await cancel({});
+      setPlanCancelAtPeriodEnd(true);
+      setPlanCurrentPeriodEnd(data.periodEnd);
+      setShowCancelModal(false);
+    } catch (err) {
+      console.error('Cancel error:', err);
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
   return (
     <>
+      {/* Cancel Subscription Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCancelModal(false)} />
+          <div className="relative z-10 w-full max-w-sm bg-background-card border border-border rounded-2xl shadow-2xl p-6">
+            <h3 className="text-base font-bold text-text-primary mb-2">구독 취소</h3>
+            <p className="text-[13px] text-text-secondary mb-1">
+              구독을 취소하시겠습니까?
+            </p>
+            <p className="text-[12px] text-text-muted mb-6">
+              현재 결제 기간이 끝날 때까지 Pro 기능을 계속 사용할 수 있으며, 이후 Free 플랜으로 자동 전환됩니다.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm border border-border hover:border-border-hover text-text-secondary transition-colors"
+              >
+                돌아가기
+              </button>
+              <button
+                onClick={handleCancelSubscription}
+                disabled={cancelLoading}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-50"
+              >
+                {cancelLoading ? '처리 중...' : '구독 취소 확인'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Backdrop */}
       <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
@@ -389,6 +441,26 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         >
                           {t('settings.upgrade')}
                         </button>
+                      )}
+
+                      {!isAdmin && userPlan !== 'free' && (
+                        <div className="mt-1">
+                          {planCancelAtPeriodEnd && planCurrentPeriodEnd ? (
+                            <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                              <span className="text-amber-400 text-xs">⚠</span>
+                              <p className="text-[11px] text-amber-400">
+                                {new Date(planCurrentPeriodEnd).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}까지 사용 후 Free로 전환됩니다.
+                              </p>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setShowCancelModal(true)}
+                              className="w-full py-2 rounded-xl text-xs text-text-muted border border-border hover:border-red-500/50 hover:text-red-400 transition-all"
+                            >
+                              구독 취소
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

@@ -555,6 +555,8 @@ export interface UserSettings {
   storageUsed?: number; // bytes
   hideFutureTasks?: boolean;
   timeboxAlarmDefault?: boolean;
+  planCancelAtPeriodEnd?: boolean;
+  planCurrentPeriodEnd?: string;
 }
 
 /** 플랜별 스토리지 한도 (bytes) */

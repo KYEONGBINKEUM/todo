@@ -113,6 +113,68 @@ export const verifyPolarPayment = onCall(
   }
 );
 
+// ── Polar Cancel Subscription ────────────────────────────────────────────────
+
+export const cancelPolarSubscription = onCall(
+  { secrets: [polarAccessToken] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
+    }
+
+    const uid = request.auth.uid;
+    const token = polarAccessToken.value();
+
+    // Find subscription by metadata uid
+    const subRes = await fetch(
+      `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!subRes.ok) {
+      const err = await subRes.text();
+      console.error('[polar-cancel] fetch subscriptions failed:', subRes.status, err);
+      throw new HttpsError('internal', `Failed to fetch subscriptions: ${subRes.status}`);
+    }
+
+    const subData = await subRes.json();
+    const subscription = subData.items?.find((s: any) => s.status === 'active');
+
+    if (!subscription) {
+      throw new HttpsError('not-found', 'No active subscription found');
+    }
+
+    // Cancel at period end (PATCH with cancel_at_period_end: true)
+    const cancelRes = await fetch(`https://api.polar.sh/v1/subscriptions/${subscription.id}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cancel_at_period_end: true }),
+    });
+
+    if (!cancelRes.ok) {
+      const err = await cancelRes.text();
+      console.error('[polar-cancel] cancel failed:', cancelRes.status, err);
+      throw new HttpsError('internal', `Failed to cancel subscription: ${cancelRes.status}`);
+    }
+
+    const cancelData = await cancelRes.json();
+    const periodEnd = cancelData.current_period_end ?? subscription.current_period_end;
+
+    // Update Firestore: mark as canceling (still pro until period end)
+    const db = admin.firestore();
+    await db.doc(`users/${uid}/settings/app`).set({
+      planCancelAtPeriodEnd: true,
+      planCurrentPeriodEnd: periodEnd,
+    }, { merge: true });
+
+    console.log(`[polar-cancel] scheduled cancel uid=${uid} periodEnd=${periodEnd}`);
+    return { success: true, periodEnd };
+  }
+);
+
 // ── Polar Checkout ───────────────────────────────────────────────────────────
 
 export const createPolarCheckout = onCall(

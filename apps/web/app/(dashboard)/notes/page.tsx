@@ -14,6 +14,7 @@ import {
 import { useDataStore } from '@/lib/data-store';
 import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
+import { callNoahAI } from '@/lib/noah-ai';
 import hljs from 'highlight.js/lib/common';
 
 // ── Copy Code Button ──────────────────────────────────────────────────────────
@@ -413,6 +414,37 @@ function NotesContent() {
       window.removeEventListener('noah-ai-stream-note', handleStreamNote);
       if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
     };
+  }, [user]);
+
+  // ========== Noah AI: pick up pending YouTube/auto-note from sessionStorage ==========
+  useEffect(() => {
+    if (!user) return;
+
+    const youtubePending = sessionStorage.getItem('noah_pending_youtube_note');
+    if (youtubePending) {
+      sessionStorage.removeItem('noah_pending_youtube_note');
+      const { url, language: lang } = JSON.parse(youtubePending);
+      callNoahAI('youtube_to_note', { url }, lang).then(response => {
+        const blocks = response.result?.blocks || response.result?.content?.blocks || [];
+        if (blocks.length > 0) {
+          const title = response.result?.title || response.result?.content?.title || 'YouTube 노트';
+          window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title, blocks } }));
+        }
+      }).catch(console.error);
+      return;
+    }
+
+    const autoPending = sessionStorage.getItem('noah_pending_auto_note');
+    if (autoPending) {
+      sessionStorage.removeItem('noah_pending_auto_note');
+      const { topic, language: lang } = JSON.parse(autoPending);
+      callNoahAI('auto_write_note', { title: topic, topic }, lang).then(response => {
+        const blocks = response.result?.blocks || [];
+        if (blocks.length > 0) {
+          window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title: topic, blocks } }));
+        }
+      }).catch(console.error);
+    }
   }, [user]);
 
   // ========== Undo / Redo ==========

@@ -320,17 +320,9 @@ export default function NoahAIPanel() {
     setYoutubeLoading(loadingKey);
     try {
       if (action === 'youtube_to_note') {
+        // Store pending YouTube action in sessionStorage so notes page can pick it up after navigation
+        sessionStorage.setItem('noah_pending_youtube_note', JSON.stringify({ url, language }));
         router.push('/notes');
-        await new Promise(r => setTimeout(r, 600));
-        const response = await callNoahAI('youtube_to_note', { url }, language);
-        const blocks = response.result?.blocks || response.result?.content?.blocks || [];
-        if (blocks.length > 0) {
-          const title = response.result?.title || response.result?.content?.title || 'YouTube 노트';
-          window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title, blocks } }));
-          insertMessage({ role: 'assistant', content: `✅ "${title}" 노트가 생성됐어요!` });
-        } else {
-          insertMessage({ role: 'assistant', content: '노트 생성에 실패했어요. 다시 시도해 주세요.' });
-        }
       } else {
         router.push('/mindmap');
         await new Promise(r => setTimeout(r, 600));
@@ -361,20 +353,10 @@ export default function NoahAIPanel() {
     setApplying(msgId || null);
 
     try {
-      // Confirm write note: navigate to notes, call AI, then stream animation
+      // Confirm write note: store pending action in sessionStorage, then navigate
       if (action === 'confirm_write_note' && data.topic) {
+        sessionStorage.setItem('noah_pending_auto_note', JSON.stringify({ topic: data.topic, language }));
         router.push('/notes');
-        await new Promise(r => setTimeout(r, 600));
-        try {
-          const response = await callNoahAI('auto_write_note', { title: data.topic, topic: data.topic }, language);
-          if (response.result?.blocks && response.result.blocks.length > 0) {
-            window.dispatchEvent(new CustomEvent('noah-ai-stream-note', {
-              detail: { title: data.topic, blocks: response.result.blocks }
-            }));
-          }
-        } catch (err) {
-          console.error('Failed to generate note content:', err);
-        }
         return;
       }
 
@@ -582,6 +564,7 @@ export default function NoahAIPanel() {
                         >
                           {youtubeLoading === `${msg.id}-note` ? '생성 중...' : '📝 노트로 생성'}
                         </button>
+                        {/* 마인드맵 버튼 임시 비활성화
                         <button
                           onClick={() => handleYoutubeChoice(msg.structuredData.url, 'youtube_to_mindmap', msg.id)}
                           disabled={youtubeLoading !== null}
@@ -591,6 +574,7 @@ export default function NoahAIPanel() {
                         >
                           {youtubeLoading === `${msg.id}-mindmap` ? '생성 중...' : '🧠 마인드맵으로'}
                         </button>
+                        */}
                       </div>
                     )}
                     {/* Apply button for structured data */}

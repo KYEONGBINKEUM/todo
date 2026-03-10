@@ -68,39 +68,36 @@ export const verifyPolarPayment = onCall(
       throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const email = request.auth.token.email;
-    if (!email) {
-      throw new HttpsError('failed-precondition', 'No email associated with account');
-    }
-
+    const uid = request.auth.uid;
     const token = polarAccessToken.value();
 
-    // Check active subscriptions by email using admin token
-    const subRes = await fetch(
-      `https://api.polar.sh/v1/subscriptions?customer_email=${encodeURIComponent(email)}&active=true`,
+    // Orders filtered by metadata[uid] set during checkout creation
+    const ordRes = await fetch(
+      `https://api.polar.sh/v1/orders?metadata[uid]=${encodeURIComponent(uid)}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    if (!subRes.ok) {
-      const err = await subRes.text();
-      console.error('[polar-verify] subscriptions failed:', subRes.status, err);
-      throw new HttpsError('internal', `Verification failed: ${subRes.status}`);
+    if (!ordRes.ok) {
+      const err = await ordRes.text();
+      console.error('[polar-verify] orders failed:', ordRes.status, err);
+      throw new HttpsError('internal', `Verification failed: ${ordRes.status}`);
     }
 
-    const subData = await subRes.json();
-    console.log('[polar-verify] subscriptions:', subData.items?.length, 'email:', email);
+    const ordData = await ordRes.json();
+    console.log('[polar-verify] orders by uid:', ordData.items?.length);
 
-    // Also check orders if no active subscription yet
-    let hasPayment = subData.items?.length > 0;
+    let hasPayment = (ordData.items?.length ?? 0) > 0;
+
+    // Fallback: check subscriptions by metadata[uid]
     if (!hasPayment) {
-      const ordRes = await fetch(
-        `https://api.polar.sh/v1/orders?customer_email=${encodeURIComponent(email)}`,
+      const subRes = await fetch(
+        `https://api.polar.sh/v1/subscriptions?metadata[uid]=${encodeURIComponent(uid)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (ordRes.ok) {
-        const ordData = await ordRes.json();
-        console.log('[polar-verify] orders:', ordData.items?.length);
-        hasPayment = ordData.items?.length > 0;
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        console.log('[polar-verify] subscriptions by uid:', subData.items?.length);
+        hasPayment = (subData.items?.length ?? 0) > 0;
       }
     }
 

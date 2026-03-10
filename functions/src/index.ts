@@ -244,6 +244,36 @@ export const reactivatePolarSubscription = onCall(
   }
 );
 
+// ── Polar Portal URL ─────────────────────────────────────────────────────────
+
+export const getPolarPortalUrl = onCall(
+  { secrets: [polarAccessToken] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
+    }
+
+    const token = polarAccessToken.value();
+
+    // Get organization info to retrieve slug
+    const res = await fetch('https://api.polar.sh/v1/organizations/', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      throw new HttpsError('internal', `Failed to get org info: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const org = data.items?.[0];
+    if (!org?.slug) {
+      throw new HttpsError('not-found', 'Organization not found');
+    }
+
+    return { url: `https://polar.sh/${org.slug}/portal` };
+  }
+);
+
 // ── Polar Checkout ───────────────────────────────────────────────────────────
 
 export const createPolarCheckout = onCall(

@@ -459,14 +459,20 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
                           {/* Manage / Cancel / Reactivate buttons */}
                           <div className="flex gap-2">
-                            <a
-                              href="https://polar.sh/purchases"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-1 py-2 rounded-xl text-[11px] text-center text-text-muted border border-border hover:border-border-hover transition-all"
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const fn = httpsCallable<unknown, { url: string }>(functions, 'getPolarPortalUrl');
+                                  const { data } = await fn({});
+                                  window.open(data.url, '_blank');
+                                } catch (err) {
+                                  console.error('Portal error:', err);
+                                }
+                              }}
+                              className="flex-1 py-2 rounded-xl text-[11px] text-text-muted border border-border hover:border-border-hover transition-all"
                             >
                               구독 관리
-                            </a>
+                            </button>
                             {planCancelAtPeriodEnd ? (
                               <button
                                 onClick={async () => {

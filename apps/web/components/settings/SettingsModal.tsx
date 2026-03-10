@@ -563,9 +563,12 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   {userPlan !== 'free' && (() => {
                     const tokenLimit = userPlan === 'team' ? 2000000 : 500000;
                     const tokenPct = Math.min(100, (aiTokensUsed / tokenLimit) * 100);
-                    const resetLabel = planStartedAt
-                      ? `매월 ${new Date(planStartedAt).getDate()}일 초기화`
-                      : '매월 1일 초기화';
+                    const anchorDay = planStartedAt
+                      ? new Date(planStartedAt).getDate()
+                      : planCurrentPeriodEnd
+                        ? new Date(planCurrentPeriodEnd).getDate()
+                        : null;
+                    const resetLabel = anchorDay ? `매월 ${anchorDay}일 초기화` : '구독 결제일 기준 초기화';
                     return (
                       <div>
                         <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">AI 사용량</p>

@@ -1,4 +1,5 @@
 import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import { auth } from './firebase';
 
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
@@ -11,6 +12,15 @@ function storeToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(EXPIRY_KEY, String(Date.now() + 55 * 60 * 1000));
   localStorage.setItem(CONNECTED_KEY, '1');
+}
+
+async function setGCalConnectedFirestore(connected: boolean) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  try {
+    const db = getFirestore();
+    await setDoc(doc(db, `users/${uid}/settings/app`), { gcalConnected: connected }, { merge: true });
+  } catch { /* non-critical */ }
 }
 
 export function getStoredGCalToken(): string | null {
@@ -38,6 +48,7 @@ export function disconnectGoogleCalendar() {
   localStorage.removeItem(EXPIRY_KEY);
   localStorage.removeItem(CONNECTED_KEY);
   localStorage.removeItem(PENDING_REDIRECT_KEY);
+  setGCalConnectedFirestore(false);
 }
 
 /**
@@ -86,6 +97,7 @@ export async function connectGoogleCalendar(): Promise<string> {
   const token = credential?.accessToken;
   if (!token) throw new Error('no_token');
   storeToken(token);
+  setGCalConnectedFirestore(true);
   return token;
 }
 
@@ -123,6 +135,7 @@ export async function connectGoogleCalendarDesktop(params: {
         const token = data.accessToken;
         if (!token) { reject(new Error('no_token')); return; }
         storeToken(token);
+        setGCalConnectedFirestore(true);
         resolve(token);
       } catch {
         reject(new Error('parse_failed'));
@@ -155,6 +168,7 @@ export async function checkGCalRedirectResult(): Promise<string | null> {
     const token = credential?.accessToken;
     if (!token) return null;
     storeToken(token);
+    setGCalConnectedFirestore(true);
     return token;
   } catch {
     return null;

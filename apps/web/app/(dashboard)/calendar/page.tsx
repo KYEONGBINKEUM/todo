@@ -8,6 +8,7 @@ import {
   addCalendarEvent,
   updateCalendarEvent,
   deleteCalendarEvent,
+  getUserSettings,
   type CalendarEvent,
 } from '@/lib/firestore';
 import {
@@ -438,17 +439,13 @@ export default function CalendarPage() {
     } finally { setGcalLoading(false); }
   }, [normalizeGCalEvents]);
 
-  // 초기 로드: 토큰 확인 → 만료 시 자동 재연결
+  // 초기 로드: 토큰 확인 → 만료 시 자동 재연결 (localStorage + Firestore 모두 확인)
   useEffect(() => {
     const stored = getStoredGCalToken();
     if (stored) { setGcalToken(stored); return; }
 
-    // 리다이렉트 결과 확인
-    checkGCalRedirectResult().then(token => {
-      if (token) { setGcalToken(token); return; }
-
-      // 이전에 연동했었으나 토큰이 만료된 경우 → 자동 재연결
-      if (isGCalConnected() && !reconnectingRef.current) {
+    const tryReconnect = () => {
+      if (!reconnectingRef.current) {
         reconnectingRef.current = true;
         setGcalLoading(true);
         silentReconnectGCal().then(newToken => {
@@ -458,8 +455,23 @@ export default function CalendarPage() {
           setGcalLoading(false);
         });
       }
+    };
+
+    // 리다이렉트 결과 확인
+    checkGCalRedirectResult().then(token => {
+      if (token) { setGcalToken(token); return; }
+
+      // localStorage 플래그 확인
+      if (isGCalConnected()) { tryReconnect(); return; }
+
+      // localStorage에 없으면 Firestore에서 확인 (재로그인 후에도 복원)
+      if (user) {
+        getUserSettings(user.uid).then(s => {
+          if (s.gcalConnected) tryReconnect();
+        }).catch(() => {});
+      }
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!gcalToken) return;

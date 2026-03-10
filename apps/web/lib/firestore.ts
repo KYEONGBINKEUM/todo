@@ -558,6 +558,7 @@ export interface UserSettings {
   planCancelAtPeriodEnd?: boolean;
   planCurrentPeriodEnd?: string;
   planStartedAt?: string;
+  gcalConnected?: boolean;
 }
 
 /** 플랜별 스토리지 한도 (bytes) */

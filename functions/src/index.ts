@@ -73,20 +73,23 @@ export const verifyPolarPayment = onCall(
       throw new HttpsError('invalid-argument', 'customerSessionToken required');
     }
 
-    // Polar client checkout endpoint (no auth needed — uses client secret token)
-    const res = await fetch(`https://api.polar.sh/v1/checkouts/client/${customerSessionToken}`);
+    // Customer session token is used as Bearer to access /v1/customers/me
+    const res = await fetch('https://api.polar.sh/v1/customers/me', {
+      headers: { Authorization: `Bearer ${customerSessionToken}` },
+    });
 
     if (!res.ok) {
       const err = await res.text();
-      console.error('[polar-verify] failed:', res.status, err);
+      console.error('[polar-verify] customers/me failed:', res.status, err);
       throw new HttpsError('internal', `Verification failed: ${res.status}`);
     }
 
-    const checkout = await res.json();
-    console.log('[polar-verify] checkout status:', checkout.status, 'uid in metadata:', checkout.metadata?.uid);
+    const customer = await res.json();
+    console.log('[polar-verify] active_subscriptions:', customer.active_subscriptions?.length, 'email:', customer.email);
 
-    if (checkout.status !== 'confirmed') {
-      throw new HttpsError('failed-precondition', `Payment not confirmed: ${checkout.status}`);
+    const hasActive = Array.isArray(customer.active_subscriptions) && customer.active_subscriptions.length > 0;
+    if (!hasActive) {
+      throw new HttpsError('failed-precondition', 'No active subscription found');
     }
 
     const db = admin.firestore();

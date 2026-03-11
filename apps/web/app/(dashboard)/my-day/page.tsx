@@ -12,7 +12,6 @@ import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
-import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -949,60 +948,13 @@ export default function MyDayPage() {
 
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
-        chips={[
-          { id: 'prioritize', label: '우선순위 분석', icon: '🎯', action: 'prioritize' as NoahAIAction },
-          { id: 'suggest', label: '할일 추천', icon: '💡', action: 'suggest_tasks' as NoahAIAction },
-          { id: 'breakdown', label: '세부 분해', icon: '📋', action: 'breakdown' as NoahAIAction },
-        ]}
-        getContext={(action) => {
-          const taskSummaries = tasks.slice(0, 20).map((tk) => ({
+        getContext={(text) => ({
+          tasks: tasks.slice(0, 20).map((tk) => ({
             id: tk.id, title: tk.title, status: tk.status,
-            priority: tk.priority, dueDate: tk.dueDate || null, myDay: tk.myDay,
-          }));
-          if (action === 'breakdown') {
-            const target = tasks.find((tk) => tk.starred && tk.status !== 'completed')
-              || tasks.find((tk) => tk.status !== 'completed');
-            return { task: target ? { title: target.title, memo: target.memo } : {}, tasks: taskSummaries };
-          }
-          return { tasks: taskSummaries };
-        }}
-        onResult={async (action, result) => {
-          if (!user) return;
-          const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
-          if (action === 'suggest_tasks' && result?.suggestions) {
-            for (const s of result.suggestions) {
-              try {
-                await addTaskDB(user.uid, {
-                  title: s.title, status: 'todo', priority: s.priority || 'medium',
-                  starred: false, listId: lists[0]?.id || '', myDay: true,
-                  tags: [], order: Date.now(), createdDate: today,
-                });
-              } catch { /* ignore */ }
-            }
-            window.location.reload();
-          }
-          if (action === 'prioritize' && result?.priorities) {
-            for (const p of result.priorities) {
-              if (p.taskId) {
-                try { await updateTask(user.uid, p.taskId, { priority: p.suggestedPriority }); } catch { /* ignore */ }
-              }
-            }
-            window.location.reload();
-          }
-          if (action === 'breakdown' && result?.subtasks) {
-            for (const s of result.subtasks) {
-              try {
-                await addTaskDB(user.uid, {
-                  title: s.title, status: 'todo', priority: 'medium',
-                  starred: false, listId: lists[0]?.id || '', myDay: true,
-                  tags: [], order: Date.now(), createdDate: today,
-                });
-              } catch { /* ignore */ }
-            }
-            window.location.reload();
-          }
-        }}
-        applyLabel="할일에 적용하기"
+            priority: tk.priority, dueDate: tk.dueDate || null,
+          })),
+          userMessage: text,
+        })}
         placeholder="오늘의 할일에 대해 AI에게 물어보세요..."
       />
     </div>

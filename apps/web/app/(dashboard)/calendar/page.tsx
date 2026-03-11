@@ -37,7 +37,6 @@ import {
   type HolidayEntry,
 } from '@/lib/cal-settings';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
-import type { NoahAIAction } from '@/lib/noah-ai-context';
 
 interface GCalDisplayEvent {
   id: string;
@@ -849,24 +848,12 @@ export default function CalendarPage() {
 
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
-        chips={[
-          { id: 'schedule', label: '일정 분석', icon: '📅', action: 'schedule' as NoahAIAction },
-          { id: 'suggest', label: '할일 추천', icon: '💡', action: 'suggest_tasks' as NoahAIAction },
-        ]}
-        getContext={(_action) => {
-          const todayEvents = gcalDisplayEvents.filter((e) => e.dateStr === todayDateStr);
-          const weekEvents = gcalDisplayEvents.slice(0, 30).map((e) => ({
-            title: e.title, date: e.dateStr, startTime: e.startTime,
-          }));
-          const myTasks = tasks.filter((t) => t.myDay && t.status !== 'completed').slice(0, 10).map((t) => ({
-            title: t.title, priority: t.priority, dueDate: t.dueDate,
-          }));
-          return { todayEvents, weekEvents, tasks: myTasks };
-        }}
-        onResult={(_action, _result) => {
-          // 캘린더는 읽기 전용 분석 — 결과 카드에서 텍스트로 확인
-        }}
-        applyLabel="확인"
+        getContext={(text) => ({
+          todayEvents: gcalDisplayEvents.filter((e) => e.dateStr === todayDateStr).map((e) => ({ title: e.title, startTime: e.startTime })),
+          weekEvents: gcalDisplayEvents.slice(0, 30).map((e) => ({ title: e.title, date: e.dateStr, startTime: e.startTime })),
+          tasks: tasks.filter((t) => t.myDay && t.status !== 'completed').slice(0, 10).map((t) => ({ title: t.title, priority: t.priority, dueDate: t.dueDate })),
+          userMessage: text,
+        })}
         placeholder="캘린더 일정에 대해 AI에게 질문하세요..."
       />
     </div>

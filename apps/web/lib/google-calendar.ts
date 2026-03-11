@@ -1,36 +1,11 @@
-import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import { auth } from './firebase';
 
-const SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
-const TOKEN_KEY = 'gcal_access_token';
-const EXPIRY_KEY = 'gcal_token_expiry';
+// ── 서버 기반 OAuth (Cloud Function) ──────────────────────────────────────────
+// refresh token을 Firestore에 서버에서 저장하므로 영구 연동 가능
+
 const CONNECTED_KEY = 'gcal_connected';
-const PENDING_REDIRECT_KEY = 'gcal_pending_redirect';
-
-// 자동 갱신 타이머 (앱이 열려 있는 동안 만료 전에 조용히 재인증)
-let _autoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-function scheduleAutoRefresh(onRefresh: (token: string) => void) {
-  if (_autoRefreshTimer) clearTimeout(_autoRefreshTimer);
-  const expiry = parseInt(localStorage.getItem(EXPIRY_KEY) ?? '0', 10);
-  // 만료 8분 전에 갱신 시도
-  const delay = expiry - Date.now() - 8 * 60 * 1000;
-  if (delay <= 0) return;
-  _autoRefreshTimer = setTimeout(async () => {
-    const newToken = await silentReconnectGCal();
-    if (newToken) {
-      onRefresh(newToken);
-      scheduleAutoRefresh(onRefresh); // 다음 갱신 예약
-    }
-  }, delay);
-}
-
-function storeToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(EXPIRY_KEY, String(Date.now() + 55 * 60 * 1000));
-  localStorage.setItem(CONNECTED_KEY, '1');
-}
 
 async function setGCalConnectedFirestore(connected: boolean) {
   const uid = auth.currentUser?.uid;
@@ -41,87 +16,60 @@ async function setGCalConnectedFirestore(connected: boolean) {
   } catch { /* non-critical */ }
 }
 
-export { scheduleAutoRefresh };
-
-export function getStoredGCalToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  const token = localStorage.getItem(TOKEN_KEY);
-  const expiry = localStorage.getItem(EXPIRY_KEY);
-  if (!token || !expiry) return null;
-  if (Date.now() > parseInt(expiry, 10)) {
-    // 토큰 만료 — 토큰만 제거, connected 플래그는 유지
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(EXPIRY_KEY);
-    return null;
-  }
-  return token;
-}
-
 /** 사용자가 이전에 Google Calendar을 연동한 적이 있는지 확인 */
 export function isGCalConnected(): boolean {
   if (typeof window === 'undefined') return false;
   return localStorage.getItem(CONNECTED_KEY) === '1';
 }
 
-export function disconnectGoogleCalendar() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(EXPIRY_KEY);
-  localStorage.removeItem(CONNECTED_KEY);
-  localStorage.removeItem(PENDING_REDIRECT_KEY);
-  setGCalConnectedFirestore(false);
-}
-
-/**
- * 토큰 만료 시 자동 재인증 — prompt 없이 signInWithPopup 시도.
- * 이미 Google 세션이 있으면 팝업이 즉시 닫히며 새 토큰 발급.
- * 실패 시 null 반환 (수동 재연결 필요).
- */
-export async function silentReconnectGCal(): Promise<string | null> {
-  try {
-    const provider = new GoogleAuthProvider();
-    provider.addScope(SCOPE);
-    // prompt: 'none'으로 사일런트 재인증 시도
-    provider.setCustomParameters({ prompt: 'none' });
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    const token = credential?.accessToken;
-    if (!token) return null;
-    storeToken(token);
-    return token;
-  } catch {
-    // 사일런트 실패 — select_account로 한 번 더 시도 (빠른 팝업)
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.addScope(SCOPE);
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const token = credential?.accessToken;
-      if (!token) return null;
-      storeToken(token);
-      return token;
-    } catch {
-      return null;
-    }
+export function markGCalConnected(connected: boolean) {
+  if (connected) {
+    localStorage.setItem(CONNECTED_KEY, '1');
+  } else {
+    localStorage.removeItem(CONNECTED_KEY);
   }
 }
 
-// ── Web (popup) ───────────────────────────────────────────────────────────────
+// ── 웹: Cloud Function OAuth URL로 리다이렉트 ──────────────────────────────
 
-export async function connectGoogleCalendar(): Promise<string> {
-  const provider = new GoogleAuthProvider();
-  provider.addScope(SCOPE);
-  provider.setCustomParameters({ prompt: 'consent' });
-  const result = await signInWithPopup(auth, provider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  const token = credential?.accessToken;
-  if (!token) throw new Error('no_token');
-  storeToken(token);
-  setGCalConnectedFirestore(true);
-  return token;
+/**
+ * Cloud Function에서 Google OAuth URL 받아서 새 창으로 열기
+ * → Google 인증 → gcalOAuthCallback 함수로 리다이렉트
+ * → Firestore에 refresh token 저장 → 앱으로 복귀
+ */
+export async function connectGoogleCalendarServer(): Promise<void> {
+  const functions = getFunctions();
+  const getOAuthUrl = httpsCallable<{}, { url: string }>(functions, 'gcalGetOAuthUrl');
+  const result = await getOAuthUrl({});
+  const url = result.data.url;
+  // 현재 탭에서 이동 (팝업 차단 우회)
+  window.location.href = url;
 }
 
-// ── Tauri Desktop (system browser + local OAuth server) ───────────────────────
+/**
+ * Cloud Function에서 유효한 access token 조회
+ * 만료 시 서버에서 refresh token으로 자동 갱신
+ */
+export async function getGCalTokenFromServer(): Promise<string> {
+  const functions = getFunctions();
+  const getToken = httpsCallable<{}, { accessToken: string }>(functions, 'gcalGetToken');
+  const result = await getToken({});
+  return result.data.accessToken;
+}
+
+/**
+ * 연결 해제 (서버 + 로컬)
+ */
+export async function disconnectGoogleCalendar(): Promise<void> {
+  localStorage.removeItem(CONNECTED_KEY);
+  try {
+    const functions = getFunctions();
+    const disconnect = httpsCallable(functions, 'gcalDisconnect');
+    await disconnect({});
+  } catch { /* ignore */ }
+}
+
+// ── Tauri Desktop (기존 방식 유지 — 로컬 OAuth 서버) ─────────────────────────
 
 export async function connectGoogleCalendarDesktop(params: {
   apiKey: string;
@@ -154,7 +102,7 @@ export async function connectGoogleCalendarDesktop(params: {
         const data = JSON.parse(event.payload);
         const token = data.accessToken;
         if (!token) { reject(new Error('no_token')); return; }
-        storeToken(token);
+        markGCalConnected(true);
         setGCalConnectedFirestore(true);
         resolve(token);
       } catch {
@@ -169,30 +117,55 @@ export async function connectGoogleCalendarDesktop(params: {
 // ── Tauri Mobile (signInWithRedirect within WebView) ─────────────────────────
 
 export async function connectGoogleCalendarRedirect(): Promise<void> {
+  const { GoogleAuthProvider, signInWithRedirect } = await import('firebase/auth');
   const provider = new GoogleAuthProvider();
-  provider.addScope(SCOPE);
+  provider.addScope('https://www.googleapis.com/auth/calendar.events.readonly');
   provider.setCustomParameters({ prompt: 'consent' });
-  localStorage.setItem(PENDING_REDIRECT_KEY, '1');
+  localStorage.setItem('gcal_pending_redirect', '1');
   await signInWithRedirect(auth, provider);
 }
 
 /** Call on mount — resolves to access token if a redirect just completed */
 export async function checkGCalRedirectResult(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
-  if (localStorage.getItem(PENDING_REDIRECT_KEY) !== '1') return null;
-  localStorage.removeItem(PENDING_REDIRECT_KEY);
+  if (localStorage.getItem('gcal_pending_redirect') !== '1') return null;
+  localStorage.removeItem('gcal_pending_redirect');
   try {
+    const { GoogleAuthProvider, getRedirectResult } = await import('firebase/auth');
     const result = await getRedirectResult(auth);
     if (!result) return null;
     const credential = GoogleAuthProvider.credentialFromResult(result);
     const token = credential?.accessToken;
     if (!token) return null;
-    storeToken(token);
+    markGCalConnected(true);
     setGCalConnectedFirestore(true);
     return token;
   } catch {
     return null;
   }
+}
+
+// ── gcal_success=1 URL 파라미터 처리 (서버 OAuth 콜백 후 복귀) ──────────────
+
+export function checkGCalOAuthReturn(): { success: boolean; error?: string } | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const success = params.get('gcal_success');
+  const error = params.get('gcal_error');
+
+  if (!success && !error) return null;
+
+  // URL 파라미터 제거 (히스토리 교체)
+  const clean = new URL(window.location.href);
+  clean.searchParams.delete('gcal_success');
+  clean.searchParams.delete('gcal_error');
+  window.history.replaceState({}, '', clean.toString());
+
+  if (success === '1') {
+    markGCalConnected(true);
+    return { success: true };
+  }
+  return { success: false, error: error ?? 'unknown' };
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────────

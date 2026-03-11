@@ -8,6 +8,9 @@ import { getYouTubeVideoInfo } from './youtube';
 
 admin.initializeApp();
 
+// ── Google Calendar OAuth ────────────────────────────────────────────────────
+export { gcalGetOAuthUrl, gcalOAuthCallback, gcalGetToken, gcalDisconnect } from './gcal-oauth';
+
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const polarWebhookSecret = defineSecret('POLAR_WEBHOOK_SECRET');
 const polarAccessToken = defineSecret('POLAR_ACCESS_TOKEN');

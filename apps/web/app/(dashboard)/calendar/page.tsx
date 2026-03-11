@@ -12,15 +12,15 @@ import {
   type CalendarEvent,
 } from '@/lib/firestore';
 import {
-  getStoredGCalToken,
   isGCalConnected,
-  connectGoogleCalendar,
+  markGCalConnected,
+  connectGoogleCalendarServer,
   connectGoogleCalendarDesktop,
   connectGoogleCalendarRedirect,
   checkGCalRedirectResult,
+  checkGCalOAuthReturn,
   disconnectGoogleCalendar,
-  silentReconnectGCal,
-  scheduleAutoRefresh,
+  getGCalTokenFromServer,
   fetchGCalEvents,
   gcalColor,
   type GCalEvent,
@@ -416,59 +416,54 @@ export default function CalendarPage() {
     });
   }, []);
 
-  const reconnectingRef = useRef(false);
-
-  const loadGCalEvents = useCallback(async (token: string, year: number, month: number) => {
+  const loadGCalEvents = useCallback(async (year: number, month: number) => {
     setGcalLoading(true); setGcalError(null);
     try {
+      // Cloud Function에서 항상 유효한 토큰 조회 (서버에서 refresh token으로 자동 갱신)
+      const token = await getGCalTokenFromServer();
+      setGcalToken(token);
       const raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));
       setGcalDisplayEvents(normalizeGCalEvents(raw));
     } catch (err) {
-      if (err instanceof Error && err.message === 'token_expired') {
-        // 토큰 만료 — 자동 재연결 시도
-        if (!reconnectingRef.current) {
-          reconnectingRef.current = true;
-          const newToken = await silentReconnectGCal();
-          reconnectingRef.current = false;
-          if (newToken) {
-            setGcalToken(newToken);
-            return; // useEffect가 새 토큰으로 다시 호출됨
-          }
-        }
+      const msg = err instanceof Error ? err.message : '';
+      if (msg === 'token_expired' || msg.includes('Reconnect required') || msg.includes('not-found')) {
+        markGCalConnected(false);
         setGcalToken(null); setGcalDisplayEvents([]); setGcalError('token_expired');
       } else { setGcalError('fetch_failed'); }
     } finally { setGcalLoading(false); }
   }, [normalizeGCalEvents]);
 
-  // 초기 로드: 토큰 확인 → 만료 시 자동 재연결 (localStorage + Firestore 모두 확인)
+  // 초기 로드: gcal_success 파라미터 확인 → 연결 상태 확인
   useEffect(() => {
-    const stored = getStoredGCalToken();
-    if (stored) { setGcalToken(stored); return; }
+    // 서버 OAuth 콜백에서 돌아온 경우
+    const oauthReturn = checkGCalOAuthReturn();
+    if (oauthReturn?.success) {
+      markGCalConnected(true);
+      loadGCalEvents(viewYear, viewMonth);
+      return;
+    }
+    if (oauthReturn && !oauthReturn.success) {
+      setGcalError('connect_failed');
+      return;
+    }
 
-    const tryReconnect = () => {
-      if (!reconnectingRef.current) {
-        reconnectingRef.current = true;
-        setGcalLoading(true);
-        silentReconnectGCal().then(newToken => {
-          reconnectingRef.current = false;
-          if (newToken) { setGcalToken(newToken); }
-          else { setGcalError('token_expired'); }
-          setGcalLoading(false);
-        });
-      }
-    };
-
-    // 리다이렉트 결과 확인
+    // 모바일 리다이렉트 결과 확인
     checkGCalRedirectResult().then(token => {
       if (token) { setGcalToken(token); return; }
 
-      // localStorage 플래그 확인
-      if (isGCalConnected()) { tryReconnect(); return; }
-
-      // localStorage에 없으면 Firestore에서 확인 (재로그인 후에도 복원)
+      // 이전에 연결한 적 있으면 서버에서 토큰 조회
+      const wasConnected = isGCalConnected();
+      if (wasConnected) {
+        loadGCalEvents(viewYear, viewMonth);
+        return;
+      }
+      // Firestore에서 연결 상태 확인 (새 디바이스/재로그인)
       if (user) {
         getUserSettings(user.uid).then(s => {
-          if (s.gcalConnected) tryReconnect();
+          if (s.gcalConnected) {
+            markGCalConnected(true);
+            loadGCalEvents(viewYear, viewMonth);
+          }
         }).catch(() => {});
       }
     });
@@ -476,36 +471,41 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (!gcalToken) return;
-    loadGCalEvents(gcalToken, viewYear, viewMonth);
-  }, [gcalToken, viewYear, viewMonth, loadGCalEvents]);
+    // 토큰이 있으면 월 변경 시 이벤트 재로드
+  }, [gcalToken, viewYear, viewMonth]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 토큰 설정 시 만료 8분 전 자동 갱신 타이머 등록
+  // 월 변경 시 이벤트 재로드 (서버에서 항상 신선한 토큰)
+  const prevMonthRef = useRef<string>('');
   useEffect(() => {
-    if (!gcalToken) return;
-    scheduleAutoRefresh((newToken) => {
-      setGcalToken(newToken);
-      setGcalError(null);
-    });
-  }, [gcalToken]);
+    const key = `${viewYear}-${viewMonth}`;
+    if (prevMonthRef.current === key) return;
+    prevMonthRef.current = key;
+    if (isGCalConnected() || gcalToken) {
+      loadGCalEvents(viewYear, viewMonth);
+    }
+  }, [viewYear, viewMonth, loadGCalEvents, gcalToken]);
 
   const handleConnectGCal = async () => {
     setGcalLoading(true); setGcalError(null);
     try {
       const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-      let token: string;
       if (isTauri) {
         let isMobile = false;
         try { const { type } = await import('@tauri-apps/plugin-os'); isMobile = type() === 'android' || type() === 'ios'; } catch { }
         if (isMobile) { await connectGoogleCalendarRedirect(); setGcalLoading(false); return; }
-        token = await connectGoogleCalendarDesktop({
+        const token = await connectGoogleCalendarDesktop({
           apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
           authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '',
           projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '',
         });
+        setGcalToken(token);
+        markGCalConnected(true);
       } else {
-        token = await connectGoogleCalendar();
+        // 웹: Cloud Function OAuth 플로우 (현재 탭에서 이동)
+        await connectGoogleCalendarServer();
+        // 이후 gcalOAuthCallback이 /calendar?gcal_success=1 로 리다이렉트
+        // → 페이지 마운트 시 checkGCalOAuthReturn()이 처리
       }
-      setGcalToken(token);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       setGcalError(msg === 'timeout' ? 'timeout' : 'connect_failed');

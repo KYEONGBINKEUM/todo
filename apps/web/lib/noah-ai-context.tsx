@@ -23,6 +23,7 @@ export type NoahAIAction =
   | 'youtube_to_note'
   | 'youtube_to_mindmap'
   | 'generate_mindmap'
+  | 'calendar_add_event'
   | 'confirm_write_note'
   | 'youtube_choice';
 

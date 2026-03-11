@@ -30,6 +30,26 @@ export function markGCalConnected(connected: boolean) {
   }
 }
 
+// ── 웹: Firebase 팝업 OAuth (즉시 토큰 획득, 세션 한정) ──────────────────────
+
+/**
+ * Firebase signInWithPopup으로 Google Calendar 연동
+ * access token을 즉시 반환 (약 1시간 유효, 세션 내 사용)
+ */
+export async function connectGoogleCalendar(): Promise<string> {
+  const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/calendar.events.readonly');
+  provider.setCustomParameters({ prompt: 'consent' });
+  const result = await signInWithPopup(auth, provider);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const token = credential?.accessToken;
+  if (!token) throw new Error('no_token');
+  markGCalConnected(true);
+  setGCalConnectedFirestore(true);
+  return token;
+}
+
 // ── 웹: Cloud Function OAuth URL로 리다이렉트 ──────────────────────────────
 
 /**

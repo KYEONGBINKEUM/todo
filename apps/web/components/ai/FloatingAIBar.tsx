@@ -9,12 +9,14 @@ import NoahAIUpgradePrompt from './NoahAIUpgradePrompt';
 
 interface FloatingAIBarProps {
   getContext: (text: string) => Record<string, any>;
+  getAction?: (text: string) => NoahAIAction;
   onResult?: (action: NoahAIAction, result: any) => void;
   placeholder?: string;
 }
 
 export default function FloatingAIBar({
   getContext,
+  getAction,
   onResult,
   placeholder = 'AI에게 질문하거나 명령하세요...',
 }: FloatingAIBarProps) {
@@ -49,21 +51,25 @@ export default function FloatingAIBar({
     setInputValue('');
 
     try {
+      const action: NoahAIAction = getAction ? getAction(text) : 'chat';
       const context = getContext(text);
       context.__userText = text;
-      const response = await callNoahAI('chat', context, language);
+      const response = await callNoahAI(action, context, language);
       const res = response.result;
 
       let preview = '';
-      if (typeof res === 'string') preview = res;
+      if (action === 'calendar_add_event' && res?.title) {
+        preview = `일정 추가: ${res.title} (${res.date}${res.startTime ? ' ' + res.startTime : ''})`;
+      } else if (typeof res === 'string') preview = res;
+      else if (res?.reply) preview = res.reply;
       else if (res?.text) preview = res.text;
       else if (res?.suggestions?.length) preview = res.suggestions.map((s: any) => `• ${s.title}`).join('\n');
       else if (res?.tasks?.length) preview = res.tasks.map((t: any) => `• ${t.title}`).join('\n');
       else if (res?.blocks?.length) preview = res.blocks.map((b: any) => b.content).filter(Boolean).join('\n');
       else preview = JSON.stringify(res, null, 2).slice(0, 400);
 
-      setResult({ action: 'chat', data: res, text: preview });
-      if (onResult) onResult('chat', res);
+      setResult({ action, data: res, text: preview });
+      if (onResult) onResult(action, res);
     } catch (err) {
       console.error('[FloatingAIBar]', err);
     } finally {

@@ -4,6 +4,7 @@ import { buildNoteCompleterPrompt } from './note-completer';
 import { buildYouTubeToNotePrompt, buildYouTubeToMindmapPrompt } from './youtube-analyzer';
 import { buildMindmapGeneratorPrompt } from './mindmap-generator';
 import { buildChatPrompt } from './chat';
+import { buildCalendarEventPrompt } from './calendar-event';
 
 export type NoahAIAction =
   | 'chat'
@@ -15,7 +16,8 @@ export type NoahAIAction =
   | 'complete_note'
   | 'youtube_to_note'
   | 'youtube_to_mindmap'
-  | 'generate_mindmap';
+  | 'generate_mindmap'
+  | 'calendar_add_event';
 
 interface PromptResult {
   system: string;
@@ -50,6 +52,8 @@ export function buildPrompt(action: NoahAIAction, context: Record<string, any>, 
       return buildYouTubeToMindmapPrompt(context, langInstruction);
     case 'generate_mindmap':
       return buildMindmapGeneratorPrompt(context, langInstruction);
+    case 'calendar_add_event':
+      return buildCalendarEventPrompt(context, langInstruction);
     default:
       throw new Error(`Unknown action: ${action}`);
   }

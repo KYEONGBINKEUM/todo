@@ -14,7 +14,7 @@ import {
 import {
   isGCalConnected,
   markGCalConnected,
-  connectGoogleCalendarServer,
+  connectGoogleCalendar,
   connectGoogleCalendarDesktop,
   connectGoogleCalendarRedirect,
   checkGCalRedirectResult,
@@ -417,12 +417,19 @@ export default function CalendarPage() {
     });
   }, []);
 
-  const loadGCalEvents = useCallback(async (year: number, month: number) => {
+  const loadGCalEvents = useCallback(async (year: number, month: number, directToken?: string) => {
     setGcalLoading(true); setGcalError(null);
     try {
-      // Cloud Function에서 항상 유효한 토큰 조회 (서버에서 refresh token으로 자동 갱신)
-      const token = await getGCalTokenFromServer();
-      setGcalToken(token);
+      let token = directToken;
+      if (!token) {
+        // 서버 Cloud Function에서 토큰 조회 (refresh token 기반 자동 갱신)
+        try {
+          token = await getGCalTokenFromServer();
+          setGcalToken(token);
+        } catch {
+          throw new Error('token_expired');
+        }
+      }
       const raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));
       setGcalDisplayEvents(normalizeGCalEvents(raw));
     } catch (err) {
@@ -502,10 +509,10 @@ export default function CalendarPage() {
         setGcalToken(token);
         markGCalConnected(true);
       } else {
-        // 웹: Cloud Function OAuth 플로우 (현재 탭에서 이동)
-        await connectGoogleCalendarServer();
-        // 이후 gcalOAuthCallback이 /calendar?gcal_success=1 로 리다이렉트
-        // → 페이지 마운트 시 checkGCalOAuthReturn()이 처리
+        // 웹: Firebase 팝업 OAuth → 즉시 토큰 획득
+        const token = await connectGoogleCalendar();
+        setGcalToken(token);
+        await loadGCalEvents(viewYear, viewMonth, token);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
@@ -848,13 +855,31 @@ export default function CalendarPage() {
 
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
+        getAction={(text) => {
+          const addPattern = /일정.*(추가|등록|생성|만들|넣어)|add.*event|새.*일정|schedule.*(add|create)/i;
+          if (addPattern.test(text)) return 'calendar_add_event';
+          return 'chat';
+        }}
         getContext={(text) => ({
+          today: todayDateStr,
+          userMessage: text,
           todayEvents: gcalDisplayEvents.filter((e) => e.dateStr === todayDateStr).map((e) => ({ title: e.title, startTime: e.startTime })),
           weekEvents: gcalDisplayEvents.slice(0, 30).map((e) => ({ title: e.title, date: e.dateStr, startTime: e.startTime })),
           tasks: tasks.filter((t) => t.myDay && t.status !== 'completed').slice(0, 10).map((t) => ({ title: t.title, priority: t.priority, dueDate: t.dueDate })),
-          userMessage: text,
         })}
-        placeholder="캘린더 일정에 대해 AI에게 질문하세요..."
+        onResult={async (action, result) => {
+          if (action === 'calendar_add_event' && result?.title && result?.date && user) {
+            await addCalendarEvent(user.uid, {
+              title: result.title,
+              date: result.date,
+              startTime: result.startTime ?? undefined,
+              endTime: result.endTime ?? undefined,
+              allDay: result.allDay ?? !result.startTime,
+              color: '#e94560',
+            });
+          }
+        }}
+        placeholder="캘린더 일정에 대해 AI에게 질문하거나 일정을 추가하세요..."
       />
     </div>
   );

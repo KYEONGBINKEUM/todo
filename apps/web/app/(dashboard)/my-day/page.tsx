@@ -850,16 +850,6 @@ export default function MyDayPage() {
                 <button onClick={(e) => { e.stopPropagation(); handleToggleStar(task); }} className={`text-lg transition-all duration-200 flex-shrink-0 ${task.starred ? 'text-amber-400' : 'text-text-inactive hover:text-amber-400/60'}`}>
                   {task.starred ? '★' : '☆'}
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setSelectedTaskId(task.id!); }}
-                  className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-text-secondary transition-all flex-shrink-0"
-                  title={t('myDay.viewDetail')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                </button>
                 <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task); }} className="opacity-0 group-hover:opacity-100 text-text-inactive hover:text-[#e94560] transition-all text-lg flex-shrink-0">×</button>
               </div>
             );

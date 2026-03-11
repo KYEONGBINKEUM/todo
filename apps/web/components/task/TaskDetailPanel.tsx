@@ -44,6 +44,8 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [editingSubTitle, setEditingSubTitle] = useState('');
   const editingSubRef = useRef<HTMLInputElement>(null);
+  const [subDragSrcIdx, setSubDragSrcIdx] = useState<number | null>(null);
+  const [subDragOverIdx, setSubDragOverIdx] = useState<number | null>(null);
 
   // ── Memo ───────────────────────────────────────────────────────────────────
   const [memoValue, setMemoValue] = useState(task.memo ?? '');
@@ -513,58 +515,84 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }: T
             )}
 
             <div className="space-y-1 mb-3">
-              {subTasks.map((sub) => (
-                <div key={sub.id} className="flex items-center gap-2.5 group py-1 px-2 -mx-2 rounded-lg hover:bg-border/30 transition-colors">
-                  {/* 체크박스 */}
-                  <button
-                    onClick={() => toggleSubTask(sub.id)}
-                    className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 ${
-                      sub.completed
-                        ? 'bg-gradient-to-br from-[#e94560] to-[#8b5cf6] border-transparent'
-                        : 'hover:border-[#e94560]'
-                    }`}
-                    style={sub.completed ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
+              {subTasks.map((sub, idx) => {
+                const isDragging = subDragSrcIdx === idx;
+                const isDragOver = subDragOverIdx === idx;
+                return (
+                  <div
+                    key={sub.id}
+                    draggable
+                    onDragStart={() => { setSubDragSrcIdx(idx); setSubDragOverIdx(null); }}
+                    onDragOver={(e) => { e.preventDefault(); if (idx !== subDragSrcIdx) setSubDragOverIdx(idx); }}
+                    onDragLeave={() => setSubDragOverIdx(null)}
+                    onDrop={() => {
+                      if (subDragSrcIdx === null || subDragSrcIdx === idx) { setSubDragSrcIdx(null); setSubDragOverIdx(null); return; }
+                      const reordered = [...subTasks];
+                      const [moved] = reordered.splice(subDragSrcIdx, 1);
+                      reordered.splice(idx, 0, moved);
+                      onUpdate({ subTasks: reordered });
+                      setSubDragSrcIdx(null); setSubDragOverIdx(null);
+                    }}
+                    onDragEnd={() => { setSubDragSrcIdx(null); setSubDragOverIdx(null); }}
+                    className={`flex items-center gap-2.5 group py-1 px-2 -mx-2 rounded-lg transition-colors cursor-grab active:cursor-grabbing
+                      ${isDragging ? 'opacity-40' : ''}
+                      ${isDragOver ? 'border-t-2 border-[#e94560]' : 'hover:bg-border/30'}
+                    `}
                   >
-                    {sub.completed && (
-                      <svg width="8" height="8" viewBox="0 0 14 14" fill="none">
-                        <path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
+                    {/* 드래그 핸들 */}
+                    <span className="opacity-0 group-hover:opacity-40 text-text-muted flex-shrink-0 cursor-grab" style={{ fontSize: 10 }}>⠿</span>
 
-                  {/* 제목 — 클릭 시 인라인 편집 */}
-                  {editingSubId === sub.id ? (
-                    <input
-                      ref={editingSubRef}
-                      value={editingSubTitle}
-                      onChange={(e) => setEditingSubTitle(e.target.value)}
-                      onBlur={() => saveSubTaskEdit(sub.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') saveSubTaskEdit(sub.id);
-                        if (e.key === 'Escape') setEditingSubId(null);
-                      }}
-                      className="flex-1 text-xs text-text-primary bg-background border border-[#e94560]/50 rounded px-1.5 py-0.5 focus:outline-none"
-                    />
-                  ) : (
-                    <span
-                      onClick={() => startEditSubTask(sub)}
-                      className={`flex-1 text-xs cursor-text ${
-                        sub.completed ? 'line-through text-text-inactive' : 'text-text-primary hover:text-[#e94560]'
+                    {/* 체크박스 */}
+                    <button
+                      onClick={() => toggleSubTask(sub.id)}
+                      className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 ${
+                        sub.completed
+                          ? 'bg-gradient-to-br from-[#e94560] to-[#8b5cf6] border-transparent'
+                          : 'hover:border-[#e94560]'
                       }`}
-                      title="클릭하여 수정"
+                      style={sub.completed ? undefined : { borderColor: 'var(--color-checkbox-border)' }}
                     >
-                      {sub.title}
-                    </span>
-                  )}
+                      {sub.completed && (
+                        <svg width="8" height="8" viewBox="0 0 14 14" fill="none">
+                          <path d="M3 7L6 10L11 4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
 
-                  <button
-                    onClick={() => deleteSubTask(sub.id)}
-                    className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-sm"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    {/* 제목 — 클릭 시 인라인 편집 */}
+                    {editingSubId === sub.id ? (
+                      <input
+                        ref={editingSubRef}
+                        value={editingSubTitle}
+                        onChange={(e) => setEditingSubTitle(e.target.value)}
+                        onBlur={() => saveSubTaskEdit(sub.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveSubTaskEdit(sub.id);
+                          if (e.key === 'Escape') setEditingSubId(null);
+                        }}
+                        className="flex-1 text-xs text-text-primary bg-background border border-[#e94560]/50 rounded px-1.5 py-0.5 focus:outline-none"
+                      />
+                    ) : (
+                      <span
+                        onClick={() => startEditSubTask(sub)}
+                        className={`flex-1 text-xs cursor-text ${
+                          sub.completed ? 'line-through text-text-inactive' : 'text-text-primary hover:text-[#e94560]'
+                        }`}
+                        title="클릭하여 수정"
+                      >
+                        {sub.title}
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => deleteSubTask(sub.id)}
+                      className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-text-muted hover:text-[#e94560] transition-all text-sm"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Add sub-task input */}

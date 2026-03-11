@@ -6,6 +6,23 @@ import { auth } from './firebase';
 // refresh token을 Firestore에 서버에서 저장하므로 영구 연동 가능
 
 const CONNECTED_KEY = 'gcal_connected';
+const TOKEN_SESSION_KEY = 'gcal_access_token';
+
+/** sessionStorage에 access token 저장 (세션 내 지속) */
+export function saveGCalToken(token: string) {
+  if (typeof window !== 'undefined') sessionStorage.setItem(TOKEN_SESSION_KEY, token);
+}
+
+/** sessionStorage에서 access token 조회 */
+export function getStoredGCalToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem(TOKEN_SESSION_KEY);
+}
+
+/** sessionStorage에서 access token 삭제 */
+export function clearGCalToken() {
+  if (typeof window !== 'undefined') sessionStorage.removeItem(TOKEN_SESSION_KEY);
+}
 
 async function setGCalConnectedFirestore(connected: boolean) {
   const uid = auth.currentUser?.uid;
@@ -37,14 +54,37 @@ export function markGCalConnected(connected: boolean) {
  * access token을 즉시 반환 (약 1시간 유효, 세션 내 사용)
  */
 export async function connectGoogleCalendar(): Promise<string> {
-  const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
+  const { GoogleAuthProvider, signInWithPopup, linkWithPopup } = await import('firebase/auth');
   const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/calendar.events.readonly');
+  // calendar.events 로 읽기+쓰기 권한 (AI 일정 생성 포함)
+  provider.addScope('https://www.googleapis.com/auth/calendar.events');
   provider.setCustomParameters({ prompt: 'consent' });
-  const result = await signInWithPopup(auth, provider);
+
+  let result;
+  if (auth.currentUser) {
+    // 이미 로그인된 경우: link 시도 → 이미 연결됐으면 signIn으로 재시도
+    try {
+      result = await linkWithPopup(auth.currentUser, provider);
+    } catch (err: any) {
+      if (
+        err.code === 'auth/credential-already-in-use' ||
+        err.code === 'auth/provider-already-linked' ||
+        err.code === 'auth/popup-closed-by-user'
+      ) {
+        if (err.code === 'auth/popup-closed-by-user') throw new Error('popup_closed');
+        result = await signInWithPopup(auth, provider);
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    result = await signInWithPopup(auth, provider);
+  }
+
   const credential = GoogleAuthProvider.credentialFromResult(result);
   const token = credential?.accessToken;
   if (!token) throw new Error('no_token');
+  saveGCalToken(token);
   markGCalConnected(true);
   setGCalConnectedFirestore(true);
   return token;
@@ -82,6 +122,7 @@ export async function getGCalTokenFromServer(): Promise<string> {
  */
 export async function disconnectGoogleCalendar(): Promise<void> {
   localStorage.removeItem(CONNECTED_KEY);
+  clearGCalToken();
   try {
     const functions = getFunctions();
     const disconnect = httpsCallable(functions, 'gcalDisconnect');

@@ -9,6 +9,7 @@ import {
   deleteCalcHistory,
   clearCalcHistoryByMode,
 } from '@/lib/firestore';
+import FloatingAIBar from '@/components/ai/FloatingAIBar';
 
 type Mode = 'general' | 'ratio' | 'unit' | 'color';
 
@@ -749,6 +750,15 @@ export default function CalculatorPage() {
           </div>
         </div>
       </div>
+
+      <FloatingAIBar
+        getContext={(text) => ({
+          mode,
+          recentHistory: history.slice(0, 5).map((h) => `${h.expr} = ${h.result}`),
+          userMessage: text,
+        })}
+        placeholder="계산에 대해 AI에게 질문하세요 (예: 15% 세금 포함하면 얼마야?)..."
+      />
     </div>
   );
 }

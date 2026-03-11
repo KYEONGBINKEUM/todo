@@ -21,6 +21,8 @@ import {
   checkGCalOAuthReturn,
   disconnectGoogleCalendar,
   getGCalTokenFromServer,
+  getStoredGCalToken,
+  saveGCalToken,
   fetchGCalEvents,
   gcalColor,
   type GCalEvent,
@@ -420,15 +422,18 @@ export default function CalendarPage() {
   const loadGCalEvents = useCallback(async (year: number, month: number, directToken?: string) => {
     setGcalLoading(true); setGcalError(null);
     try {
-      let token = directToken;
+      let token = directToken ?? getStoredGCalToken();
       if (!token) {
-        // 서버 Cloud Function에서 토큰 조회 (refresh token 기반 자동 갱신)
+        // sessionStorage에 없으면 서버 Cloud Function에서 refresh token 기반 갱신 시도
         try {
           token = await getGCalTokenFromServer();
           setGcalToken(token);
+          saveGCalToken(token);
         } catch {
           throw new Error('token_expired');
         }
+      } else {
+        setGcalToken(token);
       }
       const raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));
       setGcalDisplayEvents(normalizeGCalEvents(raw));
@@ -507,6 +512,7 @@ export default function CalendarPage() {
           projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '',
         });
         setGcalToken(token);
+        saveGCalToken(token);
         markGCalConnected(true);
       } else {
         // 웹: Firebase 팝업 OAuth → 즉시 토큰 획득

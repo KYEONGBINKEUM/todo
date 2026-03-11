@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { useI18n } from '@/lib/i18n-context';
+import FloatingAIBar from '@/components/ai/FloatingAIBar';
 
 const LANGUAGES = [
   { code: 'ko', label: '한국어' },
@@ -254,6 +255,17 @@ export default function TranslatePage() {
           ))}
         </div>
       </div>
+
+      <FloatingAIBar
+        getContext={(text) => ({
+          srcLang,
+          tgtLang,
+          srcText,
+          translatedText: result,
+          userMessage: text,
+        })}
+        placeholder="번역에 대해 AI에게 질문하세요 (예: 더 자연스럽게 바꿔줘)..."
+      />
     </div>
   );
 }

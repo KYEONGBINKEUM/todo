@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/i18n-context';
 import { useDataStore } from '@/lib/data-store';
 import { getUserSettings } from '@/lib/firestore';
 import TimeboxPlanner from '@/components/timebox/TimeboxPlanner';
+import FloatingAIBar from '@/components/ai/FloatingAIBar';
 
 function getTodayStr() {
   const d = new Date();
@@ -184,6 +185,15 @@ export default function TimeboxPage() {
 
         <TimeboxPlanner date={selectedDate} tasks={myDayTasks} />
       </div>
+
+      <FloatingAIBar
+        getContext={(text) => ({
+          date: selectedDate,
+          tasks: myDayTasks.map((t) => ({ title: t.title, priority: t.priority, dueDate: t.dueDate })),
+          userMessage: text,
+        })}
+        placeholder="타임박스 일정에 대해 AI에게 질문하세요..."
+      />
     </div>
   );
 }

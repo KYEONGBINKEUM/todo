@@ -458,7 +458,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
 
                   {/* Time label */}
                   <div className="w-14 flex-shrink-0 flex items-center justify-end pr-3">
-                    <span className={`font-mono leading-none select-none ${interval <= 10 ? 'text-[10px]' : 'text-[11px]'} ${
+                    <span className={`font-mono leading-none select-none text-[11px] ${
                       isCurrent ? 'text-[#e94560] font-bold' :
                       isHour ? 'text-text-secondary' : 'text-text-muted/35'
                     }`}>

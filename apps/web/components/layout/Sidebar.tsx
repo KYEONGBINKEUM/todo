@@ -345,31 +345,30 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </div>
 
           {/* AI token usage bar (Pro+ only) */}
-          {aiTokenLimit > 0 && (
-            <div className="mt-2 px-2">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[9px] text-text-muted">
-                  AI {(aiTokensUsed / 1000).toFixed(0)}K / {(aiTokenLimit / 1000).toFixed(0)}K
-                </span>
-                <span className="text-[9px] text-text-inactive">
-                  {Math.min(100, Math.round(aiTokensUsed / aiTokenLimit * 100))}%
-                </span>
+          {aiTokenLimit > 0 && (() => {
+            const pct = Math.min(100, (aiTokensUsed / aiTokenLimit) * 100);
+            return (
+              <div className="mt-2 px-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] text-text-muted">토큰 사용량</span>
+                  <span className={`text-[9px] font-bold ${pct > 90 ? 'text-[#e94560]' : pct > 70 ? 'text-amber-500' : 'text-text-inactive'}`}>
+                    {pct.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      pct > 90 ? 'bg-[#e94560]' : pct > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6]'
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-[8px] text-text-inactive mt-0.5 text-right">
+                  {(aiTokensUsed / 1000).toFixed(0)}K / {(aiTokenLimit / 1000).toFixed(0)}K
+                </p>
               </div>
-              <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
-                {(() => {
-                  const pct = Math.min(100, (aiTokensUsed / aiTokenLimit) * 100);
-                  return (
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        pct > 90 ? 'bg-[#e94560]' : pct > 70 ? 'bg-amber-500' : 'bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6]'
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  );
-                })()}
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </aside>
 

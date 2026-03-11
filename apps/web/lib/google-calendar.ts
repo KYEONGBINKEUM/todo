@@ -8,6 +8,24 @@ const EXPIRY_KEY = 'gcal_token_expiry';
 const CONNECTED_KEY = 'gcal_connected';
 const PENDING_REDIRECT_KEY = 'gcal_pending_redirect';
 
+// 자동 갱신 타이머 (앱이 열려 있는 동안 만료 전에 조용히 재인증)
+let _autoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleAutoRefresh(onRefresh: (token: string) => void) {
+  if (_autoRefreshTimer) clearTimeout(_autoRefreshTimer);
+  const expiry = parseInt(localStorage.getItem(EXPIRY_KEY) ?? '0', 10);
+  // 만료 8분 전에 갱신 시도
+  const delay = expiry - Date.now() - 8 * 60 * 1000;
+  if (delay <= 0) return;
+  _autoRefreshTimer = setTimeout(async () => {
+    const newToken = await silentReconnectGCal();
+    if (newToken) {
+      onRefresh(newToken);
+      scheduleAutoRefresh(onRefresh); // 다음 갱신 예약
+    }
+  }, delay);
+}
+
 function storeToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(EXPIRY_KEY, String(Date.now() + 55 * 60 * 1000));
@@ -22,6 +40,8 @@ async function setGCalConnectedFirestore(connected: boolean) {
     await setDoc(doc(db, `users/${uid}/settings/app`), { gcalConnected: connected }, { merge: true });
   } catch { /* non-critical */ }
 }
+
+export { scheduleAutoRefresh };
 
 export function getStoredGCalToken(): string | null {
   if (typeof window === 'undefined') return null;

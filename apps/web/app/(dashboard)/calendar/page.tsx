@@ -20,6 +20,7 @@ import {
   checkGCalRedirectResult,
   disconnectGoogleCalendar,
   silentReconnectGCal,
+  scheduleAutoRefresh,
   fetchGCalEvents,
   gcalColor,
   type GCalEvent,
@@ -477,6 +478,15 @@ export default function CalendarPage() {
     if (!gcalToken) return;
     loadGCalEvents(gcalToken, viewYear, viewMonth);
   }, [gcalToken, viewYear, viewMonth, loadGCalEvents]);
+
+  // 토큰 설정 시 만료 8분 전 자동 갱신 타이머 등록
+  useEffect(() => {
+    if (!gcalToken) return;
+    scheduleAutoRefresh((newToken) => {
+      setGcalToken(newToken);
+      setGcalError(null);
+    });
+  }, [gcalToken]);
 
   const handleConnectGCal = async () => {
     setGcalLoading(true); setGcalError(null);

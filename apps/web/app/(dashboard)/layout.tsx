@@ -82,7 +82,7 @@ export default function DashboardLayout({
         <div className="flex-1">{children}</div>
       </main>
 
-      <NoahAIButton />
+      {/* NoahAIButton 비활성화 — 채팅 패널 대신 페이지별 FloatingAIBar 사용 */}
     </div>
   );
 }

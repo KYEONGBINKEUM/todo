@@ -11,7 +11,7 @@ import {
 import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
-import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
+import FloatingAIBar from '@/components/ai/FloatingAIBar';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 
@@ -470,62 +470,6 @@ export default function MyDayPage() {
             <span className="text-2xl">☀️</span>
             <h2 className="text-2xl font-bold text-text-primary">{t('myDay.title')}</h2>
             <div className="ml-auto flex items-center gap-2 relative">
-              <NoahAIPageActions
-                actions={[
-                  { id: 'prioritize', label: t('ai.chip.prioritize'), icon: '🎯', action: 'prioritize' as NoahAIAction, description: t('ai.chip.prioritize') },
-                  { id: 'suggest', label: t('ai.chip.suggest'), icon: '💡', action: 'suggest_tasks' as NoahAIAction, description: t('ai.chip.suggest') },
-                  { id: 'breakdown', label: t('ai.chip.breakdown'), icon: '📋', action: 'breakdown' as NoahAIAction, description: t('ai.chip.breakdown') },
-                ]}
-                getContext={(action) => {
-                  const taskSummaries = tasks.slice(0, 20).map((t) => ({
-                    id: t.id, title: t.title, status: t.status,
-                    priority: t.priority, dueDate: t.dueDate || null, myDay: t.myDay,
-                  }));
-                  if (action === 'breakdown') {
-                    const target = tasks.find((t) => t.starred && t.status !== 'completed')
-                      || tasks.find((t) => t.status !== 'completed');
-                    return { task: target ? { title: target.title, memo: target.memo } : {} };
-                  }
-                  return { tasks: taskSummaries };
-                }}
-                onResult={async (action, result) => {
-                  if (!user) return;
-                  if (action === 'suggest_tasks' && result?.suggestions) {
-                    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
-                    for (const s of result.suggestions) {
-                      try {
-                        await addTaskDB(user.uid, {
-                          title: s.title, status: 'todo', priority: s.priority || 'medium',
-                          starred: false, listId: lists[0]?.id || '', myDay: true,
-                          tags: [], order: Date.now(), createdDate: today,
-                        });
-                      } catch { /* ignore */ }
-                    }
-                    window.location.reload();
-                  }
-                  if (action === 'prioritize' && result?.priorities) {
-                    for (const p of result.priorities) {
-                      if (p.taskId) {
-                        try { await updateTask(user.uid, p.taskId, { priority: p.suggestedPriority }); } catch { /* ignore */ }
-                      }
-                    }
-                    window.location.reload();
-                  }
-                  if (action === 'breakdown' && result?.subtasks) {
-                    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
-                    for (const s of result.subtasks) {
-                      try {
-                        await addTaskDB(user.uid, {
-                          title: s.title, status: 'todo', priority: 'medium',
-                          starred: false, listId: lists[0]?.id || '', myDay: true,
-                          tags: [], order: Date.now(), createdDate: today,
-                        });
-                      } catch { /* ignore */ }
-                    }
-                    window.location.reload();
-                  }
-                }}
-              />
               <button
                 onClick={() => setShowCleanup(!showCleanup)}
                 className="px-3 py-1.5 text-[11px] text-text-muted hover:text-[#e94560] border border-border hover:border-[#e94560]/30 rounded-lg transition-colors"
@@ -1002,6 +946,65 @@ export default function MyDayPage() {
           onDelete={() => handleDeleteTask(selectedTask)}
         />
       )}
+
+      {/* 플로팅 AI 바 */}
+      <FloatingAIBar
+        chips={[
+          { id: 'prioritize', label: '우선순위 분석', icon: '🎯', action: 'prioritize' as NoahAIAction },
+          { id: 'suggest', label: '할일 추천', icon: '💡', action: 'suggest_tasks' as NoahAIAction },
+          { id: 'breakdown', label: '세부 분해', icon: '📋', action: 'breakdown' as NoahAIAction },
+        ]}
+        getContext={(action) => {
+          const taskSummaries = tasks.slice(0, 20).map((tk) => ({
+            id: tk.id, title: tk.title, status: tk.status,
+            priority: tk.priority, dueDate: tk.dueDate || null, myDay: tk.myDay,
+          }));
+          if (action === 'breakdown') {
+            const target = tasks.find((tk) => tk.starred && tk.status !== 'completed')
+              || tasks.find((tk) => tk.status !== 'completed');
+            return { task: target ? { title: target.title, memo: target.memo } : {}, tasks: taskSummaries };
+          }
+          return { tasks: taskSummaries };
+        }}
+        onResult={async (action, result) => {
+          if (!user) return;
+          const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+          if (action === 'suggest_tasks' && result?.suggestions) {
+            for (const s of result.suggestions) {
+              try {
+                await addTaskDB(user.uid, {
+                  title: s.title, status: 'todo', priority: s.priority || 'medium',
+                  starred: false, listId: lists[0]?.id || '', myDay: true,
+                  tags: [], order: Date.now(), createdDate: today,
+                });
+              } catch { /* ignore */ }
+            }
+            window.location.reload();
+          }
+          if (action === 'prioritize' && result?.priorities) {
+            for (const p of result.priorities) {
+              if (p.taskId) {
+                try { await updateTask(user.uid, p.taskId, { priority: p.suggestedPriority }); } catch { /* ignore */ }
+              }
+            }
+            window.location.reload();
+          }
+          if (action === 'breakdown' && result?.subtasks) {
+            for (const s of result.subtasks) {
+              try {
+                await addTaskDB(user.uid, {
+                  title: s.title, status: 'todo', priority: 'medium',
+                  starred: false, listId: lists[0]?.id || '', myDay: true,
+                  tags: [], order: Date.now(), createdDate: today,
+                });
+              } catch { /* ignore */ }
+            }
+            window.location.reload();
+          }
+        }}
+        applyLabel="할일에 적용하기"
+        placeholder="오늘의 할일에 대해 AI에게 물어보세요..."
+      />
     </div>
   );
 }

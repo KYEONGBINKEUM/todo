@@ -12,7 +12,7 @@ import {
   restoreFolder as restoreFolderDB, permanentDeleteFolder as permanentDeleteFolderDB,
 } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
-import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
+import FloatingAIBar from '@/components/ai/FloatingAIBar';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import { callNoahAI } from '@/lib/noah-ai';
 import hljs from 'highlight.js/lib/common';
@@ -1951,55 +1951,6 @@ function NotesContent() {
                   )}
                 </button>
 
-                {/* AI Actions */}
-                <div className="w-px h-4 bg-border mx-1" />
-                <NoahAIPageActions
-                  actions={[
-                    { id: 'auto_write', label: '자동 작성', icon: '✍️', action: 'auto_write_note' as NoahAIAction, description: '제목으로 노트 자동 생성' },
-                    { id: 'complete', label: '이어쓰기', icon: '📝', action: 'complete_note' as NoahAIAction, description: '현재 내용 이어서 작성' },
-                    { id: 'youtube', label: 'YouTube → 노트', icon: '🎬', action: 'youtube_to_note' as NoahAIAction, description: '영상 요약 노트 생성' },
-                  ]}
-                  getContext={(action) => {
-                    if (action === 'auto_write_note') {
-                      return { title: activeNote.title, existingBlocks: activeNote.blocks.slice(0, 10) };
-                    }
-                    if (action === 'complete_note') {
-                      return { title: activeNote.title, blocks: activeNote.blocks.slice(-15) };
-                    }
-                    return {};
-                  }}
-                  onResult={(action, result) => {
-                    if (!result?.blocks || !activeNote) return;
-                    const aiBlocks: NoteBlock[] = result.blocks.map((b: any, i: number) => ({
-                      id: `${Date.now()}-ai-${i}`,
-                      type: b.type || 'text',
-                      content: b.content || '',
-                    }));
-                    if (aiBlocks.length === 0) return;
-
-                    if (action === 'complete_note') {
-                      // Append AI blocks after existing content
-                      const updatedNote: Note = {
-                        ...activeNote,
-                        blocks: [...activeNote.blocks, ...aiBlocks],
-                        updated_at: new Date().toISOString(),
-                      };
-                      setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updatedNote : n));
-                      saveNoteToFirestore(updatedNote);
-                    } else {
-                      // auto_write or youtube: replace empty blocks or set all blocks
-                      const isEmpty = activeNote.blocks.length <= 1 && !activeNote.blocks[0]?.content?.trim();
-                      const updatedNote: Note = {
-                        ...activeNote,
-                        title: result.title || activeNote.title,
-                        blocks: isEmpty ? aiBlocks : [...activeNote.blocks, { id: `${Date.now()}-div`, type: 'divider' as const, content: '' }, ...aiBlocks],
-                        updated_at: new Date().toISOString(),
-                      };
-                      setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updatedNote : n));
-                      saveNoteToFirestore(updatedNote);
-                    }
-                  }}
-                />
 
                 {/* Desktop: inline block type buttons */}
                 {!readOnly && (
@@ -2270,6 +2221,49 @@ function NotesContent() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* 플로팅 AI 바 — 노트 선택 시 활성화 */}
+      {activeNote && (
+        <FloatingAIBar
+          chips={[
+            { id: 'auto_write', label: '자동 작성', icon: '✍️', action: 'auto_write_note' as NoahAIAction },
+            { id: 'complete', label: '이어쓰기', icon: '📝', action: 'complete_note' as NoahAIAction },
+            { id: 'youtube', label: 'YouTube → 노트', icon: '🎬', action: 'youtube_to_note' as NoahAIAction, needsInput: true, inputPlaceholder: 'YouTube URL을 입력하세요...' },
+          ]}
+          getContext={(action, text) => {
+            if (action === 'auto_write_note') return { title: activeNote.title, existingBlocks: activeNote.blocks.slice(0, 10) };
+            if (action === 'complete_note') return { title: activeNote.title, blocks: activeNote.blocks.slice(-15) };
+            if (action === 'youtube_to_note') return { url: text ?? '' };
+            return { title: activeNote.title, blocks: activeNote.blocks.slice(0, 10) };
+          }}
+          onResult={(action, result) => {
+            if (!result?.blocks || !activeNote) return;
+            const aiBlocks: NoteBlock[] = result.blocks.map((b: any, i: number) => ({
+              id: `${Date.now()}-ai-${i}`,
+              type: b.type || 'text',
+              content: b.content || '',
+            }));
+            if (aiBlocks.length === 0) return;
+            if (action === 'complete_note') {
+              const updated = { ...activeNote, blocks: [...activeNote.blocks, ...aiBlocks], updated_at: new Date().toISOString() };
+              setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updated : n));
+              saveNoteToFirestore(updated);
+            } else {
+              const isEmpty = activeNote.blocks.length <= 1 && !activeNote.blocks[0]?.content?.trim();
+              const updated = {
+                ...activeNote,
+                title: result.title || activeNote.title,
+                blocks: isEmpty ? aiBlocks : [...activeNote.blocks, { id: `${Date.now()}-div`, type: 'divider' as const, content: '' }, ...aiBlocks],
+                updated_at: new Date().toISOString(),
+              };
+              setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updated : n));
+              saveNoteToFirestore(updated);
+            }
+          }}
+          applyLabel="노트에 적용하기"
+          placeholder="현재 노트에 대해 AI에게 질문하세요..."
+        />
       )}
     </div>
   );

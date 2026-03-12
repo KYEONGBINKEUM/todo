@@ -194,17 +194,18 @@ export default function TimeboxPage() {
 
       <FloatingAIBar
         getAction={(text) => {
-          const schedulePattern = /일정.*짜|스케줄|계획.*짜|오늘.*계획|최적.*순서|어떤.*순서|schedule|plan.*today/i;
+          const schedulePattern = /일정.*짜|스케줄|계획.*짜|오늘.*계획|최적.*순서|어떤.*순서|schedule|plan.*today|\d{1,2}시.*(?:추가|넣어|등록|에)|\d{2}:\d{2}.*(?:추가|넣어|등록)|(?:추가|넣어|등록).*\d{1,2}시/i;
           if (schedulePattern.test(text)) return 'smart_schedule';
           return 'chat';
         }}
         getContext={(text) => ({
           date: selectedDate,
+          userMessage: text,
+          currentPage: '/timebox',
           tasks: myDayTasks.map((t) => ({ title: t.title, priority: t.priority, dueDate: t.dueDate })),
           calendarEvents: calendarEvents.filter((ev) => ev.date === selectedDate).map((ev) => ({
             title: ev.title, startTime: ev.startTime, allDay: ev.allDay,
           })),
-          userMessage: text,
         })}
         onResult={(action, result) => {
           if (action === 'smart_schedule' && result?.schedule?.length) {

@@ -5,6 +5,7 @@ import { buildYouTubeToNotePrompt, buildYouTubeToMindmapPrompt } from './youtube
 import { buildMindmapGeneratorPrompt } from './mindmap-generator';
 import { buildChatPrompt } from './chat';
 import { buildCalendarEventPrompt } from './calendar-event';
+import { buildCalendarUpdatePrompt } from './calendar-update';
 import { buildWeeklyReviewPrompt } from './weekly-review';
 import { buildSmartSchedulePrompt } from './smart-schedule';
 import { buildExtractTasksPrompt } from './extract-tasks';
@@ -21,6 +22,7 @@ export type NoahAIAction =
   | 'youtube_to_mindmap'
   | 'generate_mindmap'
   | 'calendar_add_event'
+  | 'calendar_update_event'
   | 'weekly_review'
   | 'smart_schedule'
   | 'extract_tasks';
@@ -30,10 +32,6 @@ interface PromptResult {
   user: string;
 }
 
-/**
- * Build system + user prompts for a given action and context.
- * Language is passed so Gemini responds in the user's language.
- */
 export function buildPrompt(action: NoahAIAction, context: Record<string, any>, language: string): PromptResult {
   const langInstruction = getLanguageInstruction(language);
 
@@ -60,6 +58,8 @@ export function buildPrompt(action: NoahAIAction, context: Record<string, any>, 
       return buildMindmapGeneratorPrompt(context, langInstruction);
     case 'calendar_add_event':
       return buildCalendarEventPrompt(context, langInstruction);
+    case 'calendar_update_event':
+      return buildCalendarUpdatePrompt(context, langInstruction);
     case 'weekly_review':
       return buildWeeklyReviewPrompt(context, langInstruction);
     case 'smart_schedule':

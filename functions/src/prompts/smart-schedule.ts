@@ -1,7 +1,7 @@
 interface PromptResult { system: string; user: string; }
 
 export function buildSmartSchedulePrompt(context: Record<string, any>, langInstruction: string): PromptResult {
-  const { date = '', tasks = [], existingSlots = {}, calendarEvents = [], workStart = '09:00', workEnd = '18:00' } = context;
+  const { date = '', tasks = [], existingSlots = {}, calendarEvents = [], workStart = '09:00', workEnd = '18:00', userMessage = '' } = context;
 
   const taskList = tasks.map((t: any) =>
     `- ${t.title} [priority: ${t.priority}]${t.estimatedMinutes ? ` ~${t.estimatedMinutes}min` : ''}`
@@ -20,7 +20,8 @@ export function buildSmartSchedulePrompt(context: Record<string, any>, langInstr
 ${langInstruction}
 
 Work hours: ${workStart} ~ ${workEnd}
-Schedule tasks in 30-60 minute blocks. Leave breaks. Prioritize urgent/high tasks.
+If the user requests a specific single slot (e.g., "17:20에 시안작업"), return only that one slot.
+Otherwise schedule all tasks in 30-60 minute blocks. Leave breaks. Prioritize urgent/high tasks.
 
 Return ONLY valid JSON (no markdown) in this exact format:
 {
@@ -31,7 +32,7 @@ Return ONLY valid JSON (no markdown) in this exact format:
 }
 
 time must be HH:MM format. duration is in minutes.`,
-    user: `Date: ${date}
+    user: `${userMessage ? `User request: ${userMessage}\n\n` : ''}Date: ${date}
 Tasks to schedule:
 ${taskList}
 

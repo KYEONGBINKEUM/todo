@@ -70,7 +70,8 @@ export async function connectGoogleCalendar(): Promise<string> {
         result = await reauthenticateWithPopup(currentUser, provider);
       } catch (err: any) {
         if (err.code === 'auth/popup-closed-by-user') throw new Error('popup_closed');
-        throw err;
+        // reauthenticate 실패 시 signInWithPopup으로 fallback (토큰만 필요)
+        result = await signInWithPopup(auth, provider);
       }
     } else {
       // 이메일/비밀번호 유저: Google 연결 시도

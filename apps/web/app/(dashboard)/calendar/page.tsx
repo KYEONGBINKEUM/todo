@@ -862,19 +862,34 @@ export default function CalendarPage() {
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
         getAction={(text) => {
-          const addPattern = /일정.*(추가|등록|생성|만들|넣어)|add.*event|새.*일정|schedule.*(add|create)/i;
+          const updatePattern = /일정.*(변경|수정|바꿔|바꿔줘|업데이트|고쳐|옮겨)|변경.*일정|수정.*일정|(update|edit|change|move).*event|시간.*변경|날짜.*변경/i;
+          if (updatePattern.test(text)) return 'calendar_update_event';
+          const addPattern = /일정.*(추가|등록|생성|만들|넣어|잡아)|추가.*일정|(add|create|schedule).*event|새.*일정/i;
           if (addPattern.test(text)) return 'calendar_add_event';
           return 'chat';
         }}
-        getContext={(text) => ({
-          today: todayDateStr,
-          userMessage: text,
-          todayEvents: gcalDisplayEvents.filter((e) => e.dateStr === todayDateStr).map((e) => ({ title: e.title, startTime: e.startTime })),
-          weekEvents: gcalDisplayEvents.slice(0, 30).map((e) => ({ title: e.title, date: e.dateStr, startTime: e.startTime })),
-          tasks: tasks.filter((t) => t.myDay && t.status !== 'completed').slice(0, 10).map((t) => ({ title: t.title, priority: t.priority, dueDate: t.dueDate })),
-        })}
+        getContext={(text) => {
+          const noahEventsWithId = storeEvents.map((e) => ({
+            id: e.id, title: e.title, date: e.date,
+            startTime: e.startTime, endTime: e.endTime, source: 'noah',
+          }));
+          const allEvents = [
+            ...noahEventsWithId,
+            ...gcalDisplayEvents.map((e) => ({ id: e.id, title: e.title, date: e.dateStr, startTime: e.startTime, source: 'google' })),
+          ];
+          return {
+            today: todayDateStr,
+            userMessage: text,
+            currentPage: '/calendar',
+            allEvents: allEvents.slice(0, 60),
+            existingEvents: noahEventsWithId.slice(0, 60), // for update (IDs needed)
+            todayEvents: allEvents.filter((e) => e.date === todayDateStr),
+            tasks: tasks.filter((t) => t.myDay && t.status !== 'completed').slice(0, 10).map((t) => ({ title: t.title, priority: t.priority, dueDate: t.dueDate })),
+          };
+        }}
         onResult={async (action, result) => {
-          if (action === 'calendar_add_event' && result?.title && result?.date && user) {
+          if (!user) return;
+          if (action === 'calendar_add_event' && result?.title && result?.date) {
             await addCalendarEvent(user.uid, {
               title: result.title,
               date: result.date,
@@ -883,9 +898,19 @@ export default function CalendarPage() {
               allDay: result.allDay ?? !result.startTime,
               color: '#e94560',
             });
+          } else if (action === 'calendar_update_event' && result?.targetId) {
+            const updates: Record<string, any> = {};
+            if (result.newDate) updates.date = result.newDate;
+            if (result.newStartTime !== null && result.newStartTime !== undefined) updates.startTime = result.newStartTime;
+            if (result.newEndTime !== null && result.newEndTime !== undefined) updates.endTime = result.newEndTime;
+            if (result.newTitle) updates.title = result.newTitle;
+            if (typeof result.newAllDay === 'boolean') updates.allDay = result.newAllDay;
+            if (Object.keys(updates).length > 0) {
+              await updateCalendarEvent(user.uid, result.targetId, updates);
+            }
           }
         }}
-        placeholder="캘린더 일정에 대해 AI에게 질문하거나 일정을 추가하세요..."
+        placeholder="일정 추가, 수정, 일정 질문 등을 AI에게 말해보세요..."
       />
     </div>
   );

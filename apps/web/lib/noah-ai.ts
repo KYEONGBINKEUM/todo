@@ -31,7 +31,7 @@ export async function callNoahAI(
  */
 export function detectYouTubeURL(text: string): string | null {
   const match = text.match(
-    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+    /(?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)*(?:youtube\.com\/(?:watch\?(?:.*?&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
   );
   return match ? match[0] : null;
 }

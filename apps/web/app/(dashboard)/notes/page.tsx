@@ -2222,17 +2222,51 @@ function NotesContent() {
         </div>
       )}
 
-      {/* 플로팅 AI 바 — 노트 선택 시 활성화 */}
-      {activeNote && (
-        <FloatingAIBar
-          getContext={(text) => ({
-            title: activeNote.title,
-            blocks: activeNote.blocks.slice(0, 20).map((b) => ({ type: b.type, content: b.content })),
-            userMessage: text,
-          })}
-          placeholder="현재 노트에 대해 AI에게 질문하세요..."
-        />
-      )}
+      {/* 플로팅 AI 바 — 항상 표시 */}
+      <FloatingAIBar
+        getAction={(text) => {
+          if (/youtu(?:\.be|be\.com)\//i.test(text) || /youtube\.com\//i.test(text)) return 'youtube_to_note';
+          if (activeNote && /계속|이어서|더 써|완성|마저|내용 추가|추가로 써/i.test(text)) return 'complete_note';
+          if (!activeNote && /노트.*(?:써줘|만들어|작성|추가)|(?:써줘|작성).*노트/i.test(text)) return 'auto_write_note';
+          return 'chat';
+        }}
+        getContext={(text) => ({
+          title: activeNote?.title || text,
+          topic: text,
+          blocks: activeNote?.blocks.slice(0, 20).map((b) => ({ type: b.type, content: b.content })) || [],
+          userMessage: text,
+          url: text.trim(),
+          currentPage: '/notes',
+        })}
+        onResult={(action, result) => {
+          if (action === 'youtube_to_note') {
+            const blocks = result?.blocks || result?.content?.blocks || [];
+            const title = result?.title || result?.content?.title || 'YouTube 노트';
+            if (blocks.length > 0) {
+              window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title, blocks } }));
+            }
+          } else if (action === 'complete_note') {
+            // 현재 활성 노트에 블록 append
+            const newBlocks = (result?.blocks || []).map((b: any, i: number) => ({
+              id: `${Date.now()}-ai-${i}`,
+              type: b.type || 'text',
+              content: b.content || '',
+            }));
+            if (newBlocks.length > 0 && activeNote) {
+              const updatedNote = { ...activeNote, blocks: [...activeNote.blocks, ...newBlocks] };
+              setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updatedNote : n));
+              saveNoteToFirestore(updatedNote);
+            }
+          } else if (action === 'auto_write_note') {
+            const blocks = result?.blocks || [];
+            const title = result?.title || 'AI 노트';
+            if (blocks.length > 0) {
+              window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title, blocks } }));
+            }
+          }
+        }}
+        placeholder="유튜브 링크, '계속 써줘', 노트 질문 등을 입력하세요..."
+      />
     </div>
   );
 }

@@ -22,7 +22,7 @@ function getPageDisplayName(pathname: string, lang: string): string {
  * General chat prompt - responds naturally like a conversational AI
  */
 export function buildChatPrompt(context: Record<string, any>, langInstruction: string, language: string = 'ko'): PromptResult {
-  const userInput = context.userInput || '';
+  const userInput = context.userMessage ?? context.__userText ?? context.userInput ?? '';
   const currentPage = context.currentPage || '';
   const pageName = getPageDisplayName(currentPage, language);
 

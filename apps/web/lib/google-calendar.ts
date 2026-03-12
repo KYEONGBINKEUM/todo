@@ -54,27 +54,35 @@ export function markGCalConnected(connected: boolean) {
  * access token을 즉시 반환 (약 1시간 유효, 세션 내 사용)
  */
 export async function connectGoogleCalendar(): Promise<string> {
-  const { GoogleAuthProvider, signInWithPopup, linkWithPopup } = await import('firebase/auth');
+  const { GoogleAuthProvider, signInWithPopup, linkWithPopup, reauthenticateWithPopup } = await import('firebase/auth');
   const provider = new GoogleAuthProvider();
   // calendar.events 로 읽기+쓰기 권한 (AI 일정 생성 포함)
   provider.addScope('https://www.googleapis.com/auth/calendar.events');
-  provider.setCustomParameters({ prompt: 'consent' });
+  provider.setCustomParameters({ prompt: 'consent', access_type: 'online' });
 
   let result;
-  if (auth.currentUser) {
-    // 이미 로그인된 경우: link 시도 → 이미 연결됐으면 signIn으로 재시도
-    try {
-      result = await linkWithPopup(auth.currentUser, provider);
-    } catch (err: any) {
-      if (
-        err.code === 'auth/credential-already-in-use' ||
-        err.code === 'auth/provider-already-linked' ||
-        err.code === 'auth/popup-closed-by-user'
-      ) {
+  const currentUser = auth.currentUser;
+  if (currentUser) {
+    const hasGoogle = currentUser.providerData.some((p) => p.providerId === 'google.com');
+    if (hasGoogle) {
+      // Google이 이미 연결된 경우: reauthenticate로 캘린더 scope 포함 fresh token 획득
+      try {
+        result = await reauthenticateWithPopup(currentUser, provider);
+      } catch (err: any) {
         if (err.code === 'auth/popup-closed-by-user') throw new Error('popup_closed');
-        result = await signInWithPopup(auth, provider);
-      } else {
         throw err;
+      }
+    } else {
+      // 이메일/비밀번호 유저: Google 연결 시도
+      try {
+        result = await linkWithPopup(currentUser, provider);
+      } catch (err: any) {
+        if (err.code === 'auth/popup-closed-by-user') throw new Error('popup_closed');
+        if (err.code === 'auth/credential-already-in-use' || err.code === 'auth/account-exists-with-different-credential') {
+          result = await signInWithPopup(auth, provider);
+        } else {
+          throw err;
+        }
       }
     }
   } else {

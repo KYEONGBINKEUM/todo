@@ -8,8 +8,15 @@ import { getYouTubeVideoInfo } from './youtube';
 
 admin.initializeApp();
 
-// ── Google Calendar OAuth ────────────────────────────────────────────────────
-export { gcalGetOAuthUrl, gcalOAuthCallback, gcalGetToken, gcalDisconnect } from './gcal-oauth';
+// ── Google Calendar 연결 해제 (secrets 불필요) ─────────────────────────────────
+export const gcalDisconnect = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Login required');
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+  await db.doc(`users/${uid}/private/gcal`).set({ connected: false }, { merge: true });
+  await db.doc(`users/${uid}/settings/app`).set({ gcalConnected: false }, { merge: true });
+  return { success: true };
+});
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const polarWebhookSecret = defineSecret('POLAR_WEBHOOK_SECRET');

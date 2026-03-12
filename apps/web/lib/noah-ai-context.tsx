@@ -24,6 +24,9 @@ export type NoahAIAction =
   | 'youtube_to_mindmap'
   | 'generate_mindmap'
   | 'calendar_add_event'
+  | 'weekly_review'
+  | 'smart_schedule'
+  | 'extract_tasks'
   | 'confirm_write_note'
   | 'youtube_choice';
 

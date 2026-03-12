@@ -12,6 +12,7 @@ import { getCalSettings } from '@/lib/cal-settings';
 import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
+import ExtractTasksModal from '@/components/ai/ExtractTasksModal';
 
 const DEFAULT_LISTS: ListData[] = [
   { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
@@ -48,6 +49,7 @@ function TasksContent() {
   const [newTaskList, setNewTaskList] = useState('');
   const [adding, setAdding] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
+  const [showExtractModal, setShowExtractModal] = useState(false);
 
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -256,7 +258,15 @@ function TasksContent() {
             <span className="text-2xl">📋</span>
             <h2 className="text-2xl font-bold text-text-primary">{t('tasks.title')}</h2>
             <span className="text-sm text-text-muted ml-2">{filtered.length}</span>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => setShowExtractModal(true)}
+                className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 transition-colors flex items-center gap-1.5"
+                title="문서/회의록에서 할일 추출"
+              >
+                <img src="/symbol.svg" alt="AI" className="w-3 h-3" />
+                문서 추출
+              </button>
               <NoahAIPageActions
                 actions={[
                   { id: 'prioritize', label: '우선순위 분석', icon: '🎯', action: 'prioritize' as NoahAIAction, description: '작업 우선순위 AI 분석' },
@@ -602,6 +612,26 @@ function TasksContent() {
           onClose={() => setSelectedTaskId(null)}
           onUpdate={handlePanelUpdate}
           onDelete={() => handleDeleteTask(selectedTask)}
+        />
+      )}
+
+      {showExtractModal && user && (
+        <ExtractTasksModal
+          onAdd={async (extractedTasks) => {
+            for (const et of extractedTasks) {
+              await addTaskDB(user.uid, {
+                title: et.title,
+                status: 'todo',
+                priority: (et.priority as TaskData['priority']) ?? 'medium',
+                starred: false,
+                listId: tasks[0]?.listId || 'my-tasks',
+                myDay: false,
+                tags: [],
+                dueDate: et.dueDate ?? null,
+              });
+            }
+          }}
+          onClose={() => setShowExtractModal(false)}
         />
       )}
     </div>

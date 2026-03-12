@@ -7,6 +7,7 @@ import { useDataStore } from '@/lib/data-store';
 import { getUserSettings } from '@/lib/firestore';
 import TimeboxPlanner from '@/components/timebox/TimeboxPlanner';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import PomodoroTimer from '@/components/timebox/PomodoroTimer';
 
 function getTodayStr() {
   const d = new Date();
@@ -183,16 +184,35 @@ export default function TimeboxPage() {
           );
         })()}
 
+        {/* 포모도로 타이머 */}
+        <div className="mb-4">
+          <PomodoroTimer />
+        </div>
+
         <TimeboxPlanner date={selectedDate} tasks={myDayTasks} />
       </div>
 
       <FloatingAIBar
+        getAction={(text) => {
+          const schedulePattern = /일정.*짜|스케줄|계획.*짜|오늘.*계획|최적.*순서|어떤.*순서|schedule|plan.*today/i;
+          if (schedulePattern.test(text)) return 'smart_schedule';
+          return 'chat';
+        }}
         getContext={(text) => ({
           date: selectedDate,
           tasks: myDayTasks.map((t) => ({ title: t.title, priority: t.priority, dueDate: t.dueDate })),
+          calendarEvents: calendarEvents.filter((ev) => ev.date === selectedDate).map((ev) => ({
+            title: ev.title, startTime: ev.startTime, allDay: ev.allDay,
+          })),
           userMessage: text,
         })}
-        placeholder="타임박스 일정에 대해 AI에게 질문하세요..."
+        onResult={(action, result) => {
+          if (action === 'smart_schedule' && result?.schedule?.length) {
+            // TimeboxPlanner에 스케줄 적용 이벤트 dispatch
+            window.dispatchEvent(new CustomEvent('noah-ai-apply-schedule', { detail: result.schedule }));
+          }
+        }}
+        placeholder="타임박스 일정에 대해 AI에게 질문하거나 '오늘 일정 짜줘'라고 해보세요..."
       />
     </div>
   );

@@ -188,6 +188,22 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
     }, 700);
   }, [user, date]);
 
+  // ── AI 스마트 일정 적용 ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const schedule = (e as CustomEvent<Array<{ time: string; task: string }>>).detail;
+      if (!Array.isArray(schedule)) return;
+      const nextSlots = { ...slots };
+      schedule.forEach(({ time, task }) => {
+        if (/^\d{2}:\d{2}$/.test(time)) nextSlots[time] = task;
+      });
+      setSlots(nextSlots);
+      debounceSave(nextSlots, slotAlarms);
+    };
+    window.addEventListener('noah-ai-apply-schedule', handler);
+    return () => window.removeEventListener('noah-ai-apply-schedule', handler);
+  }, [slots, slotAlarms, debounceSave]);
+
   const handleSlotChange = (time: string, text: string) => {
     const next = { ...slots };
     if (text) next[time] = text; else delete next[time];

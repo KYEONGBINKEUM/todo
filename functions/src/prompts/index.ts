@@ -5,6 +5,9 @@ import { buildYouTubeToNotePrompt, buildYouTubeToMindmapPrompt } from './youtube
 import { buildMindmapGeneratorPrompt } from './mindmap-generator';
 import { buildChatPrompt } from './chat';
 import { buildCalendarEventPrompt } from './calendar-event';
+import { buildWeeklyReviewPrompt } from './weekly-review';
+import { buildSmartSchedulePrompt } from './smart-schedule';
+import { buildExtractTasksPrompt } from './extract-tasks';
 
 export type NoahAIAction =
   | 'chat'
@@ -17,7 +20,10 @@ export type NoahAIAction =
   | 'youtube_to_note'
   | 'youtube_to_mindmap'
   | 'generate_mindmap'
-  | 'calendar_add_event';
+  | 'calendar_add_event'
+  | 'weekly_review'
+  | 'smart_schedule'
+  | 'extract_tasks';
 
 interface PromptResult {
   system: string;
@@ -54,6 +60,12 @@ export function buildPrompt(action: NoahAIAction, context: Record<string, any>, 
       return buildMindmapGeneratorPrompt(context, langInstruction);
     case 'calendar_add_event':
       return buildCalendarEventPrompt(context, langInstruction);
+    case 'weekly_review':
+      return buildWeeklyReviewPrompt(context, langInstruction);
+    case 'smart_schedule':
+      return buildSmartSchedulePrompt(context, langInstruction);
+    case 'extract_tasks':
+      return buildExtractTasksPrompt(context, langInstruction);
     default:
       throw new Error(`Unknown action: ${action}`);
   }

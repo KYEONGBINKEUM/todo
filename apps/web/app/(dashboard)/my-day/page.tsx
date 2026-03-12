@@ -13,6 +13,8 @@ import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
+import VoiceInputButton from '@/components/ui/VoiceInputButton';
+import WeeklyReviewModal from '@/components/ai/WeeklyReviewModal';
 
 const DEFAULT_LISTS: ListData[] = [
   { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
@@ -111,6 +113,8 @@ export default function MyDayPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // 등록일 변경 시 사이드바 닫힌 후 이동할 날짜
   const pendingNavigateDateRef = useRef<string | null>(null);
+  // 주간 리뷰
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   // 기록 삭제 메뉴
   const [showCleanup, setShowCleanup] = useState(false);
   const [cleanupFrom, setCleanupFrom] = useState('');
@@ -525,7 +529,16 @@ export default function MyDayPage() {
               )}
             </div>
           </div>
-          <p className="text-text-secondary text-sm">{today}</p>
+          <p className="text-text-secondary text-sm flex items-center gap-2">
+            {today}
+            <button
+              onClick={() => setShowWeeklyReview(true)}
+              className="ml-2 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 transition-colors flex items-center gap-1"
+            >
+              <img src="/symbol.svg" alt="AI" className="w-3 h-3" />
+              주간 리뷰
+            </button>
+          </p>
         </div>
 
         {/* 7-Day Calendar Strip */}
@@ -745,6 +758,8 @@ export default function MyDayPage() {
                 placeholder={t('myDay.addTask')}
                 className="flex-1 px-4 py-3 bg-transparent text-text-primary placeholder-text-muted text-sm focus:outline-none"
               />
+              {/* 음성 입력 버튼 */}
+              <VoiceInputButton onResult={(text) => setNewTaskTitle((prev) => (prev ? prev + ' ' + text : text))} />
               <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value as TaskData['priority'])} className="px-2 bg-transparent text-xs border-l border-border focus:outline-none cursor-pointer text-text-secondary">
                 <option value="urgent" className="bg-background-card">{t('priority.urgent')}</option>
                 <option value="high" className="bg-background-card">{t('priority.high')}</option>
@@ -842,6 +857,26 @@ export default function MyDayPage() {
                   )}
                 </div>
 
+                {/* 반복 태스크 스트릭 배지 */}
+                {task.recurrence_rule && (() => {
+                  const sameTitle = storeTasks.filter((t) => t.title === task.title && t.status === 'completed' && t.completedDate);
+                  const dates = [...new Set(sameTitle.map((t) => t.completedDate!))].sort().reverse();
+                  let streak = 0;
+                  const freq = task.recurrence_rule.freq;
+                  const stepMs = freq === 'daily' ? 86400000 : freq === 'weekly' ? 7 * 86400000 : freq === 'monthly' ? 30 * 86400000 : 86400000;
+                  const toleranceMs = stepMs * 1.5;
+                  for (let i = 0; i < dates.length; i++) {
+                    if (i === 0) { streak = 1; continue; }
+                    const diff = new Date(dates[i - 1]).getTime() - new Date(dates[i]).getTime();
+                    if (diff <= toleranceMs) streak++; else break;
+                  }
+                  if (streak < 2) return null;
+                  return (
+                    <span className="hidden sm:inline text-[9px] font-bold text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full flex-shrink-0" title={`${streak}회 연속 완료`}>
+                      🔥 {streak}
+                    </span>
+                  );
+                })()}
                 {(task.subTasks?.length ?? 0) > 0 && (
                   <span className="hidden sm:inline text-[10px] text-text-muted flex-shrink-0">📋 {task.subTasks!.filter(s => s.completed).length}/{task.subTasks!.length}</span>
                 )}
@@ -947,6 +982,13 @@ export default function MyDayPage() {
         })}
         placeholder="오늘의 할일에 대해 AI에게 물어보세요..."
       />
+
+      {showWeeklyReview && (
+        <WeeklyReviewModal
+          tasks={storeTasks.filter((t) => t.myDay)}
+          onClose={() => setShowWeeklyReview(false)}
+        />
+      )}
     </div>
   );
 }

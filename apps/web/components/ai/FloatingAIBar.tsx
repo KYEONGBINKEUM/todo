@@ -12,6 +12,8 @@ export interface SlashCommand {
   icon: string;
   desc: string;
   action?: NoahAIAction;
+  /** Direct handler — bypasses AI entirely. Return string to show as result text. */
+  handler?: (text: string) => void | string | Promise<void | string>;
 }
 
 interface FloatingAIBarProps {
@@ -84,12 +86,28 @@ export default function FloatingAIBar({
     setLoading(true);
     setResult(null);
     setInputValue('');
+    const capturedTag = selectedTag;
     setSelectedTag(null);
     setShowCommands(false);
 
+    // handler가 있으면 AI 없이 직접 실행
+    if (capturedTag?.handler) {
+      try {
+        const msg = await capturedTag.handler(rawText);
+        if (typeof msg === 'string') {
+          setResult({ action: 'chat', data: null, text: `✅ ${msg}` });
+        }
+      } catch (err) {
+        console.error('[FloatingAIBar handler]', err);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const action: NoahAIAction =
-        (selectedTag?.action) ||
+        (capturedTag?.action) ||
         (getAction ? getAction(fullText) : 'chat');
       const context = getContext(fullText);
       context.__userText = fullText;

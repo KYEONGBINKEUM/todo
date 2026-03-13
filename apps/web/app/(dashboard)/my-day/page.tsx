@@ -13,12 +13,6 @@ import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
 import FloatingAIBar, { type SlashCommand } from '@/components/ai/FloatingAIBar';
-
-const MYDAY_COMMANDS: SlashCommand[] = [
-  { label: '할일 추가', icon: '✅', desc: '오늘의 할일에 추가' },
-  { label: '일정 추가', icon: '📅', desc: '캘린더에 일정 추가', action: 'calendar_add_event' },
-  { label: '오늘 일정 짜줘', icon: '⏱️', desc: '타임박스 스케줄 생성', action: 'smart_schedule' },
-];
 import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 import VoiceInputButton from '@/components/ui/VoiceInputButton';
@@ -980,7 +974,23 @@ export default function MyDayPage() {
 
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
-        commands={MYDAY_COMMANDS}
+        commands={[
+          {
+            label: '할일 추가', icon: '✅', desc: '오늘의 할일에 추가',
+            handler: async (text) => {
+              if (!user || !text) return '할일 제목을 입력해 주세요';
+              await addTaskDB(user.uid, {
+                title: text, status: 'todo', priority: 'medium',
+                starred: false, listId: lists[0]?.id || '',
+                myDay: true, tags: [], order: 0,
+                createdDate: selectedDate,
+              });
+              return `"${text}" 할일 추가됨`;
+            },
+          },
+          { label: '일정 추가', icon: '📅', desc: '캘린더에 일정 추가', action: 'calendar_add_event' },
+          { label: '오늘 일정 짜줘', icon: '⏱️', desc: '타임박스 스케줄 생성', action: 'smart_schedule' },
+        ]}
         getAction={(text) => detectCrossPageAction(text) || 'chat'}
         getContext={(text) => {
           const crossAction = detectCrossPageAction(text);

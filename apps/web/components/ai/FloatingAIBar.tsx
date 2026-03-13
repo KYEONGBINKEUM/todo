@@ -14,6 +14,16 @@ interface FloatingAIBarProps {
   placeholder?: string;
 }
 
+const SLASH_COMMANDS = [
+  { label: '일정 추가', example: '내일 회의 일정 추가해줘', icon: '📅', desc: '캘린더에 일정 추가' },
+  { label: '일정 변경', example: '구역심방 일정 오후 3시로 변경해줘', icon: '✏️', desc: '기존 일정 수정' },
+  { label: '일정 삭제', example: '내일 일정 모두 삭제해줘', icon: '🗑️', desc: '캘린더 일정 삭제' },
+  { label: '오늘 일정 짜줘', example: '오늘 일정 짜줘', icon: '⏱️', desc: '타임박스 스케줄 생성' },
+  { label: '할일 추가', example: '보고서 작성 할일로 추가해줘', icon: '✅', desc: '오늘의 할일에 추가' },
+  { label: '노트 작성', example: '파이썬 문법 노트에 기록해줘', icon: '📝', desc: 'AI가 노트 작성' },
+  { label: '마인드맵', example: '마케팅 전략 마인드맵 만들어줘', icon: '🧠', desc: '마인드맵 생성' },
+];
+
 export default function FloatingAIBar({
   getContext,
   getAction,
@@ -27,6 +37,7 @@ export default function FloatingAIBar({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ action: NoahAIAction; data: any; text: string } | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showCommands, setShowCommands] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -35,11 +46,24 @@ export default function FloatingAIBar({
     const handler = (e: MouseEvent) => {
       if (barRef.current && !barRef.current.contains(e.target as Node)) {
         setResult(null);
+        setShowCommands(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInputValue(val);
+    setShowCommands(val === '/');
+  };
+
+  const handleCommandSelect = (example: string) => {
+    setInputValue(example);
+    setShowCommands(false);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
 
   const handleSubmit = async () => {
     if (!canUseAI) { setShowUpgrade(true); return; }
@@ -49,6 +73,7 @@ export default function FloatingAIBar({
     setLoading(true);
     setResult(null);
     setInputValue('');
+    setShowCommands(false);
 
     try {
       const action: NoahAIAction = getAction ? getAction(text) : 'chat';
@@ -59,7 +84,13 @@ export default function FloatingAIBar({
 
       let preview = '';
       if (action === 'calendar_add_event' && res?.title) {
-        preview = `일정 추가: ${res.title} (${res.date}${res.startTime ? ' ' + res.startTime : ''})`;
+        preview = `✅ 일정 추가: ${res.title} (${res.date}${res.startTime ? ' ' + res.startTime : ''})`;
+      } else if (action === 'calendar_update_event' && res?.targetTitle) {
+        preview = `✅ 일정 수정: "${res.targetTitle}" → ${res.newDate || ''}${res.newStartTime ? ' ' + res.newStartTime : ''}`;
+      } else if (action === 'calendar_delete_events' && res?.targetIds?.length) {
+        preview = `✅ 삭제 완료: ${(res.targetTitles || []).join(', ')}`;
+      } else if (action === 'smart_schedule' && res?.schedule?.length) {
+        preview = `✅ 스케줄 생성 (${res.schedule.length}개 슬롯) → 타임박스로 이동합니다`;
       } else if (typeof res === 'string') preview = res;
       else if (res?.reply) preview = res.reply;
       else if (res?.text) preview = res.text;
@@ -84,6 +115,32 @@ export default function FloatingAIBar({
         className="fixed bottom-6 left-0 md:left-64 right-0 flex justify-center px-4 z-40 pointer-events-none"
       >
         <div className="pointer-events-auto w-full max-w-xl flex flex-col items-center gap-2">
+
+          {/* 슬래시 명령어 팝업 */}
+          {showCommands && (
+            <div className="w-full bg-background-card border border-[#e94560]/30 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="px-3 py-2 border-b border-border flex items-center gap-2">
+                <img src="/symbol.svg" alt="AI" className="w-3.5 h-3.5" />
+                <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider">명령어 목록 — 클릭하면 입력됩니다</p>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {SLASH_COMMANDS.map((cmd) => (
+                  <button
+                    key={cmd.label}
+                    onClick={() => handleCommandSelect(cmd.example)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#e94560]/8 transition-colors text-left"
+                  >
+                    <span className="text-base flex-shrink-0">{cmd.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-text-primary">{cmd.label}</p>
+                      <p className="text-[10px] text-text-muted truncate">{cmd.example}</p>
+                    </div>
+                    <span className="text-[10px] text-text-muted flex-shrink-0 hidden sm:block">{cmd.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 결과 카드 */}
           {result && (
@@ -118,10 +175,10 @@ export default function FloatingAIBar({
             <input
               ref={inputRef}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
-                if (e.key === 'Escape') { setResult(null); setInputValue(''); }
+                if (e.key === 'Escape') { setResult(null); setInputValue(''); setShowCommands(false); }
               }}
               placeholder={loading ? 'AI가 생각하는 중...' : placeholder}
               disabled={loading}

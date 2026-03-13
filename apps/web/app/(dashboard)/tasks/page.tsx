@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
@@ -9,10 +10,10 @@ import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
 import { getCalSettings } from '@/lib/cal-settings';
-import NoahAIPageActions from '@/components/ai/NoahAIPageActions';
-import type { NoahAIAction } from '@/lib/noah-ai-context';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
-import ExtractTasksModal from '@/components/ai/ExtractTasksModal';
+import WeeklyReviewModal from '@/components/ai/WeeklyReviewModal';
+import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 
 const DEFAULT_LISTS: ListData[] = [
   { id: 'my-tasks', label: 'My Tasks', color: '#e94560' },
@@ -35,6 +36,7 @@ function parseTags(title: string): string[] {
 function TasksContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const router = useRouter();
   const { t } = useI18n();
   const { tasks: storeTasks, lists: storeLists, notes: storeNotes, calendarEvents, loading } = useDataStore();
   const calSettings = getCalSettings();
@@ -49,7 +51,7 @@ function TasksContent() {
   const [newTaskList, setNewTaskList] = useState('');
   const [adding, setAdding] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
-  const [showExtractModal, setShowExtractModal] = useState(false);
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
 
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -260,83 +262,12 @@ function TasksContent() {
             <span className="text-sm text-text-muted ml-2">{filtered.length}</span>
             <div className="ml-auto flex items-center gap-2">
               <button
-                onClick={() => setShowExtractModal(true)}
-                className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 transition-colors flex items-center gap-1.5"
-                title="문서/회의록에서 할일 추출"
+                onClick={() => setShowWeeklyReview(true)}
+                className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 transition-colors flex items-center gap-1"
               >
                 <img src="/symbol.svg" alt="AI" className="w-3 h-3" />
-                문서 추출
+                주간 리뷰
               </button>
-              <NoahAIPageActions
-                actions={[
-                  { id: 'prioritize', label: '우선순위 분석', icon: '🎯', action: 'prioritize' as NoahAIAction, description: '작업 우선순위 AI 분석' },
-                  { id: 'suggest', label: '작업 제안', icon: '💡', action: 'suggest_tasks' as NoahAIAction, description: '새로운 작업 추천' },
-                  { id: 'schedule', label: '일정 최적화', icon: '📅', action: 'schedule' as NoahAIAction, description: '작업 일정 자동 배분' },
-                  { id: 'breakdown', label: '작업 분해', icon: '📋', action: 'breakdown' as NoahAIAction, description: '작업을 세부 단위로 분해' },
-                ]}
-                getContext={(action) => {
-                  const taskSummaries = tasks.slice(0, 20).map((t) => ({
-                    id: t.id, title: t.title, status: t.status,
-                    priority: t.priority, dueDate: t.dueDate || null,
-                  }));
-                  if (action === 'breakdown') {
-                    const target = tasks.find((t) => t.starred && t.status !== 'completed')
-                      || tasks.find((t) => t.status !== 'completed');
-                    return { task: target ? { title: target.title, memo: target.memo } : {} };
-                  }
-                  return { tasks: taskSummaries };
-                }}
-                onResult={async (action, result) => {
-                  if (!user) return;
-                  // suggest_tasks: create new tasks
-                  if (action === 'suggest_tasks' && result?.suggestions) {
-                    for (const s of result.suggestions) {
-                      try {
-                        await addTaskDB(user.uid, {
-                          title: s.title, status: 'todo', priority: s.priority || 'medium',
-                          starred: false, listId: lists[0]?.id || '', myDay: false,
-                          tags: [], order: Date.now(),
-                          createdDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
-                        });
-                      } catch { /* ignore */ }
-                    }
-                    // Refresh by reloading from store
-                    window.location.reload();
-                  }
-                  // prioritize: update priorities
-                  if (action === 'prioritize' && result?.priorities) {
-                    for (const p of result.priorities) {
-                      if (p.taskId) {
-                        try { await updateTask(user.uid, p.taskId, { priority: p.suggestedPriority }); } catch { /* ignore */ }
-                      }
-                    }
-                    window.location.reload();
-                  }
-                  // breakdown: create subtasks
-                  if (action === 'breakdown' && result?.subtasks) {
-                    for (const s of result.subtasks) {
-                      try {
-                        await addTaskDB(user.uid, {
-                          title: s.title, status: 'todo', priority: 'medium',
-                          starred: false, listId: lists[0]?.id || '', myDay: false,
-                          tags: [], order: Date.now(),
-                          createdDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
-                        });
-                      } catch { /* ignore */ }
-                    }
-                    window.location.reload();
-                  }
-                  // schedule: update due dates
-                  if (action === 'schedule' && result?.schedule) {
-                    for (const s of result.schedule) {
-                      if (s.taskId && s.suggestedDate) {
-                        try { await updateTask(user.uid, s.taskId, { dueDate: s.suggestedDate }); } catch { /* ignore */ }
-                      }
-                    }
-                    window.location.reload();
-                  }
-                }}
-              />
             </div>
           </div>
           <p className="text-text-secondary text-sm">{t('tasks.desc')}</p>
@@ -615,23 +546,30 @@ function TasksContent() {
         />
       )}
 
-      {showExtractModal && user && (
-        <ExtractTasksModal
-          onAdd={async (extractedTasks) => {
-            for (const et of extractedTasks) {
-              await addTaskDB(user.uid, {
-                title: et.title,
-                status: 'todo',
-                priority: (et.priority as TaskData['priority']) ?? 'medium',
-                starred: false,
-                listId: tasks[0]?.listId || 'my-tasks',
-                myDay: false,
-                tags: [],
-                dueDate: et.dueDate ?? null,
-              });
-            }
-          }}
-          onClose={() => setShowExtractModal(false)}
+      <FloatingAIBar
+        getAction={(text) => detectCrossPageAction(text) || 'chat'}
+        getContext={(text) => {
+          const crossAction = detectCrossPageAction(text);
+          if (crossAction) return crossPageContext(text, calendarEvents || []);
+          return {
+            tasks: tasks.slice(0, 20).map((tk) => ({
+              id: tk.id, title: tk.title, status: tk.status,
+              priority: tk.priority, dueDate: tk.dueDate || null,
+            })),
+            userMessage: text,
+          };
+        }}
+        onResult={async (action, result) => {
+          if (!user) return;
+          await handleCrossPageResult(action, result, user.uid, (path) => router.push(path));
+        }}
+        placeholder="할일에 대해 AI에게 물어보세요 (/ 입력으로 명령어 보기)..."
+      />
+
+      {showWeeklyReview && (
+        <WeeklyReviewModal
+          tasks={storeTasks}
+          onClose={() => setShowWeeklyReview(false)}
         />
       )}
     </div>

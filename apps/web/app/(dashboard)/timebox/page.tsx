@@ -6,7 +6,12 @@ import { useI18n } from '@/lib/i18n-context';
 import { useDataStore } from '@/lib/data-store';
 import { getUserSettings } from '@/lib/firestore';
 import TimeboxPlanner from '@/components/timebox/TimeboxPlanner';
-import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import FloatingAIBar, { type SlashCommand } from '@/components/ai/FloatingAIBar';
+
+const TIMEBOX_COMMANDS: SlashCommand[] = [
+  { label: '오늘 일정 짜줘', icon: '⏱️', desc: '타임박스 스케줄 생성', action: 'smart_schedule' },
+  { label: '일정 추가', icon: '📅', desc: '캘린더에 일정 추가', action: 'calendar_add_event' },
+];
 import PomodoroTimer from '@/components/timebox/PomodoroTimer';
 
 function getTodayStr() {
@@ -210,6 +215,7 @@ export default function TimeboxPage() {
       </div>
 
       <FloatingAIBar
+        commands={TIMEBOX_COMMANDS}
         getAction={(text) => {
           const schedulePattern = /일정.*짜|스케줄|계획.*짜|오늘.*계획|최적.*순서|어떤.*순서|schedule|plan.*today|\d{1,2}시.*(?:추가|넣어|등록|에)|\d{2}:\d{2}.*(?:추가|넣어|등록)|(?:추가|넣어|등록).*\d{1,2}시/i;
           if (schedulePattern.test(text)) return 'smart_schedule';

@@ -12,7 +12,13 @@ import {
   restoreFolder as restoreFolderDB, permanentDeleteFolder as permanentDeleteFolderDB,
 } from '@/lib/firestore';
 import { useDataStore } from '@/lib/data-store';
-import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import FloatingAIBar, { type SlashCommand } from '@/components/ai/FloatingAIBar';
+
+const NOTES_COMMANDS: SlashCommand[] = [
+  { label: '유튜브 → 노트', icon: '▶️', desc: '유튜브 링크를 노트로 요약', action: 'youtube_to_note' },
+  { label: '새 노트 작성', icon: '📝', desc: 'AI가 주제로 노트 작성', action: 'auto_write_note' },
+  { label: '이어서 써줘', icon: '✍️', desc: '현재 노트 내용 이어 작성', action: 'complete_note' },
+];
 import { callNoahAI } from '@/lib/noah-ai';
 import hljs from 'highlight.js/lib/common';
 
@@ -2224,6 +2230,7 @@ function NotesContent() {
 
       {/* 플로팅 AI 바 — 항상 표시 */}
       <FloatingAIBar
+        commands={NOTES_COMMANDS}
         getAction={(text) => {
           if (/youtu(?:\.be|be\.com)\//i.test(text) || /youtube\.com\//i.test(text)) return 'youtube_to_note';
           if (activeNote && /계속|이어서|더 써|완성|마저|내용 추가|추가로 써/i.test(text)) return 'complete_note';
@@ -2245,8 +2252,8 @@ function NotesContent() {
             if (blocks.length > 0) {
               window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title, blocks } }));
             }
+            return true; // 결과 카드 억제
           } else if (action === 'complete_note') {
-            // 현재 활성 노트에 블록 append
             const newBlocks = (result?.blocks || []).map((b: any, i: number) => ({
               id: `${Date.now()}-ai-${i}`,
               type: b.type || 'text',
@@ -2257,12 +2264,14 @@ function NotesContent() {
               setNotes((prev) => prev.map((n) => n.id === activeNote.id ? updatedNote : n));
               saveNoteToFirestore(updatedNote);
             }
+            return true; // 결과 카드 억제
           } else if (action === 'auto_write_note') {
             const blocks = result?.blocks || [];
             const title = result?.title || 'AI 노트';
             if (blocks.length > 0) {
               window.dispatchEvent(new CustomEvent('noah-ai-stream-note', { detail: { title, blocks } }));
             }
+            return true; // 결과 카드 억제
           }
         }}
         placeholder="유튜브 링크, '계속 써줘', 노트 질문 등을 입력하세요..."

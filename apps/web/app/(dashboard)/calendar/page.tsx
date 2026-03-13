@@ -38,7 +38,13 @@ import {
   type CalSettings,
   type HolidayEntry,
 } from '@/lib/cal-settings';
-import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import FloatingAIBar, { type SlashCommand } from '@/components/ai/FloatingAIBar';
+
+const CALENDAR_COMMANDS: SlashCommand[] = [
+  { label: '일정 추가', icon: '📅', desc: '캘린더에 일정 추가', action: 'calendar_add_event' },
+  { label: '일정 변경', icon: '✏️', desc: '기존 일정 수정', action: 'calendar_update_event' },
+  { label: '일정 삭제', icon: '🗑️', desc: '캘린더 일정 삭제', action: 'calendar_delete_events' },
+];
 
 interface GCalDisplayEvent {
   id: string;
@@ -861,6 +867,7 @@ export default function CalendarPage() {
 
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
+        commands={CALENDAR_COMMANDS}
         getAction={(text) => {
           if (/일정.*(삭제|지워|제거|없애)|삭제.*일정|(delete|remove).*event/i.test(text)) return 'calendar_delete_events';
           const updatePattern = /일정.*(변경|수정|바꿔|바꿔줘|업데이트|고쳐|옮겨)|변경.*일정|수정.*일정|(update|edit|change|move).*event|시간.*변경|날짜.*변경/i;
@@ -890,7 +897,17 @@ export default function CalendarPage() {
         }}
         onResult={async (action, result) => {
           if (!user) return;
-          if (action === 'calendar_add_event' && result?.title && result?.date) {
+          if (action === 'calendar_add_event' && result?.events?.length) {
+            // 범위 일정: 여러 날짜
+            await Promise.all(result.events.map((ev: any) => addCalendarEvent(user.uid, {
+              title: ev.title,
+              date: ev.date,
+              startTime: ev.startTime ?? undefined,
+              endTime: ev.endTime ?? undefined,
+              allDay: ev.allDay ?? !ev.startTime,
+              color: '#e94560',
+            })));
+          } else if (action === 'calendar_add_event' && result?.title && result?.date) {
             await addCalendarEvent(user.uid, {
               title: result.title,
               date: result.date,

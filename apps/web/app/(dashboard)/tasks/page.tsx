@@ -12,7 +12,12 @@ import { useDataStore } from '@/lib/data-store';
 import { getCalSettings } from '@/lib/cal-settings';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 import WeeklyReviewModal from '@/components/ai/WeeklyReviewModal';
-import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import FloatingAIBar, { type SlashCommand } from '@/components/ai/FloatingAIBar';
+
+const TASKS_COMMANDS: SlashCommand[] = [
+  { label: '할일 추가', icon: '✅', desc: '오늘의 할일에 추가' },
+  { label: '일정 추가', icon: '📅', desc: '캘린더에 일정 추가', action: 'calendar_add_event' },
+];
 import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 
 const DEFAULT_LISTS: ListData[] = [
@@ -547,6 +552,7 @@ function TasksContent() {
       )}
 
       <FloatingAIBar
+        commands={TASKS_COMMANDS}
         getAction={(text) => detectCrossPageAction(text) || 'chat'}
         getContext={(text) => {
           const crossAction = detectCrossPageAction(text);

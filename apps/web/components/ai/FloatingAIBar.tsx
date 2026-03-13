@@ -7,24 +7,24 @@ import { callNoahAI } from '@/lib/noah-ai';
 import type { NoahAIAction } from '@/lib/noah-ai-context';
 import NoahAIUpgradePrompt from './NoahAIUpgradePrompt';
 
+export interface SlashCommand {
+  label: string;
+  icon: string;
+  desc: string;
+  action?: NoahAIAction;
+}
+
 interface FloatingAIBarProps {
+  commands?: SlashCommand[];
   getContext: (text: string) => Record<string, any>;
   getAction?: (text: string) => NoahAIAction;
-  onResult?: (action: NoahAIAction, result: any) => void;
+  /** Return true from onResult to suppress the result card */
+  onResult?: (action: NoahAIAction, result: any) => void | boolean | Promise<void | boolean>;
   placeholder?: string;
 }
 
-const SLASH_COMMANDS = [
-  { label: '일정 추가', example: '내일 회의 일정 추가해줘', icon: '📅', desc: '캘린더에 일정 추가' },
-  { label: '일정 변경', example: '구역심방 일정 오후 3시로 변경해줘', icon: '✏️', desc: '기존 일정 수정' },
-  { label: '일정 삭제', example: '내일 일정 모두 삭제해줘', icon: '🗑️', desc: '캘린더 일정 삭제' },
-  { label: '오늘 일정 짜줘', example: '오늘 일정 짜줘', icon: '⏱️', desc: '타임박스 스케줄 생성' },
-  { label: '할일 추가', example: '보고서 작성 할일로 추가해줘', icon: '✅', desc: '오늘의 할일에 추가' },
-  { label: '노트 작성', example: '파이썬 문법 노트에 기록해줘', icon: '📝', desc: 'AI가 노트 작성' },
-  { label: '마인드맵', example: '마케팅 전략 마인드맵 만들어줘', icon: '🧠', desc: '마인드맵 생성' },
-];
-
 export default function FloatingAIBar({
+  commands = [],
   getContext,
   getAction,
   onResult,
@@ -34,10 +34,12 @@ export default function FloatingAIBar({
   const { language } = useI18n();
 
   const [inputValue, setInputValue] = useState('');
+  const [selectedTag, setSelectedTag] = useState<SlashCommand | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ action: NoahAIAction; data: any; text: string } | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
+  const chatHistoryRef = useRef<{ user: string; assistant: string }[]>([]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -56,34 +58,62 @@ export default function FloatingAIBar({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setInputValue(val);
-    setShowCommands(val === '/');
+    if (commands.length > 0) {
+      setShowCommands(val === '/');
+    }
   };
 
-  const handleCommandSelect = (example: string) => {
-    setInputValue(example);
+  const handleCommandSelect = (cmd: SlashCommand) => {
+    setSelectedTag(cmd);
+    setInputValue('');
     setShowCommands(false);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const handleTagRemove = () => {
+    setSelectedTag(null);
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   const handleSubmit = async () => {
     if (!canUseAI) { setShowUpgrade(true); return; }
-    const text = inputValue.trim();
-    if (!text || loading) return;
+    const rawText = inputValue.trim();
+    const fullText = selectedTag ? `${selectedTag.label} ${rawText}`.trim() : rawText;
+    if (!fullText || loading) return;
 
     setLoading(true);
     setResult(null);
     setInputValue('');
+    setSelectedTag(null);
     setShowCommands(false);
 
     try {
-      const action: NoahAIAction = getAction ? getAction(text) : 'chat';
-      const context = getContext(text);
-      context.__userText = text;
+      const action: NoahAIAction =
+        (selectedTag?.action) ||
+        (getAction ? getAction(fullText) : 'chat');
+      const context = getContext(fullText);
+      context.__userText = fullText;
+      // 채팅 액션에만 대화 히스토리 전달
+      if (action === 'chat' && chatHistoryRef.current.length > 0) {
+        context.chatHistory = chatHistoryRef.current.slice(-5); // 최대 5턴
+      }
       const response = await callNoahAI(action, context, language);
       const res = response.result;
+      // 채팅 응답은 히스토리에 추가
+      if (action === 'chat') {
+        const assistantText = res?.reply || res?.text || '';
+        if (assistantText) {
+          chatHistoryRef.current = [
+            ...chatHistoryRef.current.slice(-4),
+            { user: rawText, assistant: assistantText },
+          ];
+        }
+      }
 
       let preview = '';
-      if (action === 'calendar_add_event' && res?.title) {
+      if (action === 'calendar_add_event' && res?.events?.length) {
+        preview = `✅ 일정 추가 (${res.events.length}일):\n` + res.events.map((e: any) => `• ${e.date} ${e.title}`).join('\n');
+      } else if (action === 'calendar_add_event' && res?.title) {
         preview = `✅ 일정 추가: ${res.title} (${res.date}${res.startTime ? ' ' + res.startTime : ''})`;
       } else if (action === 'calendar_update_event' && res?.targetTitle) {
         preview = `✅ 일정 수정: "${res.targetTitle}" → ${res.newDate || ''}${res.newStartTime ? ' ' + res.newStartTime : ''}`;
@@ -99,8 +129,8 @@ export default function FloatingAIBar({
       else if (res?.blocks?.length) preview = res.blocks.map((b: any) => b.content).filter(Boolean).join('\n');
       else preview = JSON.stringify(res, null, 2).slice(0, 400);
 
-      setResult({ action, data: res, text: preview });
-      if (onResult) onResult(action, res);
+      const suppress = onResult ? await onResult(action, res) : false;
+      if (!suppress) setResult({ action, data: res, text: preview });
     } catch (err) {
       console.error('[FloatingAIBar]', err);
     } finally {
@@ -117,25 +147,24 @@ export default function FloatingAIBar({
         <div className="pointer-events-auto w-full max-w-xl flex flex-col items-center gap-2">
 
           {/* 슬래시 명령어 팝업 */}
-          {showCommands && (
+          {showCommands && commands.length > 0 && (
             <div className="w-full bg-background-card border border-[#e94560]/30 rounded-2xl shadow-2xl overflow-hidden">
               <div className="px-3 py-2 border-b border-border flex items-center gap-2">
                 <img src="/symbol.svg" alt="AI" className="w-3.5 h-3.5" />
-                <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider">명령어 목록 — 클릭하면 입력됩니다</p>
+                <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider">명령어 선택 후 내용을 입력하세요</p>
               </div>
               <div className="max-h-64 overflow-y-auto">
-                {SLASH_COMMANDS.map((cmd) => (
+                {commands.map((cmd) => (
                   <button
                     key={cmd.label}
-                    onClick={() => handleCommandSelect(cmd.example)}
+                    onClick={() => handleCommandSelect(cmd)}
                     className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#e94560]/8 transition-colors text-left"
                   >
                     <span className="text-base flex-shrink-0">{cmd.icon}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-text-primary">{cmd.label}</p>
-                      <p className="text-[10px] text-text-muted truncate">{cmd.example}</p>
+                      <p className="text-[10px] text-text-muted truncate">{cmd.desc}</p>
                     </div>
-                    <span className="text-[10px] text-text-muted flex-shrink-0 hidden sm:block">{cmd.desc}</span>
                   </button>
                 ))}
               </div>
@@ -172,22 +201,43 @@ export default function FloatingAIBar({
               <img src="/symbol.svg" alt="AI" className="w-5 h-5 flex-shrink-0" />
             )}
 
+            {/* 선택된 태그 */}
+            {selectedTag && (
+              <span className="flex items-center gap-1 bg-[#e94560]/15 text-[#e94560] text-xs px-2 py-1 rounded-lg flex-shrink-0 font-medium">
+                {selectedTag.icon} {selectedTag.label}
+                <button
+                  onClick={handleTagRemove}
+                  className="ml-0.5 hover:opacity-70 leading-none"
+                  aria-label="태그 제거"
+                >✕</button>
+              </span>
+            )}
+
             <input
               ref={inputRef}
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
-                if (e.key === 'Escape') { setResult(null); setInputValue(''); setShowCommands(false); }
+                if (e.key === 'Escape') {
+                  setResult(null);
+                  setInputValue('');
+                  setSelectedTag(null);
+                  setShowCommands(false);
+                }
+                // Backspace on empty input removes tag
+                if (e.key === 'Backspace' && !inputValue && selectedTag) {
+                  handleTagRemove();
+                }
               }}
-              placeholder={loading ? 'AI가 생각하는 중...' : placeholder}
+              placeholder={loading ? 'AI가 생각하는 중...' : selectedTag ? `${selectedTag.desc}...` : placeholder}
               disabled={loading}
               className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none min-w-0"
             />
 
             <button
               onClick={handleSubmit}
-              disabled={loading || !inputValue.trim()}
+              disabled={loading || (!inputValue.trim() && !selectedTag)}
               className="w-8 h-8 flex items-center justify-center rounded-xl bg-gradient-to-r from-[#e94560] to-[#8b5cf6] text-white disabled:opacity-30 transition-opacity flex-shrink-0"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

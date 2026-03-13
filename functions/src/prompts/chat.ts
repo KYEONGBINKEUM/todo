@@ -25,6 +25,10 @@ export function buildChatPrompt(context: Record<string, any>, langInstruction: s
   const userInput = context.userMessage ?? context.__userText ?? context.userInput ?? '';
   const currentPage = context.currentPage || '';
   const pageName = getPageDisplayName(currentPage, language);
+  const chatHistory: { user: string; assistant: string }[] = context.chatHistory || [];
+  const historyContext = chatHistory.length > 0
+    ? '\n\nPrevious conversation:\n' + chatHistory.map(h => `User: ${h.user}\nAI: ${h.assistant}`).join('\n')
+    : '';
 
   // Calendar page: inject event data so AI can answer schedule questions
   let calendarContext = '';
@@ -82,7 +86,7 @@ Guidelines:
 - Keep responses concise but helpful (2-5 sentences typically)
 - Use appropriate tone - casual for casual questions, detailed for complex ones
 - You can use markdown formatting in your reply (bold, lists, etc.)
-- The user is currently on the "${pageName}" page of the app${calendarContext}${notesContext}${timeboxContext}
+- The user is currently on the "${pageName}" page of the app${calendarContext}${notesContext}${timeboxContext}${historyContext}
 
 CRITICAL — NEVER HALLUCINATE UI:
 - NEVER describe UI buttons, menus, or steps (e.g. "길게 누르거나", "편집 버튼을 눌러", "설정에서") — you do not know the app's UI

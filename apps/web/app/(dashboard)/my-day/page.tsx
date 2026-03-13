@@ -12,7 +12,13 @@ import {
 import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
-import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import FloatingAIBar, { type SlashCommand } from '@/components/ai/FloatingAIBar';
+
+const MYDAY_COMMANDS: SlashCommand[] = [
+  { label: '할일 추가', icon: '✅', desc: '오늘의 할일에 추가' },
+  { label: '일정 추가', icon: '📅', desc: '캘린더에 일정 추가', action: 'calendar_add_event' },
+  { label: '오늘 일정 짜줘', icon: '⏱️', desc: '타임박스 스케줄 생성', action: 'smart_schedule' },
+];
 import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 import VoiceInputButton from '@/components/ui/VoiceInputButton';
@@ -477,6 +483,13 @@ export default function MyDayPage() {
             <h2 className="text-2xl font-bold text-text-primary">{t('myDay.title')}</h2>
             <div className="ml-auto flex items-center gap-2 relative">
               <button
+                onClick={() => setShowWeeklyReview(true)}
+                className="px-2.5 py-1.5 text-[11px] font-bold rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 transition-colors flex items-center gap-1"
+              >
+                <img src="/symbol.svg" alt="AI" className="w-3 h-3" />
+                주간 리뷰
+              </button>
+              <button
                 onClick={() => setShowCleanup(!showCleanup)}
                 className="px-3 py-1.5 text-[11px] text-text-muted hover:text-[#e94560] border border-border hover:border-[#e94560]/30 rounded-lg transition-colors"
               >
@@ -532,16 +545,7 @@ export default function MyDayPage() {
               )}
             </div>
           </div>
-          <p className="text-text-secondary text-sm flex items-center gap-2">
-            {today}
-            <button
-              onClick={() => setShowWeeklyReview(true)}
-              className="ml-2 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 transition-colors flex items-center gap-1"
-            >
-              <img src="/symbol.svg" alt="AI" className="w-3 h-3" />
-              주간 리뷰
-            </button>
-          </p>
+          <p className="text-text-secondary text-sm">{today}</p>
         </div>
 
         {/* 7-Day Calendar Strip */}
@@ -976,6 +980,7 @@ export default function MyDayPage() {
 
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
+        commands={MYDAY_COMMANDS}
         getAction={(text) => detectCrossPageAction(text) || 'chat'}
         getContext={(text) => {
           const crossAction = detectCrossPageAction(text);

@@ -17,23 +17,23 @@ Today's date is ${today}.
 
 ${langInstruction}
 
-Return ONLY valid JSON (no markdown, no explanation) in this exact format:
-{
-  "title": "event title",
-  "date": "YYYY-MM-DD",
-  "startTime": "HH:MM or null",
-  "endTime": "HH:MM or null",
-  "allDay": true or false
-}
+For a SINGLE date, return:
+{ "title": "...", "date": "YYYY-MM-DD", "startTime": "HH:MM or null", "endTime": "HH:MM or null", "allDay": true/false }
+
+For a DATE RANGE (e.g. "3월 30일~4월 5일", "이번 주 내내"), return:
+{ "events": [ { "title": "...", "date": "YYYY-MM-DD", "startTime": null, "endTime": null, "allDay": true }, ... ] }
+Include ALL dates in the range as separate objects.
+
+Return ONLY valid JSON — no markdown, no explanation.
 
 Rules:
-- Parse relative dates: 오늘/today → ${today}, 내일/tomorrow → next day, etc.
-- Parse Korean dates like "4월 4일" → current year + month + day
-- If no time is specified, set allDay to true and startTime/endTime to null
-- If only start time is given, set endTime to startTime + 1 hour
-- title should be the event name without date/time info
-- date must be in YYYY-MM-DD format
-- startTime and endTime must be in HH:MM 24-hour format or null`,
+- Parse relative dates: 오늘/today → ${today}, 내일/tomorrow → next day, 이번 주 → Mon-Sun of this week
+- Parse Korean dates like "4월 4일" → current year's month + day
+- Range formats: "A~B", "A부터 B까지", "A에서 B까지"
+- If no time is specified, allDay = true, startTime/endTime = null
+- If only start time given, endTime = startTime + 1 hour
+- title = event name only (no date/time info)
+- All dates in YYYY-MM-DD format, times in HH:MM 24h format`,
     user: userMessage,
   };
 }

@@ -279,6 +279,20 @@ export default function NoahAIPanel() {
       return;
     }
 
+    // ── Cross-page: calendar delete ──
+    if (/일정.*(삭제|지워|제거|없애)|삭제.*일정|(delete|remove).*event/i.test(msg)) {
+      const calEvents = (dataStore as any).calendarEvents || [];
+      await sendAction('calendar_delete_events', {
+        userMessage: msg,
+        today: todayDateStr(),
+        existingEvents: calEvents.slice(0, 50).map((e: any) => ({
+          id: e.id, title: e.title, date: e.date,
+          startTime: e.startTime || null, endTime: e.endTime || null,
+        })),
+      }, msg);
+      return;
+    }
+
     // ── Cross-page: calendar update ──
     if (/일정.*(변경|수정|바꿔|업데이트|고쳐|옮겨)|변경.*일정|수정.*일정/i.test(msg)) {
       const calEvents = (dataStore as any).calendarEvents || [];
@@ -486,8 +500,8 @@ export default function NoahAIPanel() {
         router.push('/upcoming');
       }
 
-      // Cross-page actions: calendar add/update, smart schedule
-      if (action === 'calendar_add_event' || action === 'calendar_update_event' || action === 'smart_schedule') {
+      // Cross-page actions: calendar add/update/delete, smart schedule
+      if (action === 'calendar_add_event' || action === 'calendar_update_event' || action === 'calendar_delete_events' || action === 'smart_schedule') {
         await handleCrossPageResult(action, data, user.uid, (path) => router.push(path));
       }
     } catch (err) {

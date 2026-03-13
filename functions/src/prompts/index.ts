@@ -6,6 +6,7 @@ import { buildMindmapGeneratorPrompt } from './mindmap-generator';
 import { buildChatPrompt } from './chat';
 import { buildCalendarEventPrompt } from './calendar-event';
 import { buildCalendarUpdatePrompt } from './calendar-update';
+import { buildCalendarDeletePrompt } from './calendar-delete';
 import { buildWeeklyReviewPrompt } from './weekly-review';
 import { buildSmartSchedulePrompt } from './smart-schedule';
 import { buildExtractTasksPrompt } from './extract-tasks';
@@ -23,6 +24,7 @@ export type NoahAIAction =
   | 'generate_mindmap'
   | 'calendar_add_event'
   | 'calendar_update_event'
+  | 'calendar_delete_events'
   | 'weekly_review'
   | 'smart_schedule'
   | 'extract_tasks';
@@ -60,6 +62,8 @@ export function buildPrompt(action: NoahAIAction, context: Record<string, any>, 
       return buildCalendarEventPrompt(context, langInstruction);
     case 'calendar_update_event':
       return buildCalendarUpdatePrompt(context, langInstruction);
+    case 'calendar_delete_events':
+      return buildCalendarDeletePrompt(context, langInstruction);
     case 'weekly_review':
       return buildWeeklyReviewPrompt(context, langInstruction);
     case 'smart_schedule':

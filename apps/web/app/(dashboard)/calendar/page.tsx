@@ -862,6 +862,7 @@ export default function CalendarPage() {
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
         getAction={(text) => {
+          if (/일정.*(삭제|지워|제거|없애)|삭제.*일정|(delete|remove).*event/i.test(text)) return 'calendar_delete_events';
           const updatePattern = /일정.*(변경|수정|바꿔|바꿔줘|업데이트|고쳐|옮겨)|변경.*일정|수정.*일정|(update|edit|change|move).*event|시간.*변경|날짜.*변경/i;
           if (updatePattern.test(text)) return 'calendar_update_event';
           const addPattern = /일정.*(추가|등록|생성|만들|넣어|잡아)|추가.*일정|(add|create|schedule).*event|새.*일정/i;
@@ -908,6 +909,8 @@ export default function CalendarPage() {
             if (Object.keys(updates).length > 0) {
               await updateCalendarEvent(user.uid, result.targetId, updates);
             }
+          } else if (action === 'calendar_delete_events' && result?.targetIds?.length) {
+            await Promise.all(result.targetIds.map((id: string) => deleteCalendarEvent(user.uid, id)));
           }
         }}
         placeholder="일정 추가, 수정, 일정 질문 등을 AI에게 말해보세요..."

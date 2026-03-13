@@ -2,12 +2,14 @@
  * Cross-page AI helpers
  * Allows any FloatingAIBar to trigger actions on other pages
  */
-import { addCalendarEvent, updateCalendarEvent } from './firestore';
+import { addCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from './firestore';
 
-export type CrossPageAction = 'calendar_add_event' | 'calendar_update_event' | 'smart_schedule';
+export type CrossPageAction = 'calendar_add_event' | 'calendar_update_event' | 'calendar_delete_events' | 'smart_schedule';
 
 /** Returns a cross-page action name if the text matches, null otherwise */
 export function detectCrossPageAction(text: string): CrossPageAction | null {
+  // Calendar delete (must check before update/add)
+  if (/일정.*(삭제|지워|제거|없애)|삭제.*일정|(delete|remove).*event/i.test(text)) return 'calendar_delete_events';
   // Calendar update (must check before add — 변경 is more specific)
   if (/일정.*(변경|수정|바꿔|업데이트|고쳐|옮겨)|변경.*일정|수정.*일정/i.test(text)) return 'calendar_update_event';
   // Calendar add
@@ -68,6 +70,12 @@ export async function handleCrossPageResult(
     if (Object.keys(updates).length > 0) {
       await updateCalendarEvent(uid, result.targetId, updates);
     }
+    push('/calendar');
+    return true;
+  }
+
+  if (action === 'calendar_delete_events' && result?.targetIds?.length) {
+    await Promise.all(result.targetIds.map((id: string) => deleteCalendarEvent(uid, id)));
     push('/calendar');
     return true;
   }

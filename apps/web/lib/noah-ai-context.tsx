@@ -25,6 +25,7 @@ export type NoahAIAction =
   | 'generate_mindmap'
   | 'calendar_add_event'
   | 'calendar_update_event'
+  | 'calendar_delete_events'
   | 'weekly_review'
   | 'smart_schedule'
   | 'extract_tasks'

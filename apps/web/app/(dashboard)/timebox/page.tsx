@@ -52,6 +52,23 @@ export default function TimeboxPage() {
     });
   }, [user]);
 
+  // Pick up pending schedule from cross-page AI
+  useEffect(() => {
+    const pending = sessionStorage.getItem('noah_pending_schedule');
+    if (!pending) return;
+    sessionStorage.removeItem('noah_pending_schedule');
+    try {
+      const schedule = JSON.parse(pending);
+      if (Array.isArray(schedule) && schedule.length > 0) {
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('noah-ai-apply-schedule', { detail: schedule }));
+        }, 500);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const shiftCalendar = (days: number) => {
     const d = new Date(selectedDate + 'T00:00:00');
     d.setDate(d.getDate() + days);

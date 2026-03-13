@@ -1,8 +1,12 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
+import { useDataStore } from '@/lib/data-store';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 
 const LANGUAGES = [
   { code: 'ko', label: '한국어' },
@@ -21,7 +25,10 @@ const LANGUAGES = [
 ];
 
 export default function TranslatePage() {
+  const { user } = useAuth();
+  const router = useRouter();
   const { t, language } = useI18n();
+  const { calendarEvents } = useDataStore();
   const [srcLang, setSrcLang] = useState('ko');
   const [tgtLang, setTgtLang] = useState('en');
   const [srcText, setSrcText] = useState('');
@@ -257,13 +264,22 @@ export default function TranslatePage() {
       </div>
 
       <FloatingAIBar
-        getContext={(text) => ({
-          srcLang,
-          tgtLang,
-          srcText,
-          translatedText: result,
-          userMessage: text,
-        })}
+        getAction={(text) => detectCrossPageAction(text) || 'chat'}
+        getContext={(text) => {
+          const crossAction = detectCrossPageAction(text);
+          if (crossAction) return crossPageContext(text, calendarEvents || []);
+          return {
+            srcLang,
+            tgtLang,
+            srcText,
+            translatedText: result,
+            userMessage: text,
+          };
+        }}
+        onResult={async (action, result) => {
+          if (!user) return;
+          await handleCrossPageResult(action, result, user.uid, (path) => router.push(path));
+        }}
         placeholder="번역에 대해 AI에게 질문하세요 (예: 더 자연스럽게 바꿔줘)..."
       />
     </div>

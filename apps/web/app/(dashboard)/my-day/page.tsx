@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
@@ -12,6 +13,7 @@ import { useTaskReminders } from '@/lib/use-reminders';
 import { deleteAttachmentsFromStorage } from '@/lib/attachment-store';
 import { useDataStore } from '@/lib/data-store';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 import TaskDetailPanel from '@/components/task/TaskDetailPanel';
 import VoiceInputButton from '@/components/ui/VoiceInputButton';
 import WeeklyReviewModal from '@/components/ai/WeeklyReviewModal';
@@ -89,9 +91,10 @@ function getTaskCreatedDate(task: TaskData): string {
 
 export default function MyDayPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const { t, language } = useI18n();
   const dateLocale = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[language] ?? 'en-US';
-  const { tasks: storeTasks, lists: storeLists, loading } = useDataStore();
+  const { tasks: storeTasks, lists: storeLists, calendarEvents, loading } = useDataStore();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [lists, setLists] = useState<ListData[]>(DEFAULT_LISTS);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -973,13 +976,22 @@ export default function MyDayPage() {
 
       {/* 플로팅 AI 바 */}
       <FloatingAIBar
-        getContext={(text) => ({
-          tasks: tasks.slice(0, 20).map((tk) => ({
-            id: tk.id, title: tk.title, status: tk.status,
-            priority: tk.priority, dueDate: tk.dueDate || null,
-          })),
-          userMessage: text,
-        })}
+        getAction={(text) => detectCrossPageAction(text) || 'chat'}
+        getContext={(text) => {
+          const crossAction = detectCrossPageAction(text);
+          if (crossAction) return crossPageContext(text, calendarEvents || []);
+          return {
+            tasks: tasks.slice(0, 20).map((tk: any) => ({
+              id: tk.id, title: tk.title, status: tk.status,
+              priority: tk.priority, dueDate: tk.dueDate || null,
+            })),
+            userMessage: text,
+          };
+        }}
+        onResult={async (action, result) => {
+          if (!user) return;
+          await handleCrossPageResult(action, result, user.uid, (path) => router.push(path));
+        }}
         placeholder="오늘의 할일에 대해 AI에게 물어보세요..."
       />
 

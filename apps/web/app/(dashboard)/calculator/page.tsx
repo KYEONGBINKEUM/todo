@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useI18n } from '@/lib/i18n-context';
 import {
@@ -9,7 +10,9 @@ import {
   deleteCalcHistory,
   clearCalcHistoryByMode,
 } from '@/lib/firestore';
+import { useDataStore } from '@/lib/data-store';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 
 type Mode = 'general' | 'ratio' | 'unit' | 'color';
 
@@ -640,7 +643,9 @@ const MODE_DEFS: { id: Mode; icon: string; labelKey: string; descKey: string }[]
 export default function CalculatorPage() {
   const [mode, setMode] = useState<Mode>('general');
   const { user } = useAuth();
+  const router = useRouter();
   const { t } = useI18n();
+  const { calendarEvents } = useDataStore();
   const [history, setHistory] = useState<HistItem[]>([]);
   const [generalValue, setGeneralValue] = useState<string | null>(null);
 
@@ -752,11 +757,20 @@ export default function CalculatorPage() {
       </div>
 
       <FloatingAIBar
-        getContext={(text) => ({
-          mode,
-          recentHistory: history.slice(0, 5).map((h) => `${h.expr} = ${h.result}`),
-          userMessage: text,
-        })}
+        getAction={(text) => detectCrossPageAction(text) || 'chat'}
+        getContext={(text) => {
+          const crossAction = detectCrossPageAction(text);
+          if (crossAction) return crossPageContext(text, calendarEvents || []);
+          return {
+            mode,
+            recentHistory: history.slice(0, 5).map((h) => `${h.expr} = ${h.result}`),
+            userMessage: text,
+          };
+        }}
+        onResult={async (action, result) => {
+          if (!user) return;
+          await handleCrossPageResult(action, result, user.uid, (path) => router.push(path));
+        }}
         placeholder="계산에 대해 AI에게 질문하세요 (예: 15% 세금 포함하면 얼마야?)..."
       />
     </div>

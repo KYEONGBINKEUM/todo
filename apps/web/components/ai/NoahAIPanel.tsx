@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePathname, useRouter } from 'next/navigation';
 import { addNote as addNoteDB, addMindmap as addMindmapDB, addTask as addTaskDB, updateTask } from '@/lib/firestore';
 import { callNoahAI, detectYouTubeURL } from '@/lib/noah-ai';
+import { handleCrossPageResult, todayDateStr } from '@/lib/cross-page-ai';
 import NoahAISuggestionChip from './NoahAISuggestionChip';
 import NoahAIUsageBar from './NoahAIUsageBar';
 import type { AISuggestionChip as ChipType, NoahAIAction } from '@/lib/noah-ai-context';
@@ -278,6 +279,43 @@ export default function NoahAIPanel() {
       return;
     }
 
+    // ── Cross-page: calendar update ──
+    if (/일정.*(변경|수정|바꿔|업데이트|고쳐|옮겨)|변경.*일정|수정.*일정/i.test(msg)) {
+      const calEvents = (dataStore as any).calendarEvents || [];
+      await sendAction('calendar_update_event', {
+        userMessage: msg,
+        today: todayDateStr(),
+        existingEvents: calEvents.slice(0, 50).map((e: any) => ({
+          id: e.id, title: e.title, date: e.date,
+          startTime: e.startTime || null, endTime: e.endTime || null,
+        })),
+      }, msg);
+      return;
+    }
+
+    // ── Cross-page: calendar add event ──
+    if (/일정.*(추가|등록|잡아|생성|만들어)|새.*일정|(add|create|schedule).*event/i.test(msg) && !/할일|task/i.test(msg)) {
+      await sendAction('calendar_add_event', {
+        userMessage: msg,
+        today: todayDateStr(),
+        existingEvents: [],
+      }, msg);
+      return;
+    }
+
+    // ── Cross-page: smart schedule ──
+    if (/일정.*짜줘|오늘.*일정.*짜|스케줄.*짜줘|타임박스.*일정.*짜/i.test(msg)) {
+      const myDayTasks = (dataStore.tasks || []).filter((t: any) => t.myDay && t.status !== 'completed');
+      const calEvents = (dataStore as any).calendarEvents || [];
+      await sendAction('smart_schedule', {
+        userMessage: msg,
+        date: todayDateStr(),
+        tasks: myDayTasks.slice(0, 20).map((t: any) => ({ title: t.title, priority: t.priority })),
+        calendarEvents: calEvents.slice(0, 20).map((e: any) => ({ title: e.title, startTime: e.startTime, allDay: e.allDay })),
+      }, msg);
+      return;
+    }
+
     // ── YouTube URL: show choice buttons ──
     const youtubeUrl = detectYouTubeURL(msg);
     if (youtubeUrl) {
@@ -446,6 +484,11 @@ export default function NoahAIPanel() {
           }
         }
         router.push('/upcoming');
+      }
+
+      // Cross-page actions: calendar add/update, smart schedule
+      if (action === 'calendar_add_event' || action === 'calendar_update_event' || action === 'smart_schedule') {
+        await handleCrossPageResult(action, data, user.uid, (path) => router.push(path));
       }
     } catch (err) {
       console.error('Apply failed:', err);

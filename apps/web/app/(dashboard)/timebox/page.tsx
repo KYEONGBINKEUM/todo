@@ -12,7 +12,6 @@ const TIMEBOX_COMMANDS: SlashCommand[] = [
   { label: '오늘 일정 짜줘', icon: '⏱️', desc: '타임박스 스케줄 생성', action: 'smart_schedule' },
   { label: '일정 추가', icon: '📅', desc: '캘린더에 일정 추가', action: 'calendar_add_event' },
 ];
-import PomodoroTimer from '@/components/timebox/PomodoroTimer';
 
 function getTodayStr() {
   const d = new Date();
@@ -205,11 +204,6 @@ export default function TimeboxPage() {
             </div>
           );
         })()}
-
-        {/* 포모도로 타이머 */}
-        <div className="mb-4">
-          <PomodoroTimer />
-        </div>
 
         <TimeboxPlanner date={selectedDate} tasks={myDayTasks} />
       </div>

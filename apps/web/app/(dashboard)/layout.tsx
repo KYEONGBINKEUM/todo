@@ -6,6 +6,8 @@ import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/layout/Sidebar';
 import { requestNotificationPermission } from '@/lib/use-reminders';
 import NoahAIButton from '@/components/ai/NoahAIButton';
+import { PomodoroProvider } from '@/lib/pomodoro-context';
+import PomodoroFloatingWidget from '@/components/pomodoro/PomodoroFloatingWidget';
 
 export default function DashboardLayout({
   children,
@@ -52,6 +54,7 @@ export default function DashboardLayout({
   if (!user) return null;
 
   return (
+    <PomodoroProvider>
     <div
       className="flex h-screen overflow-hidden bg-background text-text-primary"
       style={{ fontFamily: "'Pretendard Variable', -apple-system, sans-serif" }}
@@ -83,6 +86,8 @@ export default function DashboardLayout({
       </main>
 
       {/* NoahAIButton 비활성화 — 채팅 패널 대신 페이지별 FloatingAIBar 사용 */}
+      <PomodoroFloatingWidget />
     </div>
+    </PomodoroProvider>
   );
 }

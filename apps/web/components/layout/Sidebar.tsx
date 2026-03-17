@@ -79,6 +79,28 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const touchNavSrcRef = useRef<number | null>(null);
   const navItemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  // Nav visibility (customization)
+  const [hiddenNavHrefs, setHiddenNavHrefs] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const saved = localStorage.getItem('navHidden');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
+  const [showNavEdit, setShowNavEdit] = useState(false);
+
+  const toggleNavItem = (href: string) => {
+    setHiddenNavHrefs(prev => {
+      const next = new Set(prev);
+      if (next.has(href)) next.delete(href);
+      else next.add(href);
+      localStorage.setItem('navHidden', JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  const visibleNavItems = navItems.filter(item => !hiddenNavHrefs.has(item.href));
+
   // Tauri: 앱 시작 시 백그라운드 업데이트 확인
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
@@ -233,43 +255,70 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </div>
 
         {/* Navigation — draggable, scrollable */}
+        <div className="flex items-center justify-between mb-1 flex-shrink-0">
+          <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold">{t('nav.menu') || '메뉴'}</span>
+          <button onClick={() => setShowNavEdit(v => !v)} title="메뉴 편집"
+            className={`text-[10px] px-2 py-0.5 rounded-md border transition-colors ${showNavEdit ? 'bg-[#e94560]/10 text-[#e94560] border-[#e94560]/30' : 'text-text-muted border-border hover:text-text-primary hover:border-border-hover'}`}>
+            {showNavEdit ? '완료' : '편집'}
+          </button>
+        </div>
         <nav
           className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 scrollbar-thin"
           onTouchMove={handleNavTouchMove}
           onTouchEnd={handleNavTouchEnd}
         >
-          {navItems.map((item, idx) => {
-            const isActive = pathname === item.href || (item.href === '/tasks' && pathname?.startsWith('/tasks'));
-            const isDragging = dragNavSrc === idx;
-            const isOver = dragNavOver === idx && dragNavSrc !== idx;
-            return (
-              <div
-                key={item.href}
-                data-nav-idx={idx}
-                ref={el => { navItemRefs.current[idx] = el; }}
-                draggable
-                onDragStart={e => { setDragNavSrc(idx); e.dataTransfer.effectAllowed = 'move'; }}
-                onDragOver={e => { e.preventDefault(); setDragNavOver(idx); }}
-                onDrop={() => handleNavDrop(idx)}
-                onDragEnd={() => { setDragNavSrc(null); setDragNavOver(null); }}
-                onTouchStart={() => handleNavTouchStart(idx)}
-                className={`transition-all ${isDragging ? 'opacity-40' : ''} ${isOver ? 'border-t-2 border-[#e94560]/60' : ''}`}
-              >
-                <Link
-                  href={item.href}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all cursor-grab active:cursor-grabbing ${
-                    isActive
-                      ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
-                      : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
-                  }`}
+          {showNavEdit ? (
+            // Edit mode: show all items with toggle checkboxes
+            navItems.map(item => {
+              const isVisible = !hiddenNavHrefs.has(item.href);
+              return (
+                <div key={item.href}
+                  onClick={() => toggleNavItem(item.href)}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm cursor-pointer transition-all ${isVisible ? 'text-text-primary hover:bg-background-hover' : 'text-text-muted opacity-50 hover:opacity-70'}`}
                 >
                   <span className="text-base">{item.icon}</span>
                   <span className="flex-1 text-left">{t(item.labelKey)}</span>
-                  <span className="text-text-muted/30 text-xs select-none">⠿</span>
-                </Link>
-              </div>
-            );
-          })}
+                  <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${isVisible ? 'bg-[#e94560] border-[#e94560]' : 'border-border'}`}>
+                    {isVisible && <span className="text-white text-[9px] font-bold">✓</span>}
+                  </span>
+                </div>
+              );
+            })
+          ) : (
+            // Normal mode: show only visible items, draggable
+            visibleNavItems.map((item, idx) => {
+              const isActive = pathname === item.href || (item.href === '/tasks' && pathname?.startsWith('/tasks'));
+              const isDragging = dragNavSrc === idx;
+              const isOver = dragNavOver === idx && dragNavSrc !== idx;
+              return (
+                <div
+                  key={item.href}
+                  data-nav-idx={idx}
+                  ref={el => { navItemRefs.current[idx] = el; }}
+                  draggable
+                  onDragStart={e => { setDragNavSrc(idx); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragOver={e => { e.preventDefault(); setDragNavOver(idx); }}
+                  onDrop={() => handleNavDrop(idx)}
+                  onDragEnd={() => { setDragNavSrc(null); setDragNavOver(null); }}
+                  onTouchStart={() => handleNavTouchStart(idx)}
+                  className={`transition-all ${isDragging ? 'opacity-40' : ''} ${isOver ? 'border-t-2 border-[#e94560]/60' : ''}`}
+                >
+                  <Link
+                    href={item.href}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all cursor-grab active:cursor-grabbing ${
+                      isActive
+                        ? 'bg-[#e94560]/10 text-[#e94560] font-semibold'
+                        : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
+                    }`}
+                  >
+                    <span className="text-base">{item.icon}</span>
+                    <span className="flex-1 text-left">{t(item.labelKey)}</span>
+                    <span className="text-text-muted/30 text-xs select-none">⠿</span>
+                  </Link>
+                </div>
+              );
+            })
+          )}
         </nav>
 
         {/* Theme Toggle */}

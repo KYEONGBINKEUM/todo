@@ -604,8 +604,53 @@ export default function CalendarPage() {
   const _todayStr = todayDateStr;
   const taskDueEvents = showTasksInCalendar
     ? tasks.filter(t => t.status !== 'completed' && (t.dueDate || t.myDay))
-        .map(t => ({ date: t.dueDate || _todayStr, title: `📋 ${t.title}`, color: '#f59e0b', isTask: true as const, taskId: t.id! }))
+        .map(t => ({
+          date: t.dueDate || _todayStr,
+          title: t.recurrence_rule ? `🔁 ${t.title}` : `📋 ${t.title}`,
+          color: t.recurrence_rule ? '#8b5cf6' : '#f59e0b',
+          isTask: true as const,
+          taskId: t.id!,
+        }))
     : [];
+
+  // Recurring task occurrences for visible cell dates (beyond original dueDate)
+  const recurringOccurrenceMap = (() => {
+    const map = new Map<string, Array<{ title: string; color: string; isTask: true; taskId: string; isGcal: false }>>();
+    if (!showTasksInCalendar) return map;
+    const cellDateSet = new Set(cells.map(c => c.dateStr));
+    for (const task of tasks) {
+      if (task.status === 'completed' || !task.recurrence_rule || !task.dueDate) continue;
+      const rule = task.recurrence_rule;
+      const freq = rule.freq;
+      const interval = rule.interval ?? 1;
+      const until = rule.until;
+      const base = new Date(task.dueDate + 'T00:00:00');
+      for (const dateStr of cellDateSet) {
+        if (dateStr === task.dueDate) continue; // original dueDate already in taskDueEvents
+        const d = new Date(dateStr + 'T00:00:00');
+        if (d <= base) continue;
+        if (until && dateStr > until) continue;
+        const days = Math.round((d.getTime() - base.getTime()) / 86400000);
+        let matches = false;
+        if (freq === 'daily') {
+          matches = days % interval === 0;
+        } else if (freq === 'weekly') {
+          matches = days % (7 * interval) === 0;
+        } else if (freq === 'monthly') {
+          const months = (d.getFullYear() - base.getFullYear()) * 12 + (d.getMonth() - base.getMonth());
+          matches = months % interval === 0 && d.getDate() === base.getDate();
+        } else if (freq === 'yearly') {
+          const years = d.getFullYear() - base.getFullYear();
+          matches = years % interval === 0 && d.getMonth() === base.getMonth() && d.getDate() === base.getDate();
+        }
+        if (matches) {
+          const arr = map.get(dateStr) ?? [];
+          map.set(dateStr, [...arr, { title: `🔁 ${task.title}`, color: '#8b5cf6', isTask: true as const, taskId: task.id!, isGcal: false as const }]);
+        }
+      }
+    }
+    return map;
+  })();
 
   // Holiday map
   const holidayMap = new Map<string, HolidayEntry[]>();
@@ -620,10 +665,12 @@ export default function CalendarPage() {
       e.date === dateStr || (e.endDate && e.date <= dateStr && e.endDate >= dateStr)
     );
     const taskEvents = taskDueEvents.filter(e => e.date === dateStr);
+    const recurringEvents = recurringOccurrenceMap.get(dateStr) ?? [];
     const gcalEvents = gcalDisplayEvents.filter(e => e.dateStr <= dateStr && e.endDateStr >= dateStr);
     return [
       ...calEvents.map(e => ({ ...e, isTask: false as const, isGcal: false as const })),
       ...taskEvents.map(e => ({ ...e, isGcal: false as const })),
+      ...recurringEvents,
       ...gcalEvents,
     ];
   };

@@ -20,6 +20,7 @@ const DEFAULT_NAV = [
   { icon: '⭐', labelKey: 'nav.important', href: '/important' },
   { icon: '⏱️', labelKey: 'nav.timebox', href: '/timebox' },
   { icon: '🍅', labelKey: 'nav.pomodoro', href: '/pomodoro' },
+  { icon: '🏁', labelKey: 'nav.milestones', href: '/milestones' },
   // ── 생산성 ──
   { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
   { icon: '🕸️', labelKey: 'nav.mindmap', href: '/mindmap' },

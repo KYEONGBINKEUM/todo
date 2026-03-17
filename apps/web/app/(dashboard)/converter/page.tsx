@@ -87,6 +87,15 @@ function ProgressBar({ value, label }: { value: number; label?: string }) {
   );
 }
 
+function triggerDownload(url: string, name: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -236,13 +245,12 @@ function ImageConvertTab() {
               {converting ? '변환 중...' : '변환하기'}
             </button>
             {result && (
-              <a
-                href={result.url}
-                download={result.name}
+              <button
+                onClick={() => triggerDownload(result.url, result.name)}
                 className="flex-1 py-3 rounded-xl bg-border/40 text-text-primary text-sm font-bold text-center hover:bg-border transition-colors"
               >
                 다운로드 ({formatSize(result.size)})
-              </a>
+              </button>
             )}
           </div>
 
@@ -335,10 +343,7 @@ function PdfToImageTab() {
 
   const downloadPage = (dataUrl: string, index: number) => {
     const ext = imgFormat === 'image/jpeg' ? 'jpg' : 'png';
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `page-${index + 1}.${ext}`;
-    a.click();
+    triggerDownload(dataUrl, `page-${index + 1}.${ext}`);
   };
 
   const downloadAll = () => {
@@ -815,13 +820,12 @@ function CompressTab() {
               {converting ? '처리 중...' : '압축/리사이즈'}
             </button>
             {result && (
-              <a
-                href={result.url}
-                download={result.name}
+              <button
+                onClick={() => triggerDownload(result.url, result.name)}
                 className="flex-1 py-3 rounded-xl bg-border/40 text-text-primary text-sm font-bold text-center hover:bg-border transition-colors"
               >
                 다운로드
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -844,7 +848,7 @@ export default function ConverterPage() {
   const activeTabDef = TABS.find(t => t.id === activeTab)!;
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 pb-28">
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-28">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">

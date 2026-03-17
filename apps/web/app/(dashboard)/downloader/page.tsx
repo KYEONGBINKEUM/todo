@@ -1,459 +1,375 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
 
-type Tab = 'guide' | 'desktop' | 'sites';
+type Quality = 'best' | '2160p' | '1440p' | '1080p' | '720p' | '480p' | '360p' | 'audio';
 
-type Quality = 'best' | '1080p' | '720p' | '480p' | 'audio';
-
-interface QualityOption {
-  id: Quality;
-  label: string;
-  arg: string;
-}
-
-const QUALITY_OPTIONS: QualityOption[] = [
-  { id: 'best', label: '최고화질 (기본)', arg: 'bestvideo+bestaudio/best' },
-  { id: '1080p', label: '1080p', arg: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
-  { id: '720p', label: '720p', arg: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
-  { id: '480p', label: '480p', arg: 'bestvideo[height<=480]+bestaudio/best[height<=480]' },
-  { id: 'audio', label: '오디오만 (mp3)', arg: '-x --audio-format mp3' },
+const QUALITY_OPTIONS: { id: Quality; label: string; arg: string; badge?: string }[] = [
+  { id: 'best',   label: '최고화질',    arg: 'bestvideo+bestaudio/best', badge: '추천' },
+  { id: '2160p',  label: '4K (2160p)', arg: 'bestvideo[height<=2160]+bestaudio/best[height<=2160]' },
+  { id: '1440p',  label: '2K (1440p)', arg: 'bestvideo[height<=1440]+bestaudio/best[height<=1440]' },
+  { id: '1080p',  label: '1080p FHD',  arg: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
+  { id: '720p',   label: '720p HD',    arg: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
+  { id: '480p',   label: '480p SD',    arg: 'bestvideo[height<=480]+bestaudio/best[height<=480]' },
+  { id: '360p',   label: '360p',       arg: 'bestvideo[height<=360]+bestaudio/best[height<=360]' },
+  { id: 'audio',  label: 'MP3 오디오', arg: '-x --audio-format mp3' },
 ];
 
-const SUPPORTED_SITES = [
-  { name: 'YouTube', icon: '▶️', desc: '영상, 쇼츠, 재생목록' },
-  { name: 'Vimeo', icon: '🎬', desc: '고화질 영상' },
-  { name: 'Twitter / X', icon: '🐦', desc: '트윗 영상' },
-  { name: 'TikTok', icon: '🎵', desc: '틱톡 영상' },
-  { name: 'Instagram', icon: '📸', desc: '릴스, 포스트, 스토리' },
-  { name: 'Twitch', icon: '🟣', desc: '클립, VOD' },
-  { name: 'Dailymotion', icon: '🎥', desc: '영상' },
-  { name: 'Facebook', icon: '📘', desc: '공개 영상' },
-  { name: 'Reddit', icon: '🤖', desc: '영상 포스트' },
-  { name: 'Bilibili', icon: '📺', desc: '중국 영상 플랫폼' },
-  { name: 'SoundCloud', icon: '🔊', desc: '오디오 트랙' },
-  { name: 'Bandcamp', icon: '🎸', desc: '앨범, 트랙' },
-  { name: 'Rumble', icon: '📡', desc: '영상' },
-  { name: 'Odysee / LBRY', icon: '🌊', desc: '영상' },
-  { name: 'PeerTube', icon: '🌐', desc: '분산형 영상' },
-  { name: 'NicoNico', icon: '🇯🇵', desc: '일본 영상 플랫폼' },
-];
-
-// ── 명령어 생성기 ──────────────────────────────────────────────────────────────
-function CommandGenerator() {
-  const [url, setUrl] = useState('');
-  const [quality, setQuality] = useState<Quality>('best');
-  const [output, setOutput] = useState('~/Downloads/%(title)s.%(ext)s');
-  const [copied, setCopied] = useState(false);
-
-  const selectedQuality = QUALITY_OPTIONS.find(q => q.id === quality)!;
-
-  const generateCommand = (): string => {
-    if (!url.trim()) return 'yt-dlp [URL]';
-    if (quality === 'audio') {
-      return `yt-dlp -x --audio-format mp3 -o "${output}" "${url.trim()}"`;
-    }
-    return `yt-dlp -f "${selectedQuality.arg}" -o "${output}" "${url.trim()}"`;
-  };
-
-  const command = generateCommand();
-
-  const copyCommand = () => {
-    navigator.clipboard.writeText(command).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-
-  return (
-    <div className="space-y-4 p-4 bg-background rounded-xl border border-border">
-      <p className="text-sm font-bold text-text-primary">명령어 생성기</p>
-
-      <div className="space-y-3">
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">URL</label>
-          <input
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            placeholder="https://www.youtube.com/watch?v=..."
-            className="w-full px-3 py-2.5 bg-background-card border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors placeholder:text-text-muted"
-          />
-        </div>
-
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">화질</label>
-          <div className="flex flex-wrap gap-2">
-            {QUALITY_OPTIONS.map(q => (
-              <button
-                key={q.id}
-                onClick={() => setQuality(q.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  quality === q.id
-                    ? 'bg-[#e94560] text-white'
-                    : 'bg-border/40 text-text-muted hover:text-text-primary'
-                }`}
-              >
-                {q.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">출력 경로</label>
-          <input
-            value={output}
-            onChange={e => setOutput(e.target.value)}
-            className="w-full px-3 py-2.5 bg-background-card border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors font-mono"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block">생성된 명령어</label>
-        <div className="flex gap-2">
-          <pre className="flex-1 px-3 py-3 bg-[#0d1117] text-green-400 rounded-xl text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all border border-border">
-            {command}
-          </pre>
-          <button
-            onClick={copyCommand}
-            className="flex-shrink-0 px-4 py-2 bg-[#e94560]/10 text-[#e94560] border border-[#e94560]/20 rounded-xl text-sm font-semibold hover:bg-[#e94560]/20 transition-colors self-start mt-0"
-          >
-            {copied ? '복사됨 ✓' : '복사'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+interface VideoInfo {
+  title: string;
+  uploader: string;
+  duration: number;
+  thumbnail: string;
+  view_count?: number;
+  upload_date?: string;
+  description?: string;
 }
 
-// ── Tab: 안내 ─────────────────────────────────────────────────────────────────
-function GuideTab() {
-  const installCommands = [
-    { os: 'macOS (Homebrew)', cmd: 'brew install yt-dlp' },
-    { os: 'Windows (winget)', cmd: 'winget install yt-dlp' },
-    { os: 'Windows (pip)', cmd: 'pip install yt-dlp' },
-    { os: 'Linux (pip)', cmd: 'pip install yt-dlp' },
-    { os: 'Linux (curl)', cmd: 'sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp' },
-  ];
-
-  const examples = [
-    { desc: '기본 다운로드', cmd: 'yt-dlp URL' },
-    { desc: '최고화질 (영상+오디오 합성)', cmd: 'yt-dlp -f "bestvideo+bestaudio" URL' },
-    { desc: '오디오만 mp3로', cmd: 'yt-dlp -x --audio-format mp3 URL' },
-    { desc: '자막 포함', cmd: 'yt-dlp --write-subs --sub-lang ko URL' },
-    { desc: '재생목록 전체', cmd: 'yt-dlp -o "%(playlist_index)s-%(title)s.%(ext)s" PLAYLIST_URL' },
-    { desc: '쿠키 사용 (로그인 필요 콘텐츠)', cmd: 'yt-dlp --cookies-from-browser chrome URL' },
-  ];
-
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const copy = (text: string, idx: number) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedIdx(idx);
-      setTimeout(() => setCopiedIdx(null), 1500);
-    });
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Why limitation */}
-      <div className="px-4 py-3.5 bg-[#e94560]/5 border border-[#e94560]/20 rounded-xl">
-        <p className="text-sm font-semibold text-[#e94560] mb-1">웹 브라우저의 한계</p>
-        <p className="text-xs text-text-secondary leading-relaxed">
-          YouTube, Vimeo 등의 동영상은 CORS 정책 및 ToS(서비스 이용약관)로 인해 웹 브라우저에서 직접 다운로드할 수 없습니다.
-          데스크탑 앱(Tauri)에서는 yt-dlp를 설치한 후 직접 실행할 수 있습니다.
-        </p>
-      </div>
-
-      {/* yt-dlp installation */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-bold text-text-primary">yt-dlp 설치</p>
-          <a
-            href="https://github.com/yt-dlp/yt-dlp"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-[#e94560] hover:underline"
-          >
-            공식 GitHub →
-          </a>
-        </div>
-        <div className="space-y-2">
-          {installCommands.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-3 p-3 bg-background rounded-xl border border-border group">
-              <div className="w-36 flex-shrink-0">
-                <p className="text-[10px] text-text-muted font-semibold">{item.os}</p>
-              </div>
-              <pre className="flex-1 text-xs font-mono text-text-primary overflow-x-auto">{item.cmd}</pre>
-              <button
-                onClick={() => copy(item.cmd, idx)}
-                className="flex-shrink-0 text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
-              >
-                {copiedIdx === idx ? '복사됨' : '복사'}
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Examples */}
-      <div className="space-y-3">
-        <p className="text-sm font-bold text-text-primary">명령어 예시</p>
-        <div className="space-y-2">
-          {examples.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-3 p-3 bg-background rounded-xl border border-border">
-              <div className="w-36 flex-shrink-0">
-                <p className="text-[10px] text-text-muted font-semibold">{item.desc}</p>
-              </div>
-              <pre className="flex-1 text-xs font-mono text-green-400 bg-[#0d1117] px-3 py-2 rounded-lg overflow-x-auto">{item.cmd}</pre>
-              <button
-                onClick={() => copy(item.cmd, 100 + idx)}
-                className="flex-shrink-0 text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
-              >
-                {copiedIdx === 100 + idx ? '복사됨' : '복사'}
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Command generator */}
-      <CommandGenerator />
-    </div>
-  );
+function formatDuration(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-// ── Tab: 데스크탑 (Tauri) ──────────────────────────────────────────────────────
-function DesktopTab() {
-  const [isTauri, setIsTauri] = useState(false);
+function formatViews(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
+export default function DownloaderPage() {
   const [url, setUrl] = useState('');
   const [quality, setQuality] = useState<Quality>('best');
   const [outputPath, setOutputPath] = useState('~/Downloads');
-  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'analyzing' | 'ready' | 'downloading' | 'done' | 'error'>('idle');
+  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [errorMsg, setErrorMsg] = useState('');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window);
-  }, []);
+  const addLog = (line: string) => setLogs(prev => [...prev, line]);
 
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
-
-  const handleDownload = useCallback(async () => {
-    if (!url.trim()) return;
-    if (!isTauri) return;
-
-    setStatus('running');
-    setLogs(['다운로드를 시작합니다...']);
-
+  const runShell = useCallback(async (program: string, args: string[]) => {
     try {
       const { Command } = await import('@tauri-apps/plugin-shell');
-      const selectedQuality = QUALITY_OPTIONS.find(q => q.id === quality)!;
+      return Command.create(program, args);
+    } catch {
+      throw new Error('NOAH 데스크탑 앱에서만 사용 가능합니다. 현재 환경에서는 shell 실행이 지원되지 않습니다.');
+    }
+  }, []);
+
+  const handleAnalyze = useCallback(async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setStatus('analyzing');
+    setVideoInfo(null);
+    setLogs([]);
+    setErrorMsg('');
+
+    try {
+      const cmd = await runShell('yt-dlp', ['--dump-json', '--no-playlist', trimmed]);
+      let jsonStr = '';
+
+      cmd.stdout.on('data', (line: string) => { jsonStr += line; });
+      cmd.stderr.on('data', (line: string) => {
+        if (!line.includes('[download]')) addLog(line);
+      });
+
+      const result = await cmd.execute();
+
+      if (result.code === 0 && jsonStr) {
+        try {
+          const info = JSON.parse(jsonStr) as VideoInfo;
+          setVideoInfo(info);
+          setStatus('ready');
+        } catch {
+          setVideoInfo(null);
+          setStatus('ready');
+        }
+      } else {
+        throw new Error('영상 정보를 가져올 수 없습니다. URL을 확인하세요.');
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(msg.includes('shell') ? msg : `yt-dlp 오류: ${msg}`);
+      setStatus('error');
+    }
+  }, [url, runShell]);
+
+  const handleDownload = useCallback(async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setStatus('downloading');
+    setLogs(['⬇️ 다운로드를 시작합니다...']);
+    setErrorMsg('');
+
+    try {
+      const selected = QUALITY_OPTIONS.find(q => q.id === quality)!;
       const outputTemplate = `${outputPath}/%(title)s.%(ext)s`;
 
       let args: string[];
       if (quality === 'audio') {
-        args = [url.trim(), '-x', '--audio-format', 'mp3', '-o', outputTemplate];
+        args = [trimmed, '-x', '--audio-format', 'mp3', '-o', outputTemplate];
       } else {
-        args = [url.trim(), '-f', selectedQuality.arg, '-o', outputTemplate];
+        args = [trimmed, '-f', selected.arg, '-o', outputTemplate];
       }
 
-      const cmd = Command.create('yt-dlp', args);
-
+      const cmd = await runShell('yt-dlp', args);
       cmd.stdout.on('data', (line: string) => {
-        setLogs(prev => [...prev, line]);
+        addLog(line);
+        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       });
       cmd.stderr.on('data', (line: string) => {
-        setLogs(prev => [...prev, `[오류] ${line}`]);
+        addLog(`[info] ${line}`);
+        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       });
 
-      const output = await cmd.execute();
-      if (output.code === 0) {
+      const result = await cmd.execute();
+      if (result.code === 0) {
         setStatus('done');
-        setLogs(prev => [...prev, '✅ 다운로드 완료!']);
+        addLog('✅ 다운로드 완료!');
       } else {
         setStatus('error');
-        setLogs(prev => [...prev, `❌ 오류 발생 (코드: ${output.code})`]);
+        addLog(`❌ 오류 (종료 코드: ${result.code})`);
       }
     } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(msg);
       setStatus('error');
-      setLogs(prev => [...prev, `❌ 오류: ${e instanceof Error ? e.message : String(e)}`]);
     }
-  }, [url, quality, outputPath, isTauri]);
+  }, [url, quality, outputPath, runShell]);
 
-  if (!isTauri) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-4">
-        <div className="text-4xl">🖥️</div>
-        <p className="text-base font-semibold text-text-primary">데스크탑 앱에서만 사용 가능</p>
-        <p className="text-sm text-text-muted text-center max-w-sm">
-          이 기능은 NOAH 데스크탑 앱(Tauri)에서만 사용할 수 있습니다. 웹 브라우저에서는 보안 정책상 직접 실행이 불가능합니다.
-        </p>
-        <p className="text-xs text-text-muted text-center max-w-sm">
-          안내 탭의 명령어 생성기를 사용하여 터미널에서 직접 실행하세요.
-        </p>
-      </div>
-    );
-  }
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setUrl(text.trim());
+    } catch {
+      // clipboard read failed
+    }
+  };
+
+  const handleReset = () => {
+    setStatus('idle');
+    setVideoInfo(null);
+    setLogs([]);
+    setErrorMsg('');
+    setUrl('');
+  };
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-4">
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">다운로드 URL</label>
-          <input
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            placeholder="https://www.youtube.com/watch?v=..."
-            className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors placeholder:text-text-muted"
-          />
-        </div>
-
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">화질 / 형식</label>
-          <div className="flex flex-wrap gap-2">
-            {QUALITY_OPTIONS.map(q => (
-              <button
-                key={q.id}
-                onClick={() => setQuality(q.id)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                  quality === q.id
-                    ? 'bg-[#e94560] text-white'
-                    : 'bg-border/40 text-text-muted hover:text-text-primary'
-                }`}
-              >
-                {q.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">저장 폴더</label>
-          <input
-            value={outputPath}
-            onChange={e => setOutputPath(e.target.value)}
-            className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors font-mono"
-          />
-        </div>
-
-        <button
-          onClick={handleDownload}
-          disabled={status === 'running' || !url.trim()}
-          className="px-6 py-3 bg-[#e94560] text-white rounded-xl text-sm font-bold hover:bg-[#d63b55] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {status === 'running' ? '다운로드 중...' : status === 'done' ? '✅ 완료' : '다운로드 시작'}
-        </button>
-      </div>
-
-      {logs.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">로그</p>
-            <button
-              onClick={() => { setLogs([]); setStatus('idle'); }}
-              className="text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
-            >
-              지우기
-            </button>
-          </div>
-          <div className="h-64 bg-[#0d1117] rounded-xl border border-border p-4 overflow-y-auto font-mono text-xs text-green-400 space-y-0.5">
-            {logs.map((line, idx) => (
-              <div key={idx} className={line.startsWith('❌') ? 'text-red-400' : line.startsWith('✅') ? 'text-green-300 font-bold' : ''}>
-                {line}
-              </div>
-            ))}
-            <div ref={logsEndRef} />
-          </div>
-        </div>
-      )}
-
-      {/* Status badge */}
-      <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${
-          status === 'idle' ? 'bg-border' :
-          status === 'running' ? 'bg-yellow-400 animate-pulse' :
-          status === 'done' ? 'bg-green-400' :
-          'bg-red-400'
-        }`} />
-        <span className="text-xs text-text-muted">
-          {status === 'idle' ? '대기중' : status === 'running' ? '다운로드 중' : status === 'done' ? '완료' : '오류 발생'}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ── Tab: 지원 사이트 ──────────────────────────────────────────────────────────
-function SitesTab() {
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-text-muted">
-        yt-dlp는 1,000개 이상의 사이트를 지원합니다. 주요 사이트 목록:
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-        {SUPPORTED_SITES.map((site, idx) => (
-          <div key={idx} className="flex items-start gap-3 p-3.5 bg-background rounded-xl border border-border">
-            <span className="text-xl flex-shrink-0">{site.icon}</span>
+    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="max-w-3xl mx-auto space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">⬇️</span>
             <div>
-              <p className="text-sm font-semibold text-text-primary">{site.name}</p>
-              <p className="text-xs text-text-muted mt-0.5">{site.desc}</p>
+              <h2 className="text-2xl font-extrabold text-text-primary">미디어 다운로더</h2>
+              <p className="text-xs text-text-muted mt-0.5">YouTube · Vimeo · TikTok · Instagram 등 1,000개+ 지원</p>
             </div>
           </div>
-        ))}
-      </div>
-      <p className="text-xs text-text-muted">
-        전체 목록: <a href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md" target="_blank" rel="noopener noreferrer" className="text-[#e94560] hover:underline">yt-dlp 지원 사이트 목록 →</a>
-      </p>
-    </div>
-  );
-}
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
-export default function DownloaderPage() {
-  const [tab, setTab] = useState<Tab>('guide');
-
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'guide', label: '안내' },
-    { id: 'desktop', label: 'Tauri 데스크탑' },
-    { id: 'sites', label: '지원 사이트' },
-  ];
-
-  return (
-    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex items-center gap-3">
-          <span className="text-2xl">⬇️</span>
-          <h2 className="text-2xl font-extrabold text-text-primary">미디어 다운로더</h2>
-        </div>
-
-        {/* Tab bar */}
-        <div className="flex gap-1 p-1 bg-border/30 rounded-xl w-fit mb-6">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                tab === t.id
-                  ? 'bg-background-card text-text-primary shadow-sm'
-                  : 'text-text-muted hover:text-text-primary'
-              }`}
-            >
-              {t.label}
+          {status !== 'idle' && (
+            <button onClick={handleReset} className="text-xs text-text-muted hover:text-[#e94560] transition-colors">
+              처음으로
             </button>
-          ))}
+          )}
         </div>
 
-        {/* Content card */}
-        <div className="bg-background-card rounded-2xl border border-border p-6">
-          {tab === 'guide' && <GuideTab />}
-          {tab === 'desktop' && <DesktopTab />}
-          {tab === 'sites' && <SitesTab />}
+        {/* URL Input Card */}
+        <div className="bg-background-card border border-border rounded-2xl p-5 space-y-4">
+          <div>
+            <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-2">영상 URL</label>
+            <div className="flex gap-2">
+              <input
+                value={url}
+                onChange={e => { setUrl(e.target.value); setVideoInfo(null); setStatus('idle'); }}
+                onKeyDown={e => { if (e.key === 'Enter') handleAnalyze(); }}
+                placeholder="https://www.youtube.com/watch?v=..."
+                className="flex-1 px-4 py-3 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors placeholder:text-text-muted font-mono"
+              />
+              <button
+                onClick={handlePaste}
+                className="flex-shrink-0 px-4 py-2 rounded-xl bg-border/40 text-text-secondary text-sm font-semibold hover:bg-border transition-colors"
+              >
+                붙여넣기
+              </button>
+            </div>
+          </div>
+
+          {/* Analyze button */}
+          {status === 'idle' && url.trim() && (
+            <button
+              onClick={handleAnalyze}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-[#e94560] to-[#8b5cf6] text-white text-sm font-bold hover:opacity-90 transition-opacity"
+            >
+              🔍 영상 정보 가져오기
+            </button>
+          )}
+
+          {/* Analyzing spinner */}
+          {status === 'analyzing' && (
+            <div className="flex items-center justify-center gap-3 py-4">
+              <span className="w-5 h-5 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm text-text-muted">영상 정보를 불러오는 중...</span>
+            </div>
+          )}
+
+          {/* Error */}
+          {status === 'error' && errorMsg && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
+              <p className="text-xs text-red-400 font-semibold mb-1">오류 발생</p>
+              <p className="text-xs text-red-300/80">{errorMsg}</p>
+              {errorMsg.includes('데스크탑') && (
+                <p className="text-xs text-text-muted mt-2">yt-dlp 설치: <code className="bg-border/40 px-1 rounded font-mono">winget install yt-dlp</code></p>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* Video Info Card */}
+        {videoInfo && (status === 'ready' || status === 'downloading' || status === 'done' || status === 'error') && (
+          <div className="bg-background-card border border-border rounded-2xl p-5">
+            <div className="flex gap-4">
+              {videoInfo.thumbnail && (
+                <div className="flex-shrink-0 w-32 h-20 rounded-xl overflow-hidden bg-border/20">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={videoInfo.thumbnail} alt="" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0 space-y-1">
+                <p className="text-sm font-bold text-text-primary line-clamp-2 leading-snug">{videoInfo.title}</p>
+                <p className="text-xs text-text-muted">{videoInfo.uploader}</p>
+                <div className="flex items-center gap-3 text-xs text-text-muted">
+                  {videoInfo.duration > 0 && <span>⏱ {formatDuration(videoInfo.duration)}</span>}
+                  {videoInfo.view_count && videoInfo.view_count > 0 && <span>👁 {formatViews(videoInfo.view_count)}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Download Settings */}
+        {(status === 'ready' || status === 'downloading' || status === 'done') && (
+          <div className="bg-background-card border border-border rounded-2xl p-5 space-y-5">
+            {/* Quality */}
+            <div>
+              <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-3">화질 / 형식</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {QUALITY_OPTIONS.map(q => (
+                  <button
+                    key={q.id}
+                    onClick={() => setQuality(q.id)}
+                    className={`relative px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left ${
+                      quality === q.id
+                        ? 'bg-[#e94560] text-white shadow-sm'
+                        : 'bg-border/40 text-text-muted hover:text-text-primary hover:bg-border/60'
+                    }`}
+                  >
+                    {q.label}
+                    {q.badge && (
+                      <span className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                        quality === q.id ? 'bg-white/20 text-white' : 'bg-[#e94560]/20 text-[#e94560]'
+                      }`}>{q.badge}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Output path */}
+            <div>
+              <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">저장 폴더</label>
+              <input
+                value={outputPath}
+                onChange={e => setOutputPath(e.target.value)}
+                className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors font-mono"
+              />
+            </div>
+
+            {/* Download button */}
+            <button
+              onClick={handleDownload}
+              disabled={status === 'downloading'}
+              className="w-full py-3.5 rounded-xl bg-[#e94560] text-white text-sm font-bold hover:bg-[#d63b55] transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {status === 'downloading' ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  다운로드 중...
+                </>
+              ) : status === 'done' ? (
+                '✅ 완료 — 다시 다운로드'
+              ) : (
+                '⬇️ 다운로드 시작'
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Log output */}
+        {logs.length > 0 && (
+          <div className="bg-background-card border border-border rounded-2xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  status === 'downloading' ? 'bg-yellow-400 animate-pulse' :
+                  status === 'done' ? 'bg-green-400' :
+                  status === 'error' ? 'bg-red-400' : 'bg-border'
+                }`} />
+                <span className="text-xs font-semibold text-text-secondary">
+                  {status === 'downloading' ? '다운로드 중' : status === 'done' ? '완료' : status === 'error' ? '오류' : '로그'}
+                </span>
+              </div>
+              <button
+                onClick={() => setLogs([])}
+                className="text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
+              >
+                지우기
+              </button>
+            </div>
+            <div className="h-52 bg-[#0d1117] rounded-xl border border-border p-4 overflow-y-auto font-mono text-xs space-y-0.5">
+              {logs.map((line, idx) => (
+                <div key={idx} className={
+                  line.startsWith('❌') ? 'text-red-400' :
+                  line.startsWith('✅') ? 'text-green-300 font-bold' :
+                  line.includes('[download]') ? 'text-cyan-400' :
+                  'text-green-400/80'
+                }>
+                  {line}
+                </div>
+              ))}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        )}
+
+        {/* Supported sites hint (only on idle with no URL) */}
+        {status === 'idle' && !url.trim() && (
+          <div className="bg-background-card border border-border rounded-2xl p-5">
+            <p className="text-xs font-semibold text-text-secondary mb-3">지원 사이트</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ['▶️', 'YouTube'], ['🎬', 'Vimeo'], ['🐦', 'Twitter/X'],
+                ['🎵', 'TikTok'], ['📸', 'Instagram'], ['🟣', 'Twitch'],
+                ['📘', 'Facebook'], ['🔊', 'SoundCloud'], ['📺', 'Bilibili'],
+              ].map(([icon, name]) => (
+                <div key={name} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-background rounded-lg border border-border">
+                  <span className="text-sm">{icon}</span>
+                  <span className="text-xs text-text-secondary">{name}</span>
+                </div>
+              ))}
+              <div className="flex items-center px-2.5 py-1.5 bg-background rounded-lg border border-border">
+                <span className="text-xs text-text-muted">외 990개+</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-text-muted mt-3">
+              ※ yt-dlp 설치 필요: <code className="bg-border/40 px-1 rounded">winget install yt-dlp</code> / <code className="bg-border/40 px-1 rounded">brew install yt-dlp</code>
+            </p>
+          </div>
+        )}
       </div>
 
       <FloatingAIBar

@@ -58,8 +58,8 @@ export default function PomodoroPage() {
   };
 
   return (
-    <div className="flex flex-col items-center min-h-screen bg-background px-4 py-8">
-      <div className="w-full max-w-md">
+    <div className="px-4 md:px-6 py-6">
+      <div className="max-w-4xl mx-auto">
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-text-primary">🍅 포모도로</h1>

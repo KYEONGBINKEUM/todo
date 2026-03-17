@@ -468,7 +468,7 @@ export default function MyDayPage() {
   }
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="px-4 md:px-6 py-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">

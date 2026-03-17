@@ -40,15 +40,6 @@ export default function PomodoroWidgetPage() {
     return () => { clearInterval(id); window.removeEventListener('storage', onStorage); };
   }, []);
 
-  // 드래그로 창 이동 (Tauri)
-  const startDrag = async () => {
-    try {
-      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const win = getCurrentWebviewWindow();
-      await win.startDragging();
-    } catch { /* ignore */ }
-  };
-
   if (!state) return (
     <div className="w-full h-screen bg-black/80 flex items-center justify-center rounded-xl">
       <span className="text-white text-sm">🍅</span>
@@ -71,11 +62,14 @@ export default function PomodoroWidgetPage() {
     <div
       className="w-full h-screen select-none overflow-hidden rounded-xl"
       style={{ background: `${color}ee` }}
-      onMouseDown={startDrag}
     >
-      <div className="flex items-center h-full px-4 gap-3">
-        <span className="text-2xl">🍅</span>
-        <div className="flex-1">
+      {/* data-tauri-drag-region: Tauri가 이 영역을 드래그 핸들로 인식 */}
+      <div
+        data-tauri-drag-region
+        className="flex items-center h-full px-4 gap-3 cursor-grab active:cursor-grabbing"
+      >
+        <span className="text-2xl pointer-events-none">🍅</span>
+        <div className="flex-1 pointer-events-none">
           <div className="text-white font-mono font-bold text-2xl tracking-widest">{mm}:{ss}</div>
           <div className="text-white/70 text-xs">
             {phase === 'work' ? '집중' : phase === 'short_break' ? '짧은 휴식' : '긴 휴식'}
@@ -83,12 +77,12 @@ export default function PomodoroWidgetPage() {
           </div>
         </div>
         {!isRunning && (
-          <div className="text-white/60 text-xs">일시정지</div>
+          <div className="text-white/60 text-xs pointer-events-none">일시정지</div>
         )}
         <button
-          onMouseDown={(e) => e.stopPropagation()}
           onClick={closeWidget}
-          className="text-white/60 hover:text-white text-lg leading-none"
+          className="text-white/60 hover:text-white text-xl leading-none w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/20 flex-shrink-0"
+          style={{ pointerEvents: 'auto' }}
         >
           ×
         </button>

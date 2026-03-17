@@ -65,7 +65,7 @@ export default function UpcomingPage() {
     return calendarEvents.filter(ev => {
       const d = new Date(ev.date + 'T00:00:00'); d.setHours(0, 0, 0, 0);
       const diff = Math.ceil((d.getTime() - today.getTime()) / 86400000);
-      if (key === 'overdue') return diff < 0;
+      if (key === 'overdue') return false; // 캘린더 일정은 완료 개념 없어 지연됨 제외
       if (key === 'today') return diff === 0;
       if (key === 'tomorrow') return diff === 1;
       if (key === 'thisWeek') return diff >= 2 && diff <= 7;

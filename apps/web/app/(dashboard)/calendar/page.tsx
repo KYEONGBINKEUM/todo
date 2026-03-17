@@ -441,7 +441,24 @@ export default function CalendarPage() {
       } else {
         setGcalToken(token);
       }
-      const raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));
+      let raw: Awaited<ReturnType<typeof fetchGCalEvents>>;
+      try {
+        raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));
+      } catch (fetchErr) {
+        // 토큰이 만료됐을 경우 서버에서 자동 갱신 후 1회 재시도
+        if (fetchErr instanceof Error && fetchErr.message === 'token_expired') {
+          try {
+            token = await getGCalTokenFromServer();
+            setGcalToken(token);
+            saveGCalToken(token);
+            raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));
+          } catch {
+            throw new Error('token_expired');
+          }
+        } else {
+          throw fetchErr;
+        }
+      }
       setGcalDisplayEvents(normalizeGCalEvents(raw));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';

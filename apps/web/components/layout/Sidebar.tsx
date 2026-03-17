@@ -218,9 +218,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </Link>
         </div>
 
-        {/* Navigation — draggable */}
+        {/* Navigation — draggable, scrollable */}
         <nav
-          className="flex-shrink-0 space-y-1"
+          className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 scrollbar-thin"
           onTouchMove={handleNavTouchMove}
           onTouchEnd={handleNavTouchEnd}
         >
@@ -257,9 +257,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             );
           })}
         </nav>
-
-        {/* spacer */}
-        <div className="flex-1" />
 
         {/* Theme Toggle */}
         <div className="pt-4 border-t border-border flex-shrink-0">

@@ -82,7 +82,7 @@ export default function DashboardLayout({
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="flex-1 overflow-y-auto flex flex-col md:pt-0 min-w-0 mobile-content-pt">
-        <div className="flex-1">{children}</div>
+        <div className="flex-1 pb-28">{children}</div>
       </main>
 
       {/* NoahAIButton 비활성화 — 채팅 패널 대신 페이지별 FloatingAIBar 사용 */}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
@@ -41,6 +41,20 @@ export default function TimetablePage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editSlot, setEditSlot] = useState<TimetableSlot | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [showStats, setShowStats] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // Current time indicator - update every minute
+  useEffect(() => {
+    const id = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Today's day index (0=Mon, 6=Sun, adjust from JS 0=Sun)
+  const todayDayIdx = (new Date().getDay() + 6) % 7;
+  const todayKey = DAY_KEYS[todayDayIdx];
+  const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
   // 폼 상태
   const [name, setName] = useState('');
@@ -132,13 +146,40 @@ export default function TimetablePage() {
       <div className="sticky top-0 z-10 bg-background border-b border-border px-4 md:px-6 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-text-primary">📅 시간표</h1>
-          <button
-            onClick={() => openForm()}
-            className="px-4 py-2 bg-[#e94560] text-white text-sm font-semibold rounded-xl hover:bg-[#d63651] transition-colors"
-          >
-            + 시간 추가
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setShowStats(v => !v)} className="px-3 py-1.5 text-xs rounded-xl border border-border text-text-secondary hover:text-text-primary transition-colors">
+              📊 통계
+            </button>
+            <button onClick={() => { window.print(); }} className="px-3 py-1.5 text-xs rounded-xl border border-border text-text-secondary hover:text-text-primary transition-colors">
+              🖨️ 인쇄
+            </button>
+            <button onClick={() => openForm()} className="px-4 py-2 bg-[#e94560] text-white text-sm font-semibold rounded-xl hover:bg-[#d63651] transition-colors">
+              + 시간 추가
+            </button>
+          </div>
         </div>
+        {/* Stats panel */}
+        {showStats && slots.length > 0 && (
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+            {(() => {
+              const subjectHours: Record<string, number> = {};
+              slots.forEach(s => {
+                const dur = (toMinutes(s.endHour, s.endMin) - toMinutes(s.startHour, s.startMin)) / 60;
+                subjectHours[s.name] = (subjectHours[s.name] || 0) + dur * s.days.length;
+              });
+              const totalHours = Object.values(subjectHours).reduce((a, b) => a + b, 0);
+              return Object.entries(subjectHours).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([name, h]) => (
+                <div key={name} className="bg-background-card border border-border rounded-xl px-3 py-2 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: slots.find(s => s.name === name)?.color || '#e94560' }} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-text-primary truncate">{name}</p>
+                    <p className="text-[10px] text-text-muted">{h.toFixed(1)}h/주 ({Math.round(h / totalHours * 100)}%)</p>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        )}
       </div>
 
       {/* 시간표 그리드 */}
@@ -192,6 +233,15 @@ export default function TimetablePage() {
                             openForm();
                           }}
                         >
+                          {dayKey === todayKey && currentMinutes >= toMinutes(hour, min) && currentMinutes < toMinutes(hour, min) + 30 && (
+                            <div className="absolute left-0 right-0 z-20 pointer-events-none"
+                              style={{ top: `${((currentMinutes - toMinutes(hour, min)) / 30) * 32}px` }}>
+                              <div className="flex items-center">
+                                <div className="w-2 h-2 rounded-full bg-[#e94560] -ml-1 flex-shrink-0" />
+                                <div className="flex-1 h-0.5 bg-[#e94560]" />
+                              </div>
+                            </div>
+                          )}
                           {cellSlots.map((slot) => {
                             if (!isSlotStart(slot, hour, min)) return null;
                             const height = getSlotHeight(slot) * 32;

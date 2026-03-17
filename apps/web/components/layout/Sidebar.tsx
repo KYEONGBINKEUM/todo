@@ -12,18 +12,32 @@ import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 import SettingsModal from '@/components/settings/SettingsModal';
 
 const DEFAULT_NAV = [
+  // ── 할일 & 계획 ──
   { icon: '☀️', labelKey: 'nav.myDay', href: '/my-day' },
   { icon: '📋', labelKey: 'nav.allTasks', href: '/tasks' },
   { icon: '📅', labelKey: 'nav.upcoming', href: '/upcoming' },
   { icon: '🗓️', labelKey: 'nav.calendar', href: '/calendar' },
-  { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
+  { icon: '⭐', labelKey: 'nav.important', href: '/important' },
   { icon: '⏱️', labelKey: 'nav.timebox', href: '/timebox' },
   { icon: '🍅', labelKey: 'nav.pomodoro', href: '/pomodoro' },
+  // ── 생산성 ──
+  { icon: '📝', labelKey: 'nav.notes', href: '/notes' },
+  { icon: '🕸️', labelKey: 'nav.mindmap', href: '/mindmap' },
   { icon: '💰', labelKey: 'nav.budget', href: '/budget' },
   { icon: '📆', labelKey: 'nav.timetable', href: '/timetable' },
+  // ── 도구 ──
   { icon: '🧮', labelKey: 'nav.calculator', href: '/calculator' },
   { icon: '🌐', labelKey: 'nav.translate', href: '/translate' },
-  { icon: '⭐', labelKey: 'nav.important', href: '/important' },
+  { icon: '🌍', labelKey: 'nav.worldClock', href: '/world-clock' },
+  { icon: '✂️', labelKey: 'nav.textTools', href: '/text-tools' },
+  // ── 파일 & 미디어 ──
+  { icon: '📁', labelKey: 'nav.converter', href: '/converter' },
+  { icon: '🎨', labelKey: 'nav.imageEditor', href: '/image-editor' },
+  { icon: '🎬', labelKey: 'nav.youtube', href: '/youtube' },
+  { icon: '⬇️', labelKey: 'nav.downloader', href: '/downloader' },
+  // ── 유틸리티 ──
+  { icon: '📊', labelKey: 'nav.qrcode', href: '/qrcode' },
+  { icon: '🔐', labelKey: 'nav.security', href: '/security' },
 ];
 
 interface SidebarProps {

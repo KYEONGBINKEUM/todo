@@ -14,7 +14,7 @@ import { useDataStore } from '@/lib/data-store';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
 import { detectCrossPageAction, crossPageContext, handleCrossPageResult } from '@/lib/cross-page-ai';
 
-type Mode = 'general' | 'ratio' | 'unit' | 'color';
+type Mode = 'general' | 'scientific' | 'ratio' | 'unit' | 'color' | 'programmer' | 'tip';
 
 interface HistItem { id: string; mode: Mode; expr: string; result: string; }
 
@@ -633,8 +633,298 @@ function ColorCalc({ onResult, t }: { onResult: (expr: string, result: string) =
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Scientific Calculator ─────────────────────────────────────────────────────
+function ScientificCalc({ onResult }: { onResult: (expr: string, result: string) => void }) {
+  const [display, setDisplay] = useState('0');
+  const [expr, setExpr] = useState('');
+  const [justCalc, setJustCalc] = useState(false);
+  const [isDeg, setIsDeg] = useState(true);
+  const toRad = (x: number) => isDeg ? x * Math.PI / 180 : x;
+
+  const press = useCallback((val: string) => {
+    if (val === 'C') { setDisplay('0'); setExpr(''); setJustCalc(false); return; }
+    if (val === '⌫') { setDisplay(p => p.length > 1 ? p.slice(0, -1) : '0'); return; }
+    if (val === '=') {
+      try {
+        const full = justCalc ? display : expr + display;
+        const safeExpr = full.replace(/Math\.[a-zA-Z]+/g, (m) => m);
+        const res = Function('"use strict"; const Math=window.Math; return (' + safeExpr + ')')();
+        const r = parseFloat(res.toFixed(10)).toString();
+        if (full.trim() && full !== r) onResult(full + ' =', r);
+        setDisplay(r); setExpr(''); setJustCalc(true);
+      } catch { setDisplay('Error'); setExpr(''); }
+      return;
+    }
+    const funcs: Record<string, string> = {
+      'sin': `Math.sin(${isDeg ? 'Math.PI/180*' : ''})`,
+      'cos': `Math.cos(${isDeg ? 'Math.PI/180*' : ''})`,
+      'tan': `Math.tan(${isDeg ? 'Math.PI/180*' : ''})`,
+      'log': 'Math.log10(',
+      'ln': 'Math.log(',
+      '√': 'Math.sqrt(',
+      'x²': '**2',
+      'xⁿ': '**',
+      '1/x': '1/',
+      'π': String(Math.PI),
+      'e': String(Math.E),
+      '|x|': 'Math.abs(',
+      '(': '(',
+      ')': ')',
+      '!': '!',
+    };
+    if (funcs[val]) {
+      if (['x²', 'xⁿ', '!'].includes(val)) {
+        setExpr(p => (justCalc ? display : p + display) + funcs[val]);
+        setDisplay('0'); setJustCalc(false);
+      } else if (['π', 'e'].includes(val)) {
+        setDisplay(funcs[val]); setJustCalc(false);
+      } else {
+        setExpr(p => justCalc ? funcs[val] : p + display + (funcs[val].startsWith('Math') ? '+' + funcs[val] : funcs[val]));
+        setDisplay('0'); setJustCalc(false);
+      }
+      return;
+    }
+    if (['+', '-', '×', '÷', '%'].includes(val)) {
+      const op = val === '×' ? '*' : val === '÷' ? '/' : val;
+      setExpr((justCalc ? display : expr + display) + op);
+      setDisplay('0'); setJustCalc(false); return;
+    }
+    if (val === '.') { if (!display.includes('.')) { setDisplay(p => p + '.'); setJustCalc(false); } return; }
+    if (val === '±') { setDisplay(p => p.startsWith('-') ? p.slice(1) : '-' + p); return; }
+    setDisplay(p => justCalc ? val : p === '0' ? val : p + val);
+    setJustCalc(false);
+  }, [display, expr, justCalc, onResult, isDeg]);
+
+  const btn = (v: string, cls = '') => (
+    <button key={v} onClick={() => press(v)}
+      className={`h-10 rounded-xl text-xs font-semibold transition-all active:scale-95 ${cls || 'bg-background-card border border-border text-text-primary hover:bg-border/30'}`}>
+      {v}
+    </button>
+  );
+  const opCls = 'bg-[#e94560]/15 text-[#e94560] hover:bg-[#e94560]/25';
+  const fnCls = 'bg-purple-500/10 text-purple-400 hover:bg-purple-500/20';
+  const eqCls = 'bg-[#e94560] text-white hover:bg-[#d63b55]';
+
+  return (
+    <div className="w-72 flex-shrink-0 space-y-2">
+      <div className="bg-background rounded-2xl border border-border p-3 mb-2">
+        <div className="flex justify-between items-center mb-1">
+          <p className="text-[10px] text-text-muted font-mono truncate flex-1">{expr || '\u00a0'}</p>
+          <button onClick={() => setIsDeg(p => !p)} className={`text-[10px] px-2 py-0.5 rounded-md border ${isDeg ? 'border-[#e94560]/40 text-[#e94560]' : 'border-border text-text-muted'}`}>
+            {isDeg ? 'DEG' : 'RAD'}
+          </button>
+        </div>
+        <p className="text-3xl font-light text-text-primary text-right truncate">{display}</p>
+      </div>
+      <div className="grid grid-cols-5 gap-1">
+        {[
+          btn('sin', fnCls), btn('cos', fnCls), btn('tan', fnCls), btn('log', fnCls), btn('ln', fnCls),
+          btn('√', fnCls), btn('x²', fnCls), btn('xⁿ', fnCls), btn('|x|', fnCls), btn('1/x', fnCls),
+          btn('π', fnCls), btn('e', fnCls), btn('(', fnCls), btn(')', fnCls), btn('!', fnCls),
+          btn('C', 'bg-border/60 text-text-secondary hover:bg-border'), btn('±', 'bg-border/60 text-text-secondary hover:bg-border'), btn('%', opCls), btn('⌫', 'bg-border/60 text-text-secondary hover:bg-border'), btn('÷', opCls),
+          btn('7'), btn('8'), btn('9'), btn('×', opCls), btn('−', opCls),
+          btn('4'), btn('5'), btn('6'), btn('+', opCls), btn('-', opCls),
+          btn('1'), btn('2'), btn('3'), btn('.'),
+          <button key="0" onClick={() => press('0')} className="col-span-1 h-10 rounded-xl text-xs font-semibold bg-background-card border border-border text-text-primary hover:bg-border/30">0</button>,
+          <button key="=" onClick={() => press('=')} className="col-span-2 h-10 rounded-xl text-xs font-semibold bg-[#e94560] text-white hover:bg-[#d63b55]">=</button>,
+        ]}
+      </div>
+    </div>
+  );
+}
+
+// ── Programmer Calculator ──────────────────────────────────────────────────────
+function ProgrammerCalc({ onResult }: { onResult: (expr: string, result: string) => void }) {
+  const [value, setValue] = useState(0);
+  const [inputBase, setInputBase] = useState<'DEC' | 'HEX' | 'BIN' | 'OCT'>('DEC');
+  const [inputText, setInputText] = useState('0');
+
+  const bases: ('DEC' | 'HEX' | 'BIN' | 'OCT')[] = ['DEC', 'HEX', 'OCT', 'BIN'];
+  const baseNum: Record<string, number> = { DEC: 10, HEX: 16, OCT: 8, BIN: 2 };
+  const baseLabel: Record<string, string> = { DEC: '10진수', HEX: '16진수', OCT: '8진수', BIN: '2진수' };
+
+  const parse = (text: string, base: string) => {
+    const n = parseInt(text, baseNum[base]);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const handleInput = (text: string) => {
+    setInputText(text);
+    setValue(parse(text, inputBase));
+  };
+
+  const handleBaseChange = (b: 'DEC' | 'HEX' | 'BIN' | 'OCT') => {
+    const n = parse(inputText, inputBase);
+    setValue(n);
+    setInputBase(b);
+    setInputText(n.toString(baseNum[b]).toUpperCase());
+  };
+
+  const hexBtns = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const bitOps = [
+    { label: 'AND', fn: (a: number, b: number) => a & b },
+    { label: 'OR', fn: (a: number, b: number) => a | b },
+    { label: 'XOR', fn: (a: number, b: number) => a ^ b },
+    { label: 'NOT', fn: (a: number) => ~a },
+    { label: 'LSH', fn: (a: number) => a << 1 },
+    { label: 'RSH', fn: (a: number) => a >> 1 },
+  ];
+  const [opA, setOpA] = useState('');
+  const [opB, setOpB] = useState('');
+  const [bitResult, setBitResult] = useState<number | null>(null);
+
+  const runOp = (op: typeof bitOps[0]) => {
+    const a = parseInt(opA || '0');
+    const b = parseInt(opB || '0');
+    const res = op.fn(a, b);
+    setBitResult(res);
+    onResult(`${a} ${op.label} ${b}`, res.toString());
+  };
+
+  return (
+    <div className="w-full space-y-4">
+      <div className="bg-background rounded-2xl border border-border p-4">
+        <div className="flex gap-2 mb-3">
+          {bases.map(b => (
+            <button key={b} onClick={() => handleBaseChange(b)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${inputBase === b ? 'bg-[#e94560] text-white' : 'bg-border/30 text-text-muted hover:text-text-primary'}`}>
+              {b}
+            </button>
+          ))}
+        </div>
+        <input value={inputText} onChange={e => handleInput(e.target.value)}
+          className="w-full bg-transparent text-2xl font-mono text-text-primary text-right outline-none border-b border-border pb-2 mb-3" />
+        <div className="grid grid-cols-2 gap-2">
+          {bases.map(b => (
+            <div key={b} className="bg-background-card rounded-lg px-3 py-2">
+              <p className="text-[10px] text-text-muted mb-0.5">{baseLabel[b]}</p>
+              <p className="text-sm font-mono text-text-primary truncate">{value.toString(baseNum[b]).toUpperCase()}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      {inputBase === 'HEX' && (
+        <div className="grid grid-cols-6 gap-1">
+          {hexBtns.map(h => (
+            <button key={h} onClick={() => handleInput(inputText === '0' ? h : inputText + h)}
+              className="h-10 rounded-xl text-sm font-mono font-bold bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition-all">
+              {h}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="bg-background-card border border-border rounded-2xl p-4">
+        <p className="text-xs font-semibold text-text-secondary mb-3">비트 연산</p>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div>
+            <label className="text-[10px] text-text-muted block mb-1">피연산자 A</label>
+            <input value={opA} onChange={e => setOpA(e.target.value)} placeholder="정수" className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-sm text-text-primary outline-none" />
+          </div>
+          <div>
+            <label className="text-[10px] text-text-muted block mb-1">피연산자 B</label>
+            <input value={opB} onChange={e => setOpB(e.target.value)} placeholder="정수" className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-sm text-text-primary outline-none" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5 mb-3">
+          {bitOps.map(op => (
+            <button key={op.label} onClick={() => runOp(op)}
+              className="py-2 rounded-xl text-xs font-bold bg-border/30 text-text-secondary hover:bg-[#e94560]/10 hover:text-[#e94560] transition-all">
+              {op.label}
+            </button>
+          ))}
+        </div>
+        {bitResult !== null && (
+          <div className="bg-background rounded-xl p-3 text-center">
+            <p className="text-xs text-text-muted mb-1">결과</p>
+            <p className="text-xl font-mono font-bold text-[#e94560]">{bitResult}</p>
+            <p className="text-xs text-text-muted mt-1">{bitResult.toString(2)} (2진)</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tip Calculator ─────────────────────────────────────────────────────────────
+function TipCalc({ onResult }: { onResult: (expr: string, result: string) => void }) {
+  const [bill, setBill] = useState('');
+  const [tip, setTip] = useState(10);
+  const [people, setPeople] = useState(1);
+  const [customTip, setCustomTip] = useState('');
+
+  const billNum = parseFloat(bill) || 0;
+  const tipPct = customTip ? parseFloat(customTip) : tip;
+  const tipAmt = billNum * tipPct / 100;
+  const total = billNum + tipAmt;
+  const perPerson = people > 0 ? total / people : total;
+  const tipPerPerson = people > 0 ? tipAmt / people : tipAmt;
+
+  const presets = [0, 5, 10, 15, 18, 20, 25];
+
+  const handleSave = () => {
+    if (billNum > 0) {
+      onResult(`${billNum.toLocaleString()}원 + ${tipPct}% 팁 (${people}명)`, `1인당 ${Math.round(perPerson).toLocaleString()}원`);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-sm space-y-4">
+      <div>
+        <label className="text-xs text-text-muted block mb-1">청구 금액</label>
+        <div className="relative">
+          <input type="number" value={bill} onChange={e => setBill(e.target.value)} placeholder="0"
+            className="w-full bg-background border border-border rounded-xl px-3 py-3 text-lg font-bold text-text-primary pr-10 outline-none focus:border-[#e94560]" />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-text-muted">원</span>
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-text-muted block mb-2">팁 비율</label>
+        <div className="grid grid-cols-4 gap-1.5 mb-2">
+          {presets.map(p => (
+            <button key={p} onClick={() => { setTip(p); setCustomTip(''); }}
+              className={`py-2 rounded-xl text-sm font-bold transition-all ${tip === p && !customTip ? 'bg-[#e94560] text-white' : 'bg-background-card border border-border text-text-secondary hover:text-text-primary'}`}>
+              {p}%
+            </button>
+          ))}
+          <input value={customTip} onChange={e => setCustomTip(e.target.value)} placeholder="직접" type="number"
+            className={`py-2 rounded-xl text-sm text-center border outline-none transition-all ${customTip ? 'border-[#e94560] text-[#e94560]' : 'border-border text-text-secondary'} bg-background-card`} />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-text-muted block mb-2">인원수</label>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setPeople(p => Math.max(1, p - 1))} className="w-10 h-10 rounded-xl border border-border text-text-secondary hover:bg-border/30 text-lg">−</button>
+          <span className="flex-1 text-center text-xl font-bold text-text-primary">{people}명</span>
+          <button onClick={() => setPeople(p => p + 1)} className="w-10 h-10 rounded-xl border border-border text-text-secondary hover:bg-border/30 text-lg">+</button>
+        </div>
+      </div>
+      <div className="bg-[#e94560]/5 border border-[#e94560]/20 rounded-2xl p-4 space-y-3">
+        {[
+          { label: '팁 금액', value: `${Math.round(tipAmt).toLocaleString()}원`, sub: `인당 ${Math.round(tipPerPerson).toLocaleString()}원` },
+          { label: '합계', value: `${Math.round(total).toLocaleString()}원`, sub: '' },
+          { label: '1인당', value: `${Math.round(perPerson).toLocaleString()}원`, sub: '', big: true },
+        ].map(({ label, value, sub, big }) => (
+          <div key={label} className="flex items-center justify-between">
+            <span className="text-sm text-text-secondary">{label}</span>
+            <div className="text-right">
+              <span className={`font-bold ${big ? 'text-xl text-[#e94560]' : 'text-base text-text-primary'}`}>{value}</span>
+              {sub && <p className="text-[10px] text-text-muted">{sub}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <button onClick={handleSave} disabled={!billNum} className="w-full py-3 rounded-xl bg-[#e94560] text-white font-bold disabled:opacity-30">
+        계산 기록에 저장
+      </button>
+    </div>
+  );
+}
+
 const MODE_DEFS: { id: Mode; icon: string; labelKey: string; descKey: string }[] = [
   { id: 'general', icon: '🔢', labelKey: 'calc.general', descKey: 'calc.generalDesc' },
+  { id: 'scientific', icon: '🔬', labelKey: 'calc.scientific', descKey: 'calc.scientificDesc' },
+  { id: 'programmer', icon: '💻', labelKey: 'calc.programmer', descKey: 'calc.programmerDesc' },
+  { id: 'tip', icon: '🍽️', labelKey: 'calc.tip', descKey: 'calc.tipDesc' },
   { id: 'ratio', icon: '📐', labelKey: 'calc.ratio', descKey: 'calc.ratioDesc' },
   { id: 'unit', icon: '📏', labelKey: 'calc.unit', descKey: 'calc.unitDesc' },
   { id: 'color', icon: '🎨', labelKey: 'calc.color', descKey: 'calc.colorDesc' },
@@ -738,6 +1028,9 @@ export default function CalculatorPage() {
                     onExternalValueConsumed={() => setGeneralValue(null)}
                   />
                 )}
+                {mode === 'scientific' && <ScientificCalc onResult={handleResult} />}
+                {mode === 'programmer' && <ProgrammerCalc onResult={handleResult} />}
+                {mode === 'tip' && <TipCalc onResult={handleResult} />}
                 {mode === 'ratio' && <RatioCalc onResult={handleResult} t={t} />}
                 {mode === 'unit' && <UnitConv onResult={handleResult} t={t} />}
                 {mode === 'color' && <ColorCalc onResult={handleResult} t={t} />}

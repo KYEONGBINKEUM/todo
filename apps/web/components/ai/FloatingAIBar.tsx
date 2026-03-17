@@ -27,6 +27,11 @@ interface FloatingAIBarProps {
   getAction?: (text: string) => NoahAIAction;
   /** Return true from onResult to suppress the result message */
   onResult?: (action: NoahAIAction, result: any) => void | boolean | Promise<void | boolean>;
+  /**
+   * Runs BEFORE the AI call. If it returns a string, that string is shown as
+   * the AI response and the actual AI call is skipped. Return null to fall through to AI.
+   */
+  directHandler?: (text: string) => Promise<string | null>;
   placeholder?: string;
 }
 
@@ -35,6 +40,7 @@ export default function FloatingAIBar({
   getContext,
   getAction,
   onResult,
+  directHandler,
   placeholder = 'AI에게 질문하거나 명령하세요...',
 }: FloatingAIBarProps) {
   const { canUseAI } = useNoahAI();
@@ -101,6 +107,18 @@ export default function FloatingAIBar({
 
     // Add user message to thread
     setMessages(prev => [...prev, { role: 'user', text: fullText }]);
+
+    // directHandler prop — runs before AI, skips AI if returns non-null
+    if (!capturedTag?.handler && directHandler) {
+      try {
+        const directResult = await directHandler(fullText);
+        if (directResult !== null) {
+          setMessages(prev => [...prev, { role: 'ai', text: directResult }]);
+          setLoading(false);
+          return;
+        }
+      } catch { /* fall through to AI */ }
+    }
 
     // Direct handler (no AI)
     if (capturedTag?.handler) {

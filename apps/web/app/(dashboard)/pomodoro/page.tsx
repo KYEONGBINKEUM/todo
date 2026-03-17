@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePomodoroContext, PHASE_COLORS, PHASE_LABELS, type PomodoroPhase } from '@/lib/pomodoro-context';
+import FloatingAIBar from '@/components/ai/FloatingAIBar';
 
 const PRESET_PRESETS = [
   { label: '기본 (25/5/15)', work: 25, short: 5, long: 15 },
@@ -62,7 +63,7 @@ export default function PomodoroPage() {
       <div className="max-w-4xl mx-auto">
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-text-primary">🍅 포모도로</h1>
+          <h1 className="text-2xl font-bold text-text-primary">🍅 포모도로 타이머</h1>
           <div className="flex gap-2">
             {isTauri && (
               <button
@@ -239,6 +240,24 @@ export default function PomodoroPage() {
           )}
         </div>
       </div>
+
+      <FloatingAIBar
+        commands={[
+          { label: '타이머 설정', icon: '⚙️', desc: '집중/휴식 시간을 변경해드립니다' },
+          { label: '집중 팁', icon: '🧠', desc: '포모도로 집중력 향상 팁' },
+          { label: '오늘 목표', icon: '🎯', desc: '오늘의 포모도로 목표 설정' },
+        ]}
+        getAction={() => 'chat'}
+        getContext={() => ({
+          page: 'pomodoro',
+          currentPhase: phase === 'work' ? '집중' : phase === 'short_break' ? '짧은 휴식' : '긴 휴식',
+          sessionsToday: sessions,
+          settings: `집중 ${settings.workMinutes}분 / 짧은휴식 ${settings.shortBreakMinutes}분 / 긴휴식 ${settings.longBreakMinutes}분 / ${settings.sessionsBeforeLong}세션마다 긴휴식`,
+          isRunning,
+        })}
+        onResult={() => {}}
+        placeholder="포모도로 타이머에 대해 질문하세요..."
+      />
     </div>
   );
 }

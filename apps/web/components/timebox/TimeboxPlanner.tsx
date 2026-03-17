@@ -140,12 +140,20 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
 
   // ── Auto-scroll to current time ───────────────────────────────────────────
   useEffect(() => {
-    if (!isToday || loading || !gridRef.current) return;
-    const idx = timeSlots.indexOf(currentSlot);
-    if (idx < 0) return;
-    const rowH = interval <= 10 ? 28 : interval <= 15 ? 32 : 40;
-    gridRef.current.scrollTop = Math.max(0, idx * rowH - 120);
-  }, [loading, isToday, currentSlot, interval]);
+    if (loading || !gridRef.current) return;
+    // Find current time row by data attribute, scroll into view
+    const el = gridRef.current.querySelector(`[data-slot="${currentSlot}"]`);
+    if (el) {
+      el.scrollIntoView({ block: 'center' });
+    } else {
+      // Fallback: manual calc
+      const idx = timeSlots.indexOf(currentSlot);
+      if (idx >= 0) {
+        const rowH = gridRef.current.scrollHeight / timeSlots.length;
+        gridRef.current.scrollTop = Math.max(0, idx * rowH - 120);
+      }
+    }
+  }, [loading, currentSlot, timeSlots]);
 
   // ── Schedule alarms ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -457,6 +465,7 @@ export default function TimeboxPlanner({ date, tasks }: Props) {
               return (
                 <div
                   key={time}
+                  data-slot={time}
                   className={`flex items-center gap-0 relative group transition-colors cursor-text select-none
                     ${isHour ? 'border-t border-border/70' : 'border-t border-border/20'}
                     ${isDragOver ? 'bg-[#e94560]/10' : isCurrent ? 'bg-[#e94560]/5' : hasTask ? 'bg-border/5' : 'hover:bg-border/5'}

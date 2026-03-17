@@ -363,11 +363,20 @@ export default function TimetablePage() {
 
       <FloatingAIBar
         commands={[
-          { label: '시간 추가', icon: '📅', desc: '시간표에 수업/일정 추가' },
+          { label: '시간 추가', icon: '📅', desc: '수업/일정을 시간표에 추가' },
+          { label: '시간표 분석', icon: '📊', desc: 'AI가 시간표를 분석해드립니다' },
+          { label: '빈 시간 찾기', icon: '🔍', desc: '비어있는 시간대를 알려드립니다' },
         ]}
         getAction={() => 'chat'}
-        getContext={() => ({ page: 'timetable' })}
+        getContext={() => ({
+          page: 'timetable',
+          slots: slots.map(s =>
+            `${s.name}: ${DAYS.filter((_, i) => s.days.includes(DAY_KEYS[i])).join(',')} ${String(s.startHour).padStart(2,'0')}:${String(s.startMin).padStart(2,'0')}~${String(s.endHour).padStart(2,'0')}:${String(s.endMin).padStart(2,'0')}${s.memo ? ' (' + s.memo + ')' : ''}`
+          ).join('\n'),
+          totalSlots: slots.length,
+        })}
         onResult={() => {}}
+        placeholder="시간표에 대해 질문하거나 일정을 추가해보세요..."
       />
     </div>
   );

@@ -318,12 +318,25 @@ export default function BudgetPage() {
 
       <FloatingAIBar
         commands={[
-          { label: '수입 추가', icon: '📈', desc: '수입 내역 추가' },
-          { label: '지출 추가', icon: '📉', desc: '지출 내역 추가' },
+          { label: '수입 추가', icon: '📈', desc: '수입 금액과 카테고리를 입력하세요' },
+          { label: '지출 추가', icon: '📉', desc: '지출 금액과 카테고리를 입력하세요' },
+          { label: '이번달 분석', icon: '📊', desc: 'AI가 지출 패턴을 분석해드립니다' },
+          { label: '절약 팁', icon: '💡', desc: '지출 절약 방법 추천' },
         ]}
         getAction={() => 'chat'}
-        getContext={() => ({ page: 'budget' })}
+        getContext={() => ({
+          page: 'budget',
+          currentMonth: `${filterYear}년 ${filterMonth}월`,
+          totalIncome,
+          totalExpense,
+          balance,
+          topCategories: topCategories.slice(0, 5).map(([cat, amt]) => `${cat}: ${amt.toLocaleString()}원`).join(', '),
+          recentTransactions: filtered.slice(0, 10).map(t =>
+            `${t.date} ${t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}원 (${t.category}${t.memo ? ' ' + t.memo : ''})`
+          ).join('\n'),
+        })}
         onResult={() => {}}
+        placeholder="가계부에 대해 질문하거나 내역을 추가해보세요..."
       />
     </div>
   );

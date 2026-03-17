@@ -463,7 +463,7 @@ export default function CalendarPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg === 'token_expired' || msg.includes('Reconnect required') || msg.includes('not-found')) {
-        markGCalConnected(false);
+        // Keep connected=true so reconnect button shows; just clear token + events
         setGcalToken(null); setGcalDisplayEvents([]); setGcalError('token_expired');
       } else { setGcalError('fetch_failed'); }
     } finally { setGcalLoading(false); }
@@ -844,7 +844,7 @@ export default function CalendarPage() {
                   {t('calendar.googleDisconnect')}
                 </button>
               </div>
-            ) : gcalError === 'token_expired' && isGCalConnected() ? (
+            ) : gcalError === 'token_expired' ? (
               <button onClick={handleConnectGCal} disabled={gcalLoading}
                 className="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 disabled:opacity-50 transition-colors flex-shrink-0 flex items-center gap-1.5">
                 {gcalLoading && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}

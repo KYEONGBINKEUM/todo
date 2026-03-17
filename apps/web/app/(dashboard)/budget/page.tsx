@@ -335,6 +335,50 @@ export default function BudgetPage() {
             `${t.date} ${t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}원 (${t.category}${t.memo ? ' ' + t.memo : ''})`
           ).join('\n'),
         })}
+        directHandler={async (text: string) => {
+          if (!user) return null;
+          // Detect income/expense intent
+          const isIncome = /수입|입금|받았|벌었|들어왔/.test(text);
+          const isExpense = /지출|사용|썼|결제|구매|샀|나갔|소비/.test(text);
+          if (!isIncome && !isExpense) return null;
+          // Parse amount: "10만원" → 100000, "5,000원" / "5000원" → 5000
+          const manMatch = text.match(/(\d[\d,]*)\s*만\s*원/);
+          const wonMatch = text.match(/(\d[\d,]*)\s*원/);
+          if (!manMatch && !wonMatch) return null;
+          let amount: number;
+          if (manMatch) {
+            amount = parseFloat(manMatch[1].replace(/,/g, '')) * 10000;
+          } else {
+            amount = parseFloat(wonMatch![1].replace(/,/g, ''));
+          }
+          if (!amount || isNaN(amount)) return null;
+          // Detect category from text
+          const type: TxType = isIncome ? 'income' : 'expense';
+          let category = type === 'income' ? '기타' : '기타';
+          if (type === 'expense') {
+            if (/식비|밥|점심|저녁|아침|카페|커피|음식|식사/.test(text)) category = '식비';
+            else if (/교통|버스|지하철|택시|주유|기름/.test(text)) category = '교통';
+            else if (/쇼핑|옷|의류|마트|편의점/.test(text)) category = '쇼핑';
+            else if (/영화|공연|게임|여가|문화|놀이/.test(text)) category = '여가/문화';
+            else if (/병원|약|의료|치료/.test(text)) category = '의료';
+            else if (/학원|교육|책|문구/.test(text)) category = '교육';
+            else if (/월세|관리비|전기|수도|가스|주거/.test(text)) category = '주거';
+            else if (/통신|핸드폰|인터넷|요금/.test(text)) category = '통신';
+          } else {
+            if (/급여|월급|봉급/.test(text)) category = '급여';
+            else if (/용돈/.test(text)) category = '용돈';
+            else if (/투자|배당|이자/.test(text)) category = '투자수익';
+            else if (/부업|알바|프리/.test(text)) category = '부수입';
+          }
+          await addDoc(txRef(user.uid), {
+            type, category, amount,
+            memo: text.slice(0, 50),
+            date: todayStr,
+            createdAt: Timestamp.now(),
+          });
+          load();
+          return `✅ ${type === 'income' ? '수입' : '지출'} ${amount.toLocaleString()}원 (${category}) 추가되었습니다.`;
+        }}
         onResult={() => {}}
         placeholder="가계부에 대해 질문하거나 내역을 추가해보세요..."
       />

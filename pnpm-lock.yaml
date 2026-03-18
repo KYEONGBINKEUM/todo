@@ -62,6 +62,9 @@ importers:
       '@tauri-apps/plugin-deep-link':
         specifier: ^2.4.7
         version: 2.4.7
+      '@tauri-apps/plugin-http':
+        specifier: ^2.5.7
+        version: 2.5.7
       '@tauri-apps/plugin-notification':
         specifier: ^2
         version: 2.3.3
@@ -2468,6 +2471,12 @@ packages:
 
   /@tauri-apps/plugin-deep-link@2.4.7:
     resolution: {integrity: sha512-K0FQlLM6BoV7Ws2xfkh+Tnwi5VZVdkI4Vw/3AGLSf0Xvu2y86AMBzd9w/SpzKhw9ai2B6ES8di/OoGDCExkOzg==}
+    dependencies:
+      '@tauri-apps/api': 2.10.1
+    dev: false
+
+  /@tauri-apps/plugin-http@2.5.7:
+    resolution: {integrity: sha512-+F2lEH/c9b0zSsOXKq+5hZNcd9F4IIKCK1T17RqMwpCmVnx2aoqY8yIBccCd25HTYUb3j6NPVbRax/m00hKG8A==}
     dependencies:
       '@tauri-apps/api': 2.10.1
     dev: false

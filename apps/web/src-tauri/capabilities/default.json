@@ -11,13 +11,16 @@
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        {
-          "name": "binaries/yt-dlp",
-          "sidecar": true,
-          "args": true
-        }
+        { "name": "binaries/yt-dlp", "sidecar": true, "args": true }
       ]
     },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        { "name": "binaries/yt-dlp", "sidecar": true, "args": true }
+      ]
+    },
+    "http:default",
     "updater:default",
     "autostart:allow-enable",
     "autostart:allow-disable",

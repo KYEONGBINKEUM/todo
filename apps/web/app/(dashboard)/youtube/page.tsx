@@ -52,6 +52,31 @@ interface OEmbedInfo {
   provider_name?: string;
 }
 
+// ── 공통 다운로드 함수 (CORS 우회, Tauri plugin-http 사용) ─────────────────────
+async function downloadImage(url: string, filename: string) {
+  try {
+    let blob: Blob;
+    try {
+      const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+      const res = await tauriFetch(url);
+      blob = await res.blob();
+    } catch {
+      const res = await fetch(url);
+      blob = await res.blob();
+    }
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objUrl);
+  } catch {
+    window.open(url, '_blank');
+  }
+}
+
 // ── Tab: 썸네일 추출 ──────────────────────────────────────────────────────────
 function ThumbnailTab() {
   const [input, setInput] = useState('');
@@ -90,22 +115,8 @@ function ThumbnailTab() {
     }
   }, [input]);
 
-  const handleDownload = useCallback(async (url: string, filename: string) => {
-    try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const objUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(objUrl);
-    } catch {
-      // fallback: open in new tab
-      window.open(url, '_blank');
-    }
+  const handleDownload = useCallback((url: string, filename: string) => {
+    return downloadImage(url, filename);
   }, []);
 
   const handleCopyUrl = useCallback((url: string, key: string) => {
@@ -361,22 +372,8 @@ function BatchTab() {
     setDownloading(true);
     for (const id of videoIds) {
       const url = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
-      try {
-        const res = await fetch(url);
-        const blob = await res.blob();
-        const objUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objUrl;
-        a.download = `${id}_maxres.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(objUrl);
-        // Small delay to avoid overwhelming
-        await new Promise(r => setTimeout(r, 300));
-      } catch {
-        window.open(url, '_blank');
-      }
+      await downloadImage(url, `${id}_maxres.jpg`);
+      await new Promise(r => setTimeout(r, 300));
     }
     setDownloading(false);
   }, [videoIds]);
@@ -433,20 +430,7 @@ function BatchTab() {
                   <div className="p-2 space-y-1.5">
                     <p className="text-[10px] text-text-muted font-mono truncate">{id}</p>
                     <button
-                      onClick={async () => {
-                        try {
-                          const res = await fetch(maxUrl);
-                          const blob = await res.blob();
-                          const objUrl = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = objUrl;
-                          a.download = `${id}_maxres.jpg`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          URL.revokeObjectURL(objUrl);
-                        } catch { window.open(maxUrl, '_blank'); }
-                      }}
+                      onClick={() => downloadImage(maxUrl, `${id}_maxres.jpg`)}
                       className="w-full text-[10px] py-1 bg-[#e94560]/10 text-[#e94560] rounded-lg hover:bg-[#e94560]/20 transition-colors font-semibold"
                     >
                       다운로드

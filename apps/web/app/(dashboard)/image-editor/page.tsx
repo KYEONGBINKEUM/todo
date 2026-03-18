@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { pickSaveFolder, saveToFolder, openSaveFolder, getSavedFolderPath } from '@/lib/tauri-download';
 
 type SidebarTab = 'adjust' | 'filter' | 'text' | 'crop';
 
@@ -102,6 +103,12 @@ export default function ImageEditorPage() {
 
   const [downloadFormat, setDownloadFormat] = useState<'image/jpeg' | 'image/png'>('image/jpeg');
   const [hasImage, setHasImage] = useState(false);
+  const [saveFolderPath, setSaveFolderPath] = useState('');
+  const [lastSaved, setLastSaved] = useState(false);
+
+  useEffect(() => {
+    setSaveFolderPath(getSavedFolderPath());
+  }, []);
 
   // ── Draw to canvas ───────────────────────────────────────────────────────────
   const redraw = useCallback((
@@ -336,13 +343,25 @@ export default function ImageEditorPage() {
   };
 
   // ── Download ──────────────────────────────────────────────────────────────────
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ext = downloadFormat === 'image/jpeg' ? 'jpg' : 'png';
+    const dataUrl = canvas.toDataURL(downloadFormat, 0.95);
+    const filename = `edited_image.${ext}`;
+
+    if (saveFolderPath) {
+      const ok = await saveToFolder(dataUrl, filename, saveFolderPath);
+      if (ok) {
+        setLastSaved(true);
+        setTimeout(() => setLastSaved(false), 8000);
+        return;
+      }
+    }
+    // 폴백: 브라우저 다운로드
     const a = document.createElement('a');
-    a.href = canvas.toDataURL(downloadFormat, 0.95);
-    a.download = `edited_image.${ext}`;
+    a.href = dataUrl;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -508,6 +527,25 @@ export default function ImageEditorPage() {
                     <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                   </div>
                   <div className="flex items-center gap-2">
+                    {lastSaved && saveFolderPath && (
+                      <button
+                        onClick={() => openSaveFolder(saveFolderPath)}
+                        className="text-[11px] px-2.5 py-1 border border-green-500/40 rounded-lg text-green-400 hover:bg-green-500/10 transition-colors flex items-center gap-1"
+                      >
+                        <span>📂</span> 폴더 열기
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        const picked = await pickSaveFolder(saveFolderPath || undefined);
+                        if (picked) setSaveFolderPath(picked);
+                      }}
+                      className="text-[11px] px-2.5 py-1 border border-border rounded-lg text-text-muted hover:text-text-primary hover:border-border/60 transition-colors flex items-center gap-1"
+                      title={saveFolderPath || '저장 폴더 선택'}
+                    >
+                      <span>📁</span>
+                      <span className="max-w-[100px] truncate">{saveFolderPath ? saveFolderPath.split(/[\\/]/).pop() : '폴더 선택'}</span>
+                    </button>
                     <select
                       value={downloadFormat}
                       onChange={e => setDownloadFormat(e.target.value as 'image/jpeg' | 'image/png')}

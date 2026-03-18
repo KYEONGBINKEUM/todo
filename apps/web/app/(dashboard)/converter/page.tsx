@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { pickSaveFolder, saveToFolder, openSaveFolder, getSavedFolderPath } from '@/lib/tauri-download';
 
 type Tab = 'image' | 'pdf-to-image' | 'image-to-pdf' | 'compress';
 
@@ -87,7 +88,15 @@ function ProgressBar({ value, label }: { value: number; label?: string }) {
   );
 }
 
-function triggerDownload(url: string, name: string) {
+async function triggerDownload(url: string, name: string): Promise<void> {
+  const folderPath = getSavedFolderPath();
+  if (folderPath) {
+    const ok = await saveToFolder(url, name, folderPath);
+    if (ok) {
+      window.dispatchEvent(new CustomEvent('noah-download-complete', { detail: { folderPath } }));
+      return;
+    }
+  }
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -844,6 +853,23 @@ const TABS: { id: Tab; icon: string; label: string; desc: string }[] = [
 
 export default function ConverterPage() {
   const [activeTab, setActiveTab] = useState<Tab>('image');
+  const [saveFolderPath, setSaveFolderPath] = useState('');
+  const [showOpenFolder, setShowOpenFolder] = useState(false);
+
+  useEffect(() => {
+    setSaveFolderPath(getSavedFolderPath());
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const fp = (e as CustomEvent<{ folderPath: string }>).detail.folderPath;
+      setSaveFolderPath(fp);
+      setShowOpenFolder(true);
+      setTimeout(() => setShowOpenFolder(false), 8000);
+    };
+    window.addEventListener('noah-download-complete', handler);
+    return () => window.removeEventListener('noah-download-complete', handler);
+  }, []);
 
   const activeTabDef = TABS.find(t => t.id === activeTab)!;
 
@@ -851,9 +877,32 @@ export default function ConverterPage() {
     <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-28">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
-        <div className="mb-5 flex items-center gap-3">
-          <span className="text-2xl">📁</span>
-          <h2 className="text-2xl font-extrabold text-text-primary">파일 변환기</h2>
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📁</span>
+            <h2 className="text-2xl font-extrabold text-text-primary">파일 변환기</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {showOpenFolder && saveFolderPath && (
+              <button
+                onClick={() => openSaveFolder(saveFolderPath)}
+                className="text-[11px] px-2.5 py-1.5 border border-green-500/40 rounded-lg text-green-400 hover:bg-green-500/10 transition-colors flex items-center gap-1"
+              >
+                <span>📂</span> 폴더 열기
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                const picked = await pickSaveFolder(saveFolderPath || undefined);
+                if (picked) setSaveFolderPath(picked);
+              }}
+              className="text-[11px] px-2.5 py-1.5 border border-border rounded-lg text-text-muted hover:text-text-primary hover:border-border/60 transition-colors flex items-center gap-1.5"
+              title={saveFolderPath || '저장 폴더 선택'}
+            >
+              <span>📁</span>
+              <span className="max-w-[140px] truncate">{saveFolderPath ? saveFolderPath.split(/[\\/]/).pop() : '저장 폴더 선택'}</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex gap-5">

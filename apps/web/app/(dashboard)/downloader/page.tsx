@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { pickSaveFolder, openSaveFolder, getSavedFolderPath } from '@/lib/tauri-download';
 
 type Quality = 'best' | '2160p' | '1440p' | '1080p' | '720p' | '480p' | '360p' | 'audio';
 
@@ -47,7 +48,12 @@ async function getSidecar(args: string[]) {
 export default function DownloaderPage() {
   const [url, setUrl] = useState('');
   const [quality, setQuality] = useState<Quality>('best');
-  const [outputPath, setOutputPath] = useState('~/Downloads');
+  const [outputPath, setOutputPath] = useState('');
+
+  useEffect(() => {
+    const saved = getSavedFolderPath();
+    setOutputPath(saved || (navigator.platform.startsWith('Win') ? '%USERPROFILE%\\Downloads' : '~/Downloads'));
+  }, []);
   const [status, setStatus] = useState<'idle' | 'analyzing' | 'ready' | 'downloading' | 'done' | 'error'>('idle');
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -276,11 +282,21 @@ export default function DownloaderPage() {
             {/* 저장 경로 */}
             <div>
               <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">저장 폴더</label>
-              <input
-                value={outputPath}
-                onChange={e => setOutputPath(e.target.value)}
-                className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors font-mono"
-              />
+              <div className="flex gap-2 items-center">
+                <div className="flex-1 px-4 py-2.5 bg-background border border-border rounded-xl text-sm text-text-primary font-mono truncate min-w-0">
+                  {outputPath || '폴더를 선택하세요'}
+                </div>
+                <button
+                  onClick={async () => {
+                    const picked = await pickSaveFolder(outputPath || undefined);
+                    if (picked) setOutputPath(picked);
+                  }}
+                  className="flex-shrink-0 px-3 py-2.5 rounded-xl bg-border/40 text-text-secondary text-sm hover:bg-border transition-colors flex items-center gap-1.5"
+                >
+                  <span>📁</span>
+                  <span className="text-xs font-semibold">선택</span>
+                </button>
+              </div>
             </div>
 
             {/* 다운로드 버튼 */}
@@ -313,12 +329,22 @@ export default function DownloaderPage() {
                   {status === 'downloading' ? '다운로드 중' : status === 'done' ? '완료' : status === 'error' ? '오류' : '로그'}
                 </span>
               </div>
-              <button
-                onClick={() => setLogs([])}
-                className="text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
-              >
-                지우기
-              </button>
+              <div className="flex items-center gap-2">
+                {status === 'done' && outputPath && (
+                  <button
+                    onClick={() => openSaveFolder(outputPath)}
+                    className="text-[10px] px-2.5 py-1 border border-green-500/40 rounded-lg text-green-400 hover:bg-green-500/10 transition-colors flex items-center gap-1"
+                  >
+                    <span>📂</span> 폴더 열기
+                  </button>
+                )}
+                <button
+                  onClick={() => setLogs([])}
+                  className="text-[10px] px-2.5 py-1 border border-border rounded-lg text-text-muted hover:text-[#e94560] hover:border-[#e94560]/40 transition-colors"
+                >
+                  지우기
+                </button>
+              </div>
             </div>
             <div className="h-52 bg-[#0d1117] rounded-xl border border-border p-4 overflow-y-auto font-mono text-xs space-y-0.5">
               {logs.map((line, idx) => (

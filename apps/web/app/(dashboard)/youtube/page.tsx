@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import FloatingAIBar from '@/components/ai/FloatingAIBar';
+import { pickSaveFolder, saveToFolder, openSaveFolder, getSavedFolderPath, rememberFolderPath } from '@/lib/tauri-download';
 
 type Tab = 'thumbnail' | 'info' | 'batch';
 
@@ -53,7 +54,13 @@ interface OEmbedInfo {
 }
 
 // ── 공통 다운로드 함수 (CORS 우회, Tauri plugin-http 사용) ─────────────────────
-async function downloadImage(url: string, filename: string) {
+async function downloadImage(url: string, filename: string, folderPath?: string): Promise<boolean> {
+  // Tauri 폴더 저장 시도
+  if (folderPath) {
+    const ok = await saveToFolder(url, filename, folderPath);
+    if (ok) return true;
+  }
+  // 브라우저 기본 다운로드 폴백
   try {
     let blob: Blob;
     try {
@@ -72,13 +79,15 @@ async function downloadImage(url: string, filename: string) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(objUrl);
+    return false; // 브라우저 다운로드 (폴더 열기 불필요)
   } catch {
     window.open(url, '_blank');
+    return false;
   }
 }
 
 // ── Tab: 썸네일 추출 ──────────────────────────────────────────────────────────
-function ThumbnailTab() {
+function ThumbnailTab({ saveFolderPath, onDownloaded }: { saveFolderPath: string; onDownloaded: () => void }) {
   const [input, setInput] = useState('');
   const [videoId, setVideoId] = useState<string | null>(null);
   const [vimeoId, setVimeoId] = useState<string | null>(null);
@@ -115,9 +124,10 @@ function ThumbnailTab() {
     }
   }, [input]);
 
-  const handleDownload = useCallback((url: string, filename: string) => {
-    return downloadImage(url, filename);
-  }, []);
+  const handleDownload = useCallback(async (url: string, filename: string) => {
+    const saved = await downloadImage(url, filename, saveFolderPath || undefined);
+    if (saved) onDownloaded();
+  }, [saveFolderPath, onDownloaded]);
 
   const handleCopyUrl = useCallback((url: string, key: string) => {
     navigator.clipboard.writeText(url).then(() => {
@@ -347,7 +357,7 @@ function InfoTab() {
 }
 
 // ── Tab: 일괄 썸네일 ──────────────────────────────────────────────────────────
-function BatchTab() {
+function BatchTab({ saveFolderPath, onDownloaded }: { saveFolderPath: string; onDownloaded: () => void }) {
   const [textarea, setTextarea] = useState('');
   const [videoIds, setVideoIds] = useState<string[]>([]);
   const [error, setError] = useState('');
@@ -370,13 +380,16 @@ function BatchTab() {
 
   const handleDownloadAll = useCallback(async () => {
     setDownloading(true);
+    let anySaved = false;
     for (const id of videoIds) {
       const url = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
-      await downloadImage(url, `${id}_maxres.jpg`);
+      const saved = await downloadImage(url, `${id}_maxres.jpg`, saveFolderPath || undefined);
+      if (saved) anySaved = true;
       await new Promise(r => setTimeout(r, 300));
     }
     setDownloading(false);
-  }, [videoIds]);
+    if (anySaved) onDownloaded();
+  }, [videoIds, saveFolderPath, onDownloaded]);
 
   return (
     <div className="space-y-5">
@@ -430,7 +443,10 @@ function BatchTab() {
                   <div className="p-2 space-y-1.5">
                     <p className="text-[10px] text-text-muted font-mono truncate">{id}</p>
                     <button
-                      onClick={() => downloadImage(maxUrl, `${id}_maxres.jpg`)}
+                      onClick={async () => {
+                        const saved = await downloadImage(maxUrl, `${id}_maxres.jpg`, saveFolderPath || undefined);
+                        if (saved) onDownloaded();
+                      }}
                       className="w-full text-[10px] py-1 bg-[#e94560]/10 text-[#e94560] rounded-lg hover:bg-[#e94560]/20 transition-colors font-semibold"
                     >
                       다운로드
@@ -449,6 +465,22 @@ function BatchTab() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function YouTubePage() {
   const [tab, setTab] = useState<Tab>('thumbnail');
+  const [saveFolderPath, setSaveFolderPath] = useState('');
+  const [showOpenFolder, setShowOpenFolder] = useState(false);
+
+  useEffect(() => {
+    setSaveFolderPath(getSavedFolderPath());
+  }, []);
+
+  const handlePickFolder = async () => {
+    const picked = await pickSaveFolder(saveFolderPath || undefined);
+    if (picked) setSaveFolderPath(picked);
+  };
+
+  const handleDownloaded = useCallback(() => {
+    setShowOpenFolder(true);
+    setTimeout(() => setShowOpenFolder(false), 8000);
+  }, []);
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'thumbnail', label: '썸네일 추출' },
@@ -465,9 +497,31 @@ export default function YouTubePage() {
           <h2 className="text-2xl font-extrabold text-text-primary">유튜브 도구</h2>
         </div>
 
-        {/* Disclaimer */}
-        <div className="mb-5 px-4 py-2.5 bg-border/30 border border-border rounded-xl">
-          <p className="text-xs text-text-muted">⚠️ 썸네일은 공개 URL에서 직접 추출됩니다. 저작권에 유의하세요.</p>
+        {/* Disclaimer + 저장 폴더 */}
+        <div className="mb-5 space-y-2">
+          <div className="px-4 py-2.5 bg-border/30 border border-border rounded-xl">
+            <p className="text-xs text-text-muted">⚠️ 썸네일은 공개 URL에서 직접 추출됩니다. 저작권에 유의하세요.</p>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-background-card border border-border rounded-xl">
+            <span className="text-xs text-text-muted flex-shrink-0">저장 폴더</span>
+            <span className="flex-1 text-xs text-text-primary font-mono truncate min-w-0">
+              {saveFolderPath || '기본 다운로드 폴더'}
+            </span>
+            {showOpenFolder && saveFolderPath && (
+              <button
+                onClick={() => openSaveFolder(saveFolderPath)}
+                className="flex-shrink-0 text-[11px] px-2.5 py-1 border border-green-500/40 rounded-lg text-green-400 hover:bg-green-500/10 transition-colors flex items-center gap-1"
+              >
+                <span>📂</span> 폴더 열기
+              </button>
+            )}
+            <button
+              onClick={handlePickFolder}
+              className="flex-shrink-0 px-3 py-1 rounded-lg bg-border/40 text-text-secondary text-xs hover:bg-border transition-colors flex items-center gap-1"
+            >
+              <span>📁</span> 변경
+            </button>
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -489,9 +543,9 @@ export default function YouTubePage() {
 
         {/* Content card */}
         <div className="bg-background-card rounded-2xl border border-border p-6">
-          {tab === 'thumbnail' && <ThumbnailTab />}
+          {tab === 'thumbnail' && <ThumbnailTab saveFolderPath={saveFolderPath} onDownloaded={handleDownloaded} />}
           {tab === 'info' && <InfoTab />}
-          {tab === 'batch' && <BatchTab />}
+          {tab === 'batch' && <BatchTab saveFolderPath={saveFolderPath} onDownloaded={handleDownloaded} />}
         </div>
       </div>
 

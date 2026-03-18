@@ -53,6 +53,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Download yt-dlp sidecar
+        shell: bash
+        run: |
+          mkdir -p apps/web/src-tauri/binaries
+          TRIPLE=$(rustc -vV | grep "^host:" | awk '{print $2}')
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" \
+              -o "apps/web/src-tauri/binaries/yt-dlp-${TRIPLE}.exe"
+          else
+            curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" \
+              -o "apps/web/src-tauri/binaries/yt-dlp-${TRIPLE}"
+            chmod +x "apps/web/src-tauri/binaries/yt-dlp-${TRIPLE}"
+          fi
+
       - name: Build Tauri
         uses: tauri-apps/tauri-action@v0
         env:

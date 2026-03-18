@@ -8,6 +8,16 @@
     "core:default",
     "core:webview:allow-create-webview-window",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/yt-dlp",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
     "updater:default",
     "autostart:allow-enable",
     "autostart:allow-disable",

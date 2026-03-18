@@ -52,10 +52,11 @@ export default function DownloaderPage() {
 
   const addLog = (line: string) => setLogs(prev => [...prev, line]);
 
-  const runShell = useCallback(async (program: string, args: string[]) => {
+  const runShell = useCallback(async (_program: string, args: string[]) => {
     try {
       const { Command } = await import('@tauri-apps/plugin-shell');
-      return Command.create(program, args);
+      // Use sidecar for bundled yt-dlp binary
+      return Command.sidecar('binaries/yt-dlp', args);
     } catch {
       throw new Error('NOAH 데스크탑 앱에서만 사용 가능합니다. 현재 환경에서는 shell 실행이 지원되지 않습니다.');
     }

@@ -37,7 +37,7 @@
       "icons/icon.ico"
     ],
     "resources": [],
-    "externalBin": [],
+    "externalBin": ["binaries/yt-dlp"],
     "copyright": "",
     "category": "Productivity",
     "shortDescription": "NOAH - Smart Productivity App",

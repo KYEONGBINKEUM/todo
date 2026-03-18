@@ -343,7 +343,9 @@ export default function ImageEditorPage() {
     const a = document.createElement('a');
     a.href = canvas.toDataURL(downloadFormat, 0.95);
     a.download = `edited_image.${ext}`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
   };
 
   // ── Canvas display size ────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ const QUALITY_OPTIONS: { id: Quality; label: string; arg: string; badge?: string
   { id: '720p',   label: '720p HD',    arg: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
   { id: '480p',   label: '480p SD',    arg: 'bestvideo[height<=480]+bestaudio/best[height<=480]' },
   { id: '360p',   label: '360p',       arg: 'bestvideo[height<=360]+bestaudio/best[height<=360]' },
-  { id: 'audio',  label: 'MP3 오디오', arg: '-x --audio-format mp3' },
+  { id: 'audio',  label: 'MP3 오디오', arg: '' },
 ];
 
 interface VideoInfo {
@@ -22,8 +22,6 @@ interface VideoInfo {
   duration: number;
   thumbnail: string;
   view_count?: number;
-  upload_date?: string;
-  description?: string;
 }
 
 function formatDuration(sec: number): string {
@@ -40,6 +38,12 @@ function formatViews(n: number): string {
   return String(n);
 }
 
+// ── 사이드카 래퍼 ────────────────────────────────────────────────────────────
+async function getSidecar(args: string[]) {
+  const { Command } = await import('@tauri-apps/plugin-shell');
+  return Command.sidecar('binaries/yt-dlp', args);
+}
+
 export default function DownloaderPage() {
   const [url, setUrl] = useState('');
   const [quality, setQuality] = useState<Quality>('best');
@@ -50,18 +54,12 @@ export default function DownloaderPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const addLog = (line: string) => setLogs(prev => [...prev, line]);
-
-  const runShell = useCallback(async (_program: string, args: string[]) => {
-    try {
-      const { Command } = await import('@tauri-apps/plugin-shell');
-      // Use sidecar for bundled yt-dlp binary
-      return Command.sidecar('binaries/yt-dlp', args);
-    } catch {
-      throw new Error('NOAH 데스크탑 앱에서만 사용 가능합니다. 현재 환경에서는 shell 실행이 지원되지 않습니다.');
-    }
+  const addLog = useCallback((line: string) => {
+    setLogs(prev => [...prev, line]);
+    setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
   }, []);
 
+  // ── 영상 정보 가져오기 ─────────────────────────────────────────────────────
   const handleAnalyze = useCallback(async () => {
     const trimmed = url.trim();
     if (!trimmed) return;
@@ -71,35 +69,34 @@ export default function DownloaderPage() {
     setErrorMsg('');
 
     try {
-      const cmd = await runShell('yt-dlp', ['--dump-json', '--no-playlist', trimmed]);
-      let jsonStr = '';
+      const cmd = await getSidecar([
+        '--dump-json',
+        '--no-playlist',
+        '--no-warnings',
+        trimmed,
+      ]);
 
-      cmd.stdout.on('data', (line: string) => { jsonStr += line; });
-      cmd.stderr.on('data', (line: string) => {
-        if (!line.includes('[download]')) addLog(line);
-      });
+      // execute() 반환값에서 stdout 직접 읽기 (이벤트 방식 X)
+      const output = await cmd.execute();
 
-      const result = await cmd.execute();
-
-      if (result.code === 0 && jsonStr) {
-        try {
-          const info = JSON.parse(jsonStr) as VideoInfo;
-          setVideoInfo(info);
-          setStatus('ready');
-        } catch {
-          setVideoInfo(null);
-          setStatus('ready');
-        }
-      } else {
-        throw new Error('영상 정보를 가져올 수 없습니다. URL을 확인하세요.');
+      if (output.code !== 0 || !output.stdout.trim()) {
+        const errDetail = output.stderr?.trim() || `종료 코드 ${output.code}`;
+        setErrorMsg(`yt-dlp 실패: ${errDetail}`);
+        setStatus('error');
+        return;
       }
+
+      const info = JSON.parse(output.stdout) as VideoInfo;
+      setVideoInfo(info);
+      setStatus('ready');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(msg.includes('shell') ? msg : `yt-dlp 오류: ${msg}`);
+      setErrorMsg(msg);
       setStatus('error');
     }
-  }, [url, runShell]);
+  }, [url]);
 
+  // ── 다운로드 (spawn + 실시간 로그) ─────────────────────────────────────────
   const handleDownload = useCallback(async () => {
     const trimmed = url.trim();
     if (!trimmed) return;
@@ -111,45 +108,43 @@ export default function DownloaderPage() {
       const selected = QUALITY_OPTIONS.find(q => q.id === quality)!;
       const outputTemplate = `${outputPath}/%(title)s.%(ext)s`;
 
-      let args: string[];
-      if (quality === 'audio') {
-        args = [trimmed, '-x', '--audio-format', 'mp3', '-o', outputTemplate];
-      } else {
-        args = [trimmed, '-f', selected.arg, '-o', outputTemplate];
-      }
+      const args: string[] = quality === 'audio'
+        ? [trimmed, '-x', '--audio-format', 'mp3', '-o', outputTemplate]
+        : [trimmed, '-f', selected.arg, '-o', outputTemplate];
 
-      const cmd = await runShell('yt-dlp', args);
-      cmd.stdout.on('data', (line: string) => {
-        addLog(line);
-        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      });
-      cmd.stderr.on('data', (line: string) => {
-        addLog(`[info] ${line}`);
-        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      });
+      const cmd = await getSidecar(args);
 
-      const result = await cmd.execute();
-      if (result.code === 0) {
-        setStatus('done');
-        addLog('✅ 다운로드 완료!');
-      } else {
-        setStatus('error');
-        addLog(`❌ 오류 (종료 코드: ${result.code})`);
-      }
+      // spawn()으로 실시간 로그 수신
+      await new Promise<void>((resolve, reject) => {
+        cmd.stdout.on('data', (line: string) => addLog(line));
+        cmd.stderr.on('data', (line: string) => addLog(`[info] ${line}`));
+        cmd.on('close', (data: { code: number | null }) => {
+          if (data.code === 0) {
+            setStatus('done');
+            addLog('✅ 다운로드 완료!');
+            resolve();
+          } else {
+            setStatus('error');
+            reject(new Error(`종료 코드: ${data.code}`));
+          }
+        });
+        cmd.on('error', (err: string) => reject(new Error(err)));
+        cmd.spawn().catch(reject);
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(msg);
-      setStatus('error');
+      if (status !== 'done') {
+        setErrorMsg(msg);
+        setStatus('error');
+      }
     }
-  }, [url, quality, outputPath, runShell]);
+  }, [url, quality, outputPath, addLog, status]);
 
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
       setUrl(text.trim());
-    } catch {
-      // clipboard read failed
-    }
+    } catch { /* ignore */ }
   };
 
   const handleReset = () => {
@@ -160,9 +155,13 @@ export default function DownloaderPage() {
     setUrl('');
   };
 
+  const isVideoVisible = videoInfo && ['ready', 'downloading', 'done', 'error'].includes(status);
+  const isSettingsVisible = ['ready', 'downloading', 'done'].includes(status);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-5">
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -179,15 +178,15 @@ export default function DownloaderPage() {
           )}
         </div>
 
-        {/* URL Input Card */}
+        {/* URL 입력 카드 */}
         <div className="bg-background-card border border-border rounded-2xl p-5 space-y-4">
           <div>
             <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-2">영상 URL</label>
             <div className="flex gap-2">
               <input
                 value={url}
-                onChange={e => { setUrl(e.target.value); setVideoInfo(null); setStatus('idle'); }}
-                onKeyDown={e => { if (e.key === 'Enter') handleAnalyze(); }}
+                onChange={e => { setUrl(e.target.value); if (status !== 'idle') handleReset(); }}
+                onKeyDown={e => { if (e.key === 'Enter' && url.trim()) handleAnalyze(); }}
                 placeholder="https://www.youtube.com/watch?v=..."
                 className="flex-1 px-4 py-3 bg-background border border-border rounded-xl text-sm text-text-primary outline-none focus:border-[#e94560] transition-colors placeholder:text-text-muted font-mono"
               />
@@ -200,7 +199,6 @@ export default function DownloaderPage() {
             </div>
           </div>
 
-          {/* Analyze button */}
           {status === 'idle' && url.trim() && (
             <button
               onClick={handleAnalyze}
@@ -210,52 +208,47 @@ export default function DownloaderPage() {
             </button>
           )}
 
-          {/* Analyzing spinner */}
           {status === 'analyzing' && (
-            <div className="flex items-center justify-center gap-3 py-4">
+            <div className="flex items-center justify-center gap-3 py-3">
               <span className="w-5 h-5 border-2 border-[#e94560] border-t-transparent rounded-full animate-spin" />
               <span className="text-sm text-text-muted">영상 정보를 불러오는 중...</span>
             </div>
           )}
 
-          {/* Error */}
           {status === 'error' && errorMsg && (
-            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
-              <p className="text-xs text-red-400 font-semibold mb-1">오류 발생</p>
-              <p className="text-xs text-red-300/80">{errorMsg}</p>
-              {errorMsg.includes('데스크탑') && (
-                <p className="text-xs text-text-muted mt-2">yt-dlp 설치: <code className="bg-border/40 px-1 rounded font-mono">winget install yt-dlp</code></p>
-              )}
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl space-y-1">
+              <p className="text-xs text-red-400 font-semibold">오류</p>
+              <p className="text-xs text-red-300/80 break-all">{errorMsg}</p>
             </div>
           )}
         </div>
 
-        {/* Video Info Card */}
-        {videoInfo && (status === 'ready' || status === 'downloading' || status === 'done' || status === 'error') && (
+        {/* 영상 정보 카드 */}
+        {isVideoVisible && (
           <div className="bg-background-card border border-border rounded-2xl p-5">
             <div className="flex gap-4">
-              {videoInfo.thumbnail && (
+              {videoInfo!.thumbnail && (
                 <div className="flex-shrink-0 w-32 h-20 rounded-xl overflow-hidden bg-border/20">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={videoInfo.thumbnail} alt="" className="w-full h-full object-cover" />
+                  <img src={videoInfo!.thumbnail} alt="" className="w-full h-full object-cover" />
                 </div>
               )}
               <div className="flex-1 min-w-0 space-y-1">
-                <p className="text-sm font-bold text-text-primary line-clamp-2 leading-snug">{videoInfo.title}</p>
-                <p className="text-xs text-text-muted">{videoInfo.uploader}</p>
+                <p className="text-sm font-bold text-text-primary line-clamp-2 leading-snug">{videoInfo!.title}</p>
+                <p className="text-xs text-text-muted">{videoInfo!.uploader}</p>
                 <div className="flex items-center gap-3 text-xs text-text-muted">
-                  {videoInfo.duration > 0 && <span>⏱ {formatDuration(videoInfo.duration)}</span>}
-                  {videoInfo.view_count && videoInfo.view_count > 0 && <span>👁 {formatViews(videoInfo.view_count)}</span>}
+                  {videoInfo!.duration > 0 && <span>⏱ {formatDuration(videoInfo!.duration)}</span>}
+                  {!!videoInfo!.view_count && <span>👁 {formatViews(videoInfo!.view_count!)}</span>}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Download Settings */}
-        {(status === 'ready' || status === 'downloading' || status === 'done') && (
+        {/* 다운로드 설정 */}
+        {isSettingsVisible && (
           <div className="bg-background-card border border-border rounded-2xl p-5 space-y-5">
-            {/* Quality */}
+            {/* 화질 */}
             <div>
               <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-3">화질 / 형식</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -280,7 +273,7 @@ export default function DownloaderPage() {
               </div>
             </div>
 
-            {/* Output path */}
+            {/* 저장 경로 */}
             <div>
               <label className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-1.5">저장 폴더</label>
               <input
@@ -290,7 +283,7 @@ export default function DownloaderPage() {
               />
             </div>
 
-            {/* Download button */}
+            {/* 다운로드 버튼 */}
             <button
               onClick={handleDownload}
               disabled={status === 'downloading'}
@@ -301,16 +294,12 @@ export default function DownloaderPage() {
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   다운로드 중...
                 </>
-              ) : status === 'done' ? (
-                '✅ 완료 — 다시 다운로드'
-              ) : (
-                '⬇️ 다운로드 시작'
-              )}
+              ) : status === 'done' ? '✅ 완료 — 다시 다운로드' : '⬇️ 다운로드 시작'}
             </button>
           </div>
         )}
 
-        {/* Log output */}
+        {/* 실시간 로그 */}
         {logs.length > 0 && (
           <div className="bg-background-card border border-border rounded-2xl p-5 space-y-3">
             <div className="flex items-center justify-between">
@@ -347,7 +336,7 @@ export default function DownloaderPage() {
           </div>
         )}
 
-        {/* Supported sites hint (only on idle with no URL) */}
+        {/* 지원 사이트 (idle 상태에서만) */}
         {status === 'idle' && !url.trim() && (
           <div className="bg-background-card border border-border rounded-2xl p-5">
             <p className="text-xs font-semibold text-text-secondary mb-3">지원 사이트</p>
@@ -366,11 +355,9 @@ export default function DownloaderPage() {
                 <span className="text-xs text-text-muted">외 990개+</span>
               </div>
             </div>
-            <p className="text-[11px] text-text-muted mt-3">
-              ※ yt-dlp 설치 필요: <code className="bg-border/40 px-1 rounded">winget install yt-dlp</code> / <code className="bg-border/40 px-1 rounded">brew install yt-dlp</code>
-            </p>
           </div>
         )}
+
       </div>
 
       <FloatingAIBar

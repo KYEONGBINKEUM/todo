@@ -98,7 +98,9 @@ function ThumbnailTab() {
       const a = document.createElement('a');
       a.href = objUrl;
       a.download = filename;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(objUrl);
     } catch {
       // fallback: open in new tab
@@ -366,7 +368,9 @@ function BatchTab() {
         const a = document.createElement('a');
         a.href = objUrl;
         a.download = `${id}_maxres.jpg`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(objUrl);
         // Small delay to avoid overwhelming
         await new Promise(r => setTimeout(r, 300));
@@ -437,7 +441,9 @@ function BatchTab() {
                           const a = document.createElement('a');
                           a.href = objUrl;
                           a.download = `${id}_maxres.jpg`;
+                          document.body.appendChild(a);
                           a.click();
+                          document.body.removeChild(a);
                           URL.revokeObjectURL(objUrl);
                         } catch { window.open(maxUrl, '_blank'); }
                       }}

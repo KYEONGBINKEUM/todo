@@ -29,7 +29,6 @@
     "fs:allow-download-write-recursive",
     "fs:allow-desktop-read-recursive",
     "fs:allow-desktop-write-recursive",
-    { "identifier": "fs:allow-write-binary-file", "allow": [{ "path": "$HOME/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOCUMENT/**" }] },
     "updater:default",
     "autostart:allow-enable",
     "autostart:allow-disable",

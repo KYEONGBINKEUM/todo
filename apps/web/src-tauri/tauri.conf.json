@@ -1,6 +1,6 @@
 {
   "productName": "NOAH",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "identifier": "noah.firstb.noah",
   "build": {
     "frontendDist": "../out",

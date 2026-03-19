@@ -323,6 +323,32 @@ fn start_gcal_oauth_server(app_handle: tauri::AppHandle) -> Result<u16, String> 
     Ok(port)
 }
 
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -334,7 +360,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![start_oauth_server, start_gcal_oauth_server]);
+        .invoke_handler(tauri::generate_handler![start_oauth_server, start_gcal_oauth_server, open_folder]);
 
     #[cfg(not(target_os = "android"))]
     let builder = builder

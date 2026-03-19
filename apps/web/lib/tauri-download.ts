@@ -93,9 +93,14 @@ export async function saveToFolder(
 /** Open a folder in the system file explorer. */
 export async function openSaveFolder(folderPath: string): Promise<void> {
   try {
-    const { openPath } = await import('@tauri-apps/plugin-opener');
-    await openPath(folderPath);
-  } catch { /* ignore */ }
+    const { open } = await import('@tauri-apps/plugin-shell');
+    await open(folderPath);
+  } catch {
+    try {
+      const { openPath } = await import('@tauri-apps/plugin-opener');
+      await openPath(folderPath);
+    } catch { /* ignore */ }
+  }
 }
 
 /** Check if we're running inside Tauri. */

@@ -116,7 +116,7 @@ export default function DownloaderPage() {
 
       const args: string[] = quality === 'audio'
         ? [trimmed, '-x', '--audio-format', 'mp3', '-o', outputTemplate]
-        : [trimmed, '-f', selected.arg, '-o', outputTemplate];
+        : [trimmed, '-f', selected.arg, '--merge-output-format', 'mp4', '-o', outputTemplate];
 
       const cmd = await getSidecar(args);
 

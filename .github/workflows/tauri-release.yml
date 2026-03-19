@@ -155,6 +155,11 @@ jobs:
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
 
+      - name: Remove yt-dlp sidecar for Android (not supported on Android)
+        run: |
+          jq '.bundle.externalBin = []' apps/web/src-tauri/tauri.conf.json > /tmp/tauri.conf.json \
+            && mv /tmp/tauri.conf.json apps/web/src-tauri/tauri.conf.json
+
       - name: Init Tauri Android
         working-directory: apps/web
         run: pnpm tauri android init

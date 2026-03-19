@@ -20,7 +20,7 @@ import {
   checkGCalRedirectResult,
   checkGCalOAuthReturn,
   disconnectGoogleCalendar,
-  getGCalTokenFromServer,
+  refreshGCalToken,
   getStoredGCalToken,
   saveGCalToken,
   fetchGCalEvents,
@@ -430,9 +430,9 @@ export default function CalendarPage() {
     try {
       let token = directToken ?? getStoredGCalToken();
       if (!token) {
-        // sessionStorage에 없으면 서버 Cloud Function에서 refresh token 기반 갱신 시도
+        // sessionStorage에 없으면 Firebase 재인증으로 갱신 시도
         try {
-          token = await getGCalTokenFromServer();
+          token = await refreshGCalToken();
           setGcalToken(token);
           saveGCalToken(token);
         } catch {
@@ -445,10 +445,10 @@ export default function CalendarPage() {
       try {
         raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));
       } catch (fetchErr) {
-        // 토큰이 만료됐을 경우 서버에서 자동 갱신 후 1회 재시도
+        // 토큰이 만료됐을 경우 Firebase 재인증 후 1회 재시도
         if (fetchErr instanceof Error && fetchErr.message === 'token_expired') {
           try {
-            token = await getGCalTokenFromServer();
+            token = await refreshGCalToken();
             setGcalToken(token);
             saveGCalToken(token);
             raw = await fetchGCalEvents(token, new Date(year, month, 1), new Date(year, month + 1, 0, 23, 59, 59));

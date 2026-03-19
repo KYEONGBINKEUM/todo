@@ -99,6 +99,34 @@ export async function connectGoogleCalendar(): Promise<string> {
   return token;
 }
 
+/**
+ * 토큰 만료 시 팝업 없이 재인증 시도 (reauthenticate → signInWithPopup fallback)
+ * 이미 Google 로그인 상태이면 팝업이 즉시 닫히며 토큰 갱신됨
+ */
+export async function refreshGCalToken(): Promise<string> {
+  const { GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup } = await import('firebase/auth');
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/calendar.events');
+  // prompt: 'none'은 signInWithPopup에서 지원하지 않으므로 consent 없이 시도
+  provider.setCustomParameters({ access_type: 'online' });
+
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error('not_authenticated');
+
+  let result;
+  try {
+    result = await reauthenticateWithPopup(currentUser, provider);
+  } catch {
+    result = await signInWithPopup(auth, provider);
+  }
+
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const token = credential?.accessToken;
+  if (!token) throw new Error('no_token');
+  saveGCalToken(token);
+  return token;
+}
+
 // ── 웹: Cloud Function OAuth URL로 리다이렉트 ──────────────────────────────
 
 /**

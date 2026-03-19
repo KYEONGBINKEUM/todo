@@ -167,8 +167,8 @@ function GenerateTab() {
 
       {/* Preview */}
       <div className="flex flex-col items-center gap-4">
-        <div className="p-4 bg-white rounded-2xl shadow-lg border border-border">
-          <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated' }} />
+        <div className="p-4 bg-white rounded-2xl shadow-lg border border-border" style={{ width: 288, height: 288, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated', width: 256, height: 256 }} />
         </div>
 
         {generated && (
